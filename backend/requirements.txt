@@ -1,0 +1,23 @@
+# ============================================================
+# DÉPENDANCES PYTHON - Bitcoin Trading Assistant
+# ============================================================
+# Installation : pip install -r requirements.txt
+
+# Framework web API
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+
+# Base de données
+sqlalchemy==2.0.25
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Validation des données
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-dotenv==1.0.1
+
+# Tests (versions compatibles)
+pytest==7.4.4
+pytest-asyncio==0.23.4
+httpx==0.26.0

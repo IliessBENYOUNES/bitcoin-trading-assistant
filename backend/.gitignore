@@ -1,0 +1,34 @@
+# Environnement virtuel Python
+venv/
+.venv/
+
+# Variables d'environnement (SECRETS - NE JAMAIS COMMITTER)
+.env
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
