@@ -1,34 +1,45 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
 
-# Dependencies
-node_modules
+# Virtual environments
+venv/
+.venv/
 
-# Build output
-dist
-dist-ssr
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# Test artifacts
+*.db
+test.db
+.pytest_cache/
+.coverage
+htmlcov/
 
-# Local env files
-*.local
+# Environment files
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node (frontend)
+node_modules/
+
+# Build outputs
+dist/
+build/
