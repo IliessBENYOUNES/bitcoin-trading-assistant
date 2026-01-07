@@ -1,46 +1,53 @@
 """
-Configuration de l'application.
+Configuration de l'application via variables d'environnement.
 
-Charge les variables d'environnement depuis .env et les expose
-sous forme d'objet Python typé.
-
-Équivalent Java  : @ConfigurationProperties + application.yml
-Équivalent Node  : dotenv + config object
+Utilise pydantic-settings pour la validation et le parsing.
+Les variables sont lues depuis le fichier .env à la racine du projet backend.
 """
 
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """
-    Classe de configuration principale.
-    
-    Pydantic charge automatiquement les variables depuis .env
-    et valide leurs types.
+    Configuration de l'application.
+
+    Les variables sont automatiquement lues depuis :
+    1. Les variables d'environnement système
+    2. Le fichier .env (si présent)
+
+    Convention de nommage :
+    - En Python : snake_case (ex: database_url)
+    - En .env   : SCREAMING_SNAKE_CASE (ex: DATABASE_URL)
     """
-    
-    # URL de connexion PostgreSQL (OBLIGATOIRE)
-    # Format : postgresql://user:password@host:port/database
-    database_url: str
-    
-    # Environnement : development, staging, production
-    app_env: str = "development"
-    
-    # Mode debug : affiche les requêtes SQL si True
+
+    # Base de données
+    database_url: str = "postgresql://btc_user:btc_password_123@localhost:5432/bitcoin_assistant"
+
+    # Mode debug
     debug: bool = True
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    # Scheduler
+    scheduler_enabled: bool = False
+    scheduler_interval_minutes: int = 240
+    scheduler_symbol: str = "BTC/USD"
+    scheduler_days: int = 7
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",  # Changé de "forbid" à "ignore" pour plus de flexibilité
+    )
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     """
-    Retourne l'instance de configuration (singleton).
-    
-    @lru_cache() met en cache le résultat : la config n'est lue qu'une fois.
+    Retourne une instance unique (singleton) des settings.
+
+    Le décorateur @lru_cache garantit qu'on ne relit pas
+    le fichier .env à chaque appel.
     """
     return Settings()

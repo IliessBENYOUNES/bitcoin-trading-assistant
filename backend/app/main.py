@@ -6,9 +6,7 @@ Ce fichier :
 2. Configure les middlewares (CORS)
 3. Enregistre les routes
 4. Crée les tables au démarrage
-
-Équivalent Spring Boot : classe @SpringBootApplication
-Équivalent Express    : app.js avec app.use(...)
+5. Démarre/arrête le scheduler
 
 Lancement : uvicorn app.main:app --reload
 """
@@ -20,6 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import engine, Base
 from app.api.routes import health_router, market_router
+from app.api.routes.scheduler import router as scheduler_router
+from app.tasks.scheduler import start_scheduler, stop_scheduler
 
 # IMPORTANT : importer les modèles pour que SQLAlchemy les connaisse
 from app.models import Candle  # noqa: F401
@@ -36,23 +36,28 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """
     Gestionnaire du cycle de vie de l'application.
-    
+
     - Code AVANT yield = exécuté au DÉMARRAGE
     - Code APRÈS yield = exécuté à l'ARRÊT
     """
     # === DÉMARRAGE ===
     print("🚀 Démarrage de l'application...")
     print("📦 Création des tables si nécessaire...")
-    
+
     # Crée les tables qui n'existent pas encore
-    # En production, utiliser Alembic pour les migrations
     Base.metadata.create_all(bind=engine)
     print("✅ Tables prêtes")
-    
+
+    # Démarrer le scheduler (si activé)
+    start_scheduler()
+
     yield  # L'application tourne ici
-    
+
     # === ARRÊT ===
     print("👋 Arrêt de l'application...")
+
+    # Arrêter le scheduler
+    stop_scheduler()
 
 
 # ============================================================
@@ -66,10 +71,10 @@ app = FastAPI(
         "Fonctionnalités :\n"
         "- Données de marché (OHLCV)\n"
         "- Indicateurs techniques\n"
-        "- Analyse de sentiment\n"
-        "- Recommandations de trading"
+        "- Scheduler automatique\n"
+        "- Analyse et recommandations"
     ),
-    version="0.1.0",
+    version="0.3.0",
     lifespan=lifespan,
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
@@ -79,7 +84,6 @@ app = FastAPI(
 # ============================================================
 # MIDDLEWARE CORS
 # ============================================================
-# Permet au frontend (ex: localhost:5173) d'appeler l'API (localhost:8000)
 
 app.add_middleware(
     CORSMiddleware,
@@ -94,8 +98,9 @@ app.add_middleware(
 # ENREGISTREMENT DES ROUTES
 # ============================================================
 
-app.include_router(health_router)  # /health, /health/db
-app.include_router(market_router)  # /market/candles
+app.include_router(health_router)      # /health, /health/db
+app.include_router(market_router)      # /market/candles, /market/indicators
+app.include_router(scheduler_router)   # /scheduler/status
 
 
 # ============================================================
@@ -107,6 +112,6 @@ def root():
     """Route racine pour vérifier que l'API répond."""
     return {
         "message": "Bitcoin Trading Assistant API",
-        "version": "0.1.0",
+        "version": "0.3.0",
         "docs": "/docs"
     }
