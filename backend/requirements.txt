@@ -17,7 +17,13 @@ pydantic==2.6.1
 pydantic-settings==2.1.0
 python-dotenv==1.0.1
 
+# HTTP client (pour CoinGecko)
+httpx==0.26.0
+
+# Data analysis & indicateurs techniques
+pandas==2.1.4
+pandas-ta-classic==0.3.14b0
+
 # Tests (versions compatibles)
 pytest==7.4.4
 pytest-asyncio==0.23.4
-httpx==0.26.0

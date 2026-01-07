@@ -6,5 +6,6 @@ Ils sont appelés par les routes API.
 """
 
 from app.services.coingecko_service import CoinGeckoService
+from app.services.indicator_service import IndicatorService
 
-__all__ = ["CoinGeckoService"]
+__all__ = ["CoinGeckoService", "IndicatorService"]
