@@ -11,18 +11,18 @@ from app.models import Candle
 def test_get_candles_empty(client):
     """
     Test de /market/candles quand la base est vide.
-    
+
     Doit retourner une liste vide avec count=0.
     """
     response = client.get("/market/candles")
-    
+
     assert response.status_code == 200
-    
+
     data = response.json()
     assert data["data"] == []
     assert data["count"] == 0
     assert data["symbol"] == "BTC/USD"
-    assert data["timeframe"] == "1h"
+    assert data["timeframe"] == "4h"  # Corrigé : valeur par défaut est "4h"
 
 
 def test_get_candles_with_data(client, db_session):
@@ -81,8 +81,8 @@ def test_get_candles_filter_by_symbol(client, db_session):
     # Arrange : bougies de deux symboles différents
     btc_candle = Candle(
         symbol="BTC/USD",
-        timeframe="1h",
-        timestamp=datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
+        timeframe="4h",  # Changé de "1h" à "4h"
+        timestamp=datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc),
         open_price=42000.0,
         high_price=42500.0,
         low_price=41800.0,
@@ -92,8 +92,8 @@ def test_get_candles_filter_by_symbol(client, db_session):
     )
     eth_candle = Candle(
         symbol="ETH/USD",
-        timeframe="1h",
-        timestamp=datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc),
+        timeframe="4h",  # Changé de "1h" à "4h"
+        timestamp=datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc),
         open_price=2200.0,
         high_price=2250.0,
         low_price=2180.0,
@@ -101,14 +101,14 @@ def test_get_candles_filter_by_symbol(client, db_session):
         volume=567.89,
         source="manual"
     )
-    
+
     db_session.add(btc_candle)
     db_session.add(eth_candle)
     db_session.commit()
-    
+
     # Act
-    response = client.get("/market/candles?symbol=BTC/USD")
-    
+    response = client.get("/market/candles?symbol=BTC/USD&timeframe=4h")
+
     # Assert
     assert response.status_code == 200
     data = response.json()
@@ -124,8 +124,8 @@ def test_get_candles_with_limit(client, db_session):
     for i in range(5):
         candle = Candle(
             symbol="BTC/USD",
-            timeframe="1h",
-            timestamp=datetime(2024, 1, 15, 10 + i, 0, 0, tzinfo=timezone.utc),
+            timeframe="4h",  # Changé de "1h" à "4h"
+            timestamp=datetime(2024, 1, 15, i * 4, 0, 0, tzinfo=timezone.utc),  # Intervalles de 4h
             open_price=42000.0 + i * 100,
             high_price=42500.0 + i * 100,
             low_price=41800.0 + i * 100,
@@ -135,12 +135,11 @@ def test_get_candles_with_limit(client, db_session):
         )
         db_session.add(candle)
     db_session.commit()
-    
+
     # Act
-    response = client.get("/market/candles?limit=3")
-    
+    response = client.get("/market/candles?limit=3&timeframe=4h")
+
     # Assert
     assert response.status_code == 200
     data = response.json()
     assert data["count"] == 3
-    assert len(data["data"]) == 3

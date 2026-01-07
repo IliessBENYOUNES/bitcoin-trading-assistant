@@ -28,6 +28,7 @@ STATUS GLOBAL :
 - GAPS       : Des trous dans la série
 - STALE+GAPS : Pas fraîche ET des trous
 """
+from app.services.indicator_service import IndicatorService
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
@@ -50,6 +51,35 @@ router = APIRouter(
 # Instance du service CoinGecko (réutilisée)
 coingecko_service = CoinGeckoService()
 
+@router.get(
+    "/indicators",
+    response_model=dict,
+    summary="Indicateurs techniques (RSI, MACD, SMA, Bollinger)",
+    description="Calcule et retourne une série d'indicateurs techniques alignée sur les candles."
+)
+def get_indicators(
+        symbol: str = Query(default="BTC/USD"),
+        timeframe: str = Query(default="4h"),
+        history_days: Optional[int] = Query(default=None, ge=1, le=365),
+        days: Optional[int] = Query(default=None, ge=1, le=365),  # alias toléré
+        end_ts: Optional[datetime] = Query(default=None),
+        include_candles: bool = Query(default=False),
+        db: Session = Depends(get_db),
+) -> dict:
+    effective_days = history_days if history_days is not None else (days if days is not None else 7)
+
+    service = IndicatorService(db)
+    try:
+        return service.calculate(
+            symbol=symbol,
+            timeframe=timeframe,
+            history_days=effective_days,
+            end_ts=end_ts,
+            include_candles=include_candles,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
 
 def get_timeframe_hours(timeframe: str) -> float:
     """Convertit un timeframe en nombre d'heures."""
@@ -61,6 +91,16 @@ def get_timeframe_hours(timeframe: str) -> float:
         "4d": 96,
     }
     return mapping.get(timeframe, 4)
+
+
+def normalize_to_utc(dt: datetime) -> datetime:
+    """
+    Normalise un datetime en UTC.
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    else:
+        return dt.astimezone(timezone.utc)
 
 
 def get_rolling_window_from_max_ts(max_ts: datetime, days: int, timeframe: str) -> tuple[datetime, datetime]:
@@ -80,7 +120,9 @@ def get_rolling_window_from_max_ts(max_ts: datetime, days: int, timeframe: str) 
     # Aligner max_ts sur le bucket (devrait déjà l'être, mais par sécurité)
     max_ts_utc = normalize_to_utc(max_ts)
     if tf_hours >= 1:
-        end_ts = max_ts_utc.replace(minute=0, second=0, microsecond=0)
+        hour_floor = max_ts_utc.replace(minute=0, second=0, microsecond=0)
+        bucket_hour = (hour_floor.hour // int(tf_hours)) * int(tf_hours)
+        end_ts = hour_floor.replace(hour=bucket_hour)
     else:
         # 30m
         if max_ts_utc.minute >= 30:
@@ -123,16 +165,6 @@ def get_rolling_window_from_now(days: int, timeframe: str) -> tuple[datetime, da
     start_ts = end_ts - timedelta(hours=total_hours)
 
     return start_ts, end_ts
-
-
-def normalize_to_utc(dt: datetime) -> datetime:
-    """
-    Normalise un datetime en UTC.
-    """
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    else:
-        return dt.astimezone(timezone.utc)
 
 
 def calculate_freshness_status(data_lag_hours: float, tf_hours: float) -> str:
@@ -377,7 +409,7 @@ def detect_gaps(
             "expected_count": len(expected_buckets),
             "actual_count": len(existing_candles),
             "missing_count": len(missing),
-            "missing_timestamps": missing[:10],  # Limiter à 10 pour lisibilité
+            "missing_timestamps": missing[:10],
             "status": completeness_status
         },
 
