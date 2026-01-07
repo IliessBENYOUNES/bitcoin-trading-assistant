@@ -6,7 +6,27 @@ Endpoints :
 - POST /market/candles/fetch : Récupérer depuis CoinGecko et stocker en BDD
 - GET  /market/price         : Prix actuel
 - GET  /market/info          : Informations de marché complètes
-- GET  /market/candles/gaps  : Détecter les trous dans les données
+- GET  /market/candles/gaps  : Détecter les trous et la fraîcheur des données
+
+DÉFINITIONS ROLLING 7 JOURS :
+=============================
+Deux métriques distinctes sont calculées :
+
+1. COMPLÉTUDE (anchored on max_ts)
+   - Fenêtre : [max_ts - 7 jours, max_ts]
+   - Question : "La série est-elle sans trous jusqu'au dernier candle stocké ?"
+   - Status : OK (0 gaps) | GAPS_DETECTED (>0 gaps)
+
+2. FRAÎCHEUR (anchored on NOW)
+   - Métrique : data_lag = NOW() - max_ts
+   - Question : "Les données sont-elles à jour ?"
+   - Status : FRESH (lag < 1 bucket) | STALE (lag >= 1 bucket) | VERY_STALE (lag > 2 buckets)
+
+STATUS GLOBAL :
+- OK         : Complète ET Fraîche
+- STALE      : Complète mais pas fraîche
+- GAPS       : Des trous dans la série
+- STALE+GAPS : Pas fraîche ET des trous
 """
 
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -43,12 +63,44 @@ def get_timeframe_hours(timeframe: str) -> float:
     return mapping.get(timeframe, 4)
 
 
-def get_rolling_window(days: int, timeframe: str) -> tuple[datetime, datetime]:
+def get_rolling_window_from_max_ts(max_ts: datetime, days: int, timeframe: str) -> tuple[datetime, datetime]:
     """
-    Calcule les bornes d'une fenêtre rolling alignée sur les buckets.
+    Calcule les bornes d'une fenêtre rolling ANCRÉE SUR max_ts (pour complétude).
+
+    Args:
+        max_ts: Timestamp du dernier candle en base
+        days: Nombre de jours de la fenêtre
+        timeframe: Intervalle (ex: "4h")
 
     Returns:
-        (start_ts, end_ts) en UTC, alignés sur les buckets du timeframe
+        (start_ts, end_ts) où end_ts = max_ts aligné sur bucket
+    """
+    tf_hours = get_timeframe_hours(timeframe)
+
+    # Aligner max_ts sur le bucket (devrait déjà l'être, mais par sécurité)
+    max_ts_utc = normalize_to_utc(max_ts)
+    if tf_hours >= 1:
+        end_ts = max_ts_utc.replace(minute=0, second=0, microsecond=0)
+    else:
+        # 30m
+        if max_ts_utc.minute >= 30:
+            end_ts = max_ts_utc.replace(minute=30, second=0, microsecond=0)
+        else:
+            end_ts = max_ts_utc.replace(minute=0, second=0, microsecond=0)
+
+    # Calculer start_ts
+    total_hours = days * 24
+    start_ts = end_ts - timedelta(hours=total_hours)
+
+    return start_ts, end_ts
+
+
+def get_rolling_window_from_now(days: int, timeframe: str) -> tuple[datetime, datetime]:
+    """
+    Calcule les bornes d'une fenêtre rolling ANCRÉE SUR NOW (pour fraîcheur/affichage).
+
+    Returns:
+        (start_ts, end_ts) où end_ts = dernier bucket complet avant maintenant
     """
     now_utc = datetime.now(timezone.utc)
     tf_hours = get_timeframe_hours(timeframe)
@@ -76,14 +128,27 @@ def get_rolling_window(days: int, timeframe: str) -> tuple[datetime, datetime]:
 def normalize_to_utc(dt: datetime) -> datetime:
     """
     Normalise un datetime en UTC.
-    Gère les cas où tzinfo est None ou est une autre timezone.
     """
     if dt.tzinfo is None:
-        # Assumer UTC si pas de timezone
         return dt.replace(tzinfo=timezone.utc)
     else:
-        # Convertir en UTC
         return dt.astimezone(timezone.utc)
+
+
+def calculate_freshness_status(data_lag_hours: float, tf_hours: float) -> str:
+    """
+    Détermine le status de fraîcheur basé sur le lag.
+
+    - FRESH      : lag < 1 bucket
+    - STALE      : 1 bucket <= lag < 2 buckets
+    - VERY_STALE : lag >= 2 buckets
+    """
+    if data_lag_hours < tf_hours:
+        return "FRESH"
+    elif data_lag_hours < (tf_hours * 2):
+        return "STALE"
+    else:
+        return "VERY_STALE"
 
 
 @router.get(
@@ -97,17 +162,15 @@ def get_candles(
         timeframe: str = Query(default="4h", description="Intervalle de temps"),
         limit: int = Query(default=100, ge=1, le=1000, description="Nombre max de résultats"),
         days: Optional[int] = Query(default=None, ge=1, le=365, description="Fenêtre rolling en jours (optionnel)"),
-        start_ts: Optional[datetime] = Query(default=None, description="Timestamp de début (optionnel, ISO 8601)"),
-        end_ts: Optional[datetime] = Query(default=None, description="Timestamp de fin (optionnel, ISO 8601)"),
+        anchor: str = Query(default="max_ts", regex="^(max_ts|now)$", description="Ancrage: max_ts (complétude) ou now (fraîcheur)"),
         db: Session = Depends(get_db)
 ) -> dict:
     """
     Récupère les chandeliers depuis la base de données locale.
 
-    Modes de filtrage (par priorité) :
-    1. Si start_ts et/ou end_ts fournis : filtrage explicite
-    2. Si days fourni : calcul automatique de la fenêtre rolling alignée
-    3. Sinon : retourne les X derniers (limit)
+    Paramètre 'anchor' :
+    - max_ts : fenêtre ancrée sur le dernier candle (pour complétude)
+    - now    : fenêtre ancrée sur maintenant (pour fraîcheur/affichage temps réel)
     """
     # Construire la requête de base
     query = (
@@ -121,24 +184,31 @@ def get_candles(
     effective_end_ts = None
     expected_count = None
 
-    if start_ts or end_ts:
-        # Mode 1 : filtrage explicite
-        if start_ts:
-            effective_start_ts = normalize_to_utc(start_ts)
-            query = query.filter(Candle.timestamp >= effective_start_ts)
-        if end_ts:
-            effective_end_ts = normalize_to_utc(end_ts)
-            query = query.filter(Candle.timestamp <= effective_end_ts)
-    elif days:
-        # Mode 2 : fenêtre rolling
-        effective_start_ts, effective_end_ts = get_rolling_window(days, timeframe)
-        query = query.filter(Candle.timestamp >= effective_start_ts)
-        query = query.filter(Candle.timestamp <= effective_end_ts)
-
-        # Calculer le nombre attendu
+    if days:
         tf_hours = get_timeframe_hours(timeframe)
-        total_hours = days * 24
-        expected_count = int(total_hours / tf_hours) + 1
+
+        if anchor == "max_ts":
+            # Ancrage sur max_ts (complétude)
+            max_ts_result = db.query(func.max(Candle.timestamp)).filter(
+                Candle.symbol == symbol,
+                Candle.timeframe == timeframe
+            ).scalar()
+
+            if max_ts_result:
+                effective_start_ts, effective_end_ts = get_rolling_window_from_max_ts(
+                    max_ts_result, days, timeframe
+                )
+        else:
+            # Ancrage sur now (fraîcheur)
+            effective_start_ts, effective_end_ts = get_rolling_window_from_now(days, timeframe)
+
+        if effective_start_ts and effective_end_ts:
+            query = query.filter(Candle.timestamp >= effective_start_ts)
+            query = query.filter(Candle.timestamp <= effective_end_ts)
+
+            # Calculer le nombre attendu
+            total_hours = days * 24
+            expected_count = int(total_hours / tf_hours) + 1
 
     # Compter le total en base (sans filtrage de dates)
     total_in_db = (
@@ -169,6 +239,7 @@ def get_candles(
         "timeframe": timeframe,
         "total_in_db": total_in_db,
         "expected_count": expected_count,
+        "anchor": anchor,
         "start_ts": effective_start_ts.isoformat() if effective_start_ts else None,
         "end_ts": effective_end_ts.isoformat() if effective_end_ts else None,
     }
@@ -177,8 +248,13 @@ def get_candles(
 @router.get(
     "/candles/gaps",
     response_model=dict,
-    summary="Détecter les trous dans les données",
-    description="Identifie les timestamps manquants sur une fenêtre donnée"
+    summary="Analyser complétude et fraîcheur des données",
+    description="""
+    Analyse la qualité des données selon deux axes :
+    
+    1. COMPLÉTUDE (ancrée sur max_ts) : La série est-elle sans trous ?
+    2. FRAÎCHEUR (ancrée sur NOW) : Les données sont-elles à jour ?
+    """
 )
 def detect_gaps(
         symbol: str = Query(default="BTC/USD", description="Paire de trading"),
@@ -187,21 +263,61 @@ def detect_gaps(
         db: Session = Depends(get_db)
 ) -> dict:
     """
-    Détecte les trous (timestamps manquants) dans les données.
+    Analyse complète de la qualité des données.
 
-    IMPORTANT: Compare les timestamps en UTC pour éviter les problèmes de timezone.
+    Retourne :
+    - completeness : analyse des trous (ancrée sur max_ts)
+    - freshness    : analyse du retard (ancrée sur NOW)
+    - global_status: OK | STALE | GAPS | STALE+GAPS
     """
-    start_ts, end_ts = get_rolling_window(days, timeframe)
     tf_hours = get_timeframe_hours(timeframe)
+    now_utc = datetime.now(timezone.utc)
 
-    # Générer les buckets attendus (en UTC)
+    # ================================================================
+    # ÉTAPE 1 : Récupérer max_ts et min_ts
+    # ================================================================
+    stats = db.query(
+        func.max(Candle.timestamp).label("max_ts"),
+        func.min(Candle.timestamp).label("min_ts"),
+        func.count(Candle.id).label("total_count")
+    ).filter(
+        Candle.symbol == symbol,
+        Candle.timeframe == timeframe
+    ).first()
+
+    if not stats or not stats.max_ts:
+        return {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "days": days,
+            "error": "Aucune donnée en base",
+            "global_status": "NO_DATA"
+        }
+
+    max_ts = normalize_to_utc(stats.max_ts)
+    min_ts = normalize_to_utc(stats.min_ts)
+    total_count = stats.total_count
+
+    # ================================================================
+    # ÉTAPE 2 : FRAÎCHEUR (ancrée sur NOW)
+    # ================================================================
+    data_lag = now_utc - max_ts
+    data_lag_hours = data_lag.total_seconds() / 3600
+    freshness_status = calculate_freshness_status(data_lag_hours, tf_hours)
+
+    # ================================================================
+    # ÉTAPE 3 : COMPLÉTUDE (ancrée sur max_ts)
+    # ================================================================
+    start_ts, end_ts = get_rolling_window_from_max_ts(max_ts, days, timeframe)
+
+    # Générer les buckets attendus
     expected_buckets: list[datetime] = []
     current = start_ts
     while current <= end_ts:
         expected_buckets.append(current)
         current += timedelta(hours=tf_hours)
 
-    # Récupérer les buckets existants
+    # Récupérer les buckets existants dans la fenêtre
     existing_candles = db.query(Candle.timestamp).filter(
         Candle.symbol == symbol,
         Candle.timeframe == timeframe,
@@ -209,10 +325,9 @@ def detect_gaps(
         Candle.timestamp <= end_ts
     ).all()
 
-    # Normaliser TOUS les timestamps existants en UTC pour comparaison
+    # Normaliser en UTC pour comparaison
     existing_utc: set[datetime] = set()
     for (ts,) in existing_candles:
-        # Convertir en UTC et arrondir à l'heure pour éliminer les microsecondes
         ts_utc = normalize_to_utc(ts).replace(minute=0, second=0, microsecond=0)
         existing_utc.add(ts_utc)
 
@@ -223,19 +338,59 @@ def detect_gaps(
         if expected_normalized not in existing_utc:
             missing.append(expected.isoformat())
 
+    completeness_status = "OK" if len(missing) == 0 else "GAPS_DETECTED"
+
+    # ================================================================
+    # ÉTAPE 4 : STATUS GLOBAL
+    # ================================================================
+    if completeness_status == "OK" and freshness_status == "FRESH":
+        global_status = "OK"
+    elif completeness_status == "OK" and freshness_status in ("STALE", "VERY_STALE"):
+        global_status = "STALE"
+    elif completeness_status == "GAPS_DETECTED" and freshness_status == "FRESH":
+        global_status = "GAPS"
+    else:
+        global_status = "STALE+GAPS"
+
+    # ================================================================
+    # RÉPONSE
+    # ================================================================
     return {
         "symbol": symbol,
         "timeframe": timeframe,
         "days": days,
-        "start_ts": start_ts.isoformat(),
-        "end_ts": end_ts.isoformat(),
-        "expected_count": len(expected_buckets),
-        "actual_count": len(existing_candles),
-        "missing_count": len(missing),
-        "missing_timestamps": missing,
-        "status": "OK" if len(missing) == 0 else "GAPS_DETECTED",
-        # Debug info
-        "debug_existing_sample": [normalize_to_utc(ts).isoformat() for (ts,) in existing_candles[:3]] if existing_candles else []
+        "now_utc": now_utc.isoformat(),
+
+        # Fraîcheur (ancrée sur NOW)
+        "freshness": {
+            "max_ts": max_ts.isoformat(),
+            "data_lag": str(data_lag),
+            "data_lag_hours": round(data_lag_hours, 2),
+            "threshold_hours": tf_hours,
+            "status": freshness_status
+        },
+
+        # Complétude (ancrée sur max_ts)
+        "completeness": {
+            "window_start": start_ts.isoformat(),
+            "window_end": end_ts.isoformat(),
+            "expected_count": len(expected_buckets),
+            "actual_count": len(existing_candles),
+            "missing_count": len(missing),
+            "missing_timestamps": missing[:10],  # Limiter à 10 pour lisibilité
+            "status": completeness_status
+        },
+
+        # Stats globales
+        "stats": {
+            "total_in_db": total_count,
+            "min_ts": min_ts.isoformat(),
+            "max_ts": max_ts.isoformat(),
+            "span_days": round((max_ts - min_ts).total_seconds() / 86400, 1)
+        },
+
+        # Status global
+        "global_status": global_status
     }
 
 
@@ -283,7 +438,6 @@ async def fetch_candles(
                 ts = ts.replace(tzinfo=timezone.utc)
 
             # Vérifier si cette bougie existe déjà
-            # Utiliser une fenêtre de tolérance de 5 minutes pour gérer les décalages
             ts_min = ts - timedelta(minutes=5)
             ts_max = ts + timedelta(minutes=5)
 
@@ -295,7 +449,6 @@ async def fetch_candles(
             ).first()
 
             if existing:
-                # Mettre à jour si les valeurs ont changé
                 if (existing.close_price != candle_data["close"] or
                         existing.high_price != candle_data["high"] or
                         existing.low_price != candle_data["low"]):
@@ -309,7 +462,6 @@ async def fetch_candles(
                     duplicates += 1
                 continue
 
-            # Créer la nouvelle bougie
             candle = Candle(
                 symbol=symbol,
                 timeframe=timeframe,
@@ -325,10 +477,8 @@ async def fetch_candles(
             db.add(candle)
             inserted += 1
 
-        # Sauvegarder en base
         db.commit()
 
-        # Calculer les stats
         tf_hours = get_timeframe_hours(timeframe)
         expected = int((days * 24) / tf_hours) + 1
 
@@ -361,13 +511,11 @@ async def fetch_candles(
 @router.get(
     "/price",
     response_model=dict,
-    summary="Prix actuel",
-    description="Retourne le prix actuel depuis CoinGecko"
+    summary="Prix actuel"
 )
 async def get_current_price(
         symbol: str = Query(default="BTC/USD", description="Paire de trading")
 ) -> dict:
-    """Récupère le prix actuel d'une crypto."""
     price = await coingecko_service.get_current_price(symbol)
 
     if price is None:
@@ -386,13 +534,11 @@ async def get_current_price(
 @router.get(
     "/info",
     response_model=dict,
-    summary="Informations de marché",
-    description="Retourne les informations complètes de marché"
+    summary="Informations de marché"
 )
 async def get_market_info(
         symbol: str = Query(default="BTC/USD", description="Paire de trading")
 ) -> dict:
-    """Récupère les informations de marché complètes."""
     market_data = await coingecko_service.get_market_data(symbol)
 
     if market_data is None:
