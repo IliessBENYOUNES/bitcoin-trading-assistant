@@ -194,7 +194,7 @@ def get_candles(
         timeframe: str = Query(default="4h", description="Intervalle de temps"),
         limit: int = Query(default=100, ge=1, le=1000, description="Nombre max de résultats"),
         days: Optional[int] = Query(default=None, ge=1, le=365, description="Fenêtre rolling en jours (optionnel)"),
-        anchor: str = Query(default="max_ts", regex="^(max_ts|now)$", description="Ancrage: max_ts (complétude) ou now (fraîcheur)"),
+        anchor: str = Query(default="max_ts", pattern="^(max_ts|now)$", description="Ancrage: max_ts (complétude) ou now (fraîcheur)"),
         db: Session = Depends(get_db)
 ) -> dict:
     """
