@@ -18,122 +18,26 @@ LOGIQUE DE FENÊTRE :
 - start_ts : end_ts - history_days
 - Ancrage sur complétude (pas sur NOW)
 """
-import numpy as np
 
+import numpy as np
 import pandas as pd
 import pandas_ta as ta
 from datetime import datetime, timezone, timedelta
-from typing import Optional, Any
+from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from app.models import Candle
-
-
-# ============================================================
-# CONSTANTES
-# ============================================================
-
-# Timeframes valides avec leur durée en heures
-VALID_TIMEFRAMES = {
-    "30m": 0.5,
-    "1h": 1,
-    "4h": 4,
-    "1d": 24,
-}
-
-# Seuils de fraîcheur (en nombre de buckets)
-FRESHNESS_THRESHOLD_BUCKETS = 1  # < 1 bucket = FRESH
-STALE_THRESHOLD_BUCKETS = 2      # >= 2 buckets = VERY_STALE
-
-
-# ============================================================
-# FONCTIONS UTILITAIRES
-# ============================================================
-
-def get_timeframe_hours(timeframe: str) -> float:
-    """Retourne la durée d'un timeframe en heures."""
-    return VALID_TIMEFRAMES.get(timeframe, 4)
-
-
-def align_to_bucket(dt: datetime, timeframe: str) -> datetime:
-    """
-    Aligne un datetime au bucket inférieur (floor) du timeframe.
-
-    Exemples (timeframe=4h) :
-        14:35 UTC → 12:00 UTC
-        16:00 UTC → 16:00 UTC
-        23:59 UTC → 20:00 UTC
-
-    Exemples (timeframe=30m) :
-        14:35 UTC → 14:30 UTC
-        14:15 UTC → 14:00 UTC
-    """
-    # S'assurer que dt est en UTC
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    else:
-        dt = dt.astimezone(timezone.utc)
-
-    tf_hours = get_timeframe_hours(timeframe)
-
-    if tf_hours >= 1:
-        # Arrondir à l'heure, puis au multiple du timeframe
-        hour_floor = dt.replace(minute=0, second=0, microsecond=0)
-        bucket_hour = (hour_floor.hour // int(tf_hours)) * int(tf_hours)
-        return hour_floor.replace(hour=bucket_hour)
-    else:
-        # 30m : arrondir à la demi-heure inférieure
-        minute_floor = dt.replace(second=0, microsecond=0)
-        if minute_floor.minute >= 30:
-            return minute_floor.replace(minute=30)
-        else:
-            return minute_floor.replace(minute=0)
-
-
-def normalize_to_utc(dt: datetime) -> datetime:
-    """Normalise un datetime en UTC."""
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    else:
-        return dt.astimezone(timezone.utc)
-
-
-def nan_to_none(value: Any) -> Any:
-    """Convertit NaN/NaT pandas en None pour JSON."""
-    if pd.isna(value):
-        return None
-    if isinstance(value, float):
-        return round(value, 2)  # Arrondir à 2 décimales
-    return value
-
-
-def calculate_freshness_status(data_lag_hours: float, tf_hours: float) -> str:
-    """
-    Détermine le status de fraîcheur.
-
-    - FRESH      : lag < 1 bucket
-    - STALE      : 1 bucket <= lag < 2 buckets
-    - VERY_STALE : lag >= 2 buckets
-    """
-    if data_lag_hours < tf_hours * FRESHNESS_THRESHOLD_BUCKETS:
-        return "FRESH"
-    elif data_lag_hours < tf_hours * STALE_THRESHOLD_BUCKETS:
-        return "STALE"
-    else:
-        return "VERY_STALE"
-
-
-def calculate_global_status(completeness: str, freshness: str) -> str:
-    """
-    Calcule le status global selon la règle : GAPS > STALE > OK
-    """
-    if completeness == "GAPS_DETECTED":
-        return "GAPS"
-    elif freshness in ("STALE", "VERY_STALE"):
-        return "STALE"
-    else:
-        return "OK"
+from app.utils import (
+    VALID_TIMEFRAMES,
+    get_timeframe_hours,
+    is_valid_timeframe,
+    normalize_to_utc,
+    align_to_bucket,
+    calculate_freshness_status,
+    calculate_global_status,
+    nan_to_none,
+)
 
 
 # ============================================================
@@ -150,18 +54,13 @@ class IndicatorService:
             symbol="BTC/USD",
             timeframe="4h",
             history_days=7,
-            end_ts=None,  # ou datetime ISO8601
+            end_ts=None,
             include_candles=False
         )
     """
 
     def __init__(self, db: Session):
-        """
-        Initialise le service avec une session DB.
-
-        Args:
-            db: Session SQLAlchemy
-        """
+        """Initialise le service avec une session DB."""
         self.db = db
 
     def _get_max_ts(self, symbol: str, timeframe: str) -> Optional[datetime]:
@@ -182,11 +81,7 @@ class IndicatorService:
             start_ts: datetime,
             end_ts: datetime
     ) -> list[Candle]:
-        """
-        Charge les candles depuis la DB dans la fenêtre [start_ts, end_ts].
-
-        Retourne les candles triés par timestamp ASC.
-        """
+        """Charge les candles depuis la DB, triés ASC."""
         candles = self.db.query(Candle).filter(
             Candle.symbol == symbol,
             Candle.timeframe == timeframe,
@@ -197,13 +92,7 @@ class IndicatorService:
         return candles
 
     def _candles_to_dataframe(self, candles: list[Candle]) -> pd.DataFrame:
-        """
-        Convertit une liste de Candle en DataFrame pandas.
-
-        Colonnes : timestamp, open, high, low, close, volume
-        Index : RangeIndex (pas de DatetimeIndex pour éviter les problèmes)
-        Trié par timestamp ASC.
-        """
+        """Convertit une liste de Candle en DataFrame pandas."""
         data = []
         for c in candles:
             data.append({
@@ -220,25 +109,15 @@ class IndicatorService:
         if df.empty:
             return df
 
-        # S'assurer du tri ASC
         df = df.sort_values("timestamp").reset_index(drop=True)
-
         return df
 
     def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Calcule tous les indicateurs techniques sur le DataFrame.
-
-        Ajoute les colonnes :
-        - rsi_14
-        - macd, macd_signal, macd_hist
-        - sma_20, sma_50, sma_200
-        - bb_mid, bb_upper, bb_lower
-        """
+        """Calcule tous les indicateurs techniques sur le DataFrame."""
         if df.empty:
             return df
 
-        # RSI(14) — warmup contractuel (14 premiers points => NaN => null)
+        # RSI(14) — warmup contractuel
         RSI_LEN = 14
         rsi = ta.rsi(df["close"], length=RSI_LEN)
 
@@ -290,12 +169,7 @@ class IndicatorService:
             end_ts: datetime,
             timeframe: str
     ) -> tuple[str, int, int]:
-        """
-        Vérifie la complétude de la série.
-
-        Returns:
-            (status, expected_count, missing_count)
-        """
+        """Vérifie la complétude de la série."""
         tf_hours = get_timeframe_hours(timeframe)
         total_hours = (end_ts - start_ts).total_seconds() / 3600
         expected_count = int(total_hours / tf_hours) + 1
@@ -312,13 +186,7 @@ class IndicatorService:
             df: pd.DataFrame,
             include_candles: bool
     ) -> list[dict]:
-        """
-        Convertit le DataFrame en liste de dicts pour la réponse JSON.
-
-        - NaN → null
-        - Timestamps en ISO8601
-        - OHLCV inclus seulement si include_candles=True
-        """
+        """Convertit le DataFrame en liste de dicts pour JSON."""
         series = []
 
         indicator_cols = [
@@ -357,22 +225,13 @@ class IndicatorService:
             end_ts: Optional[datetime] = None,
             include_candles: bool = False
     ) -> dict:
-        """
-        Calcule les indicateurs techniques.
-
-        Args:
-            symbol: Paire de trading
-            timeframe: Intervalle (30m, 1h, 4h, 1d)
-            history_days: Fenêtre en jours
-            end_ts: Timestamp de fin (optionnel, sinon max_ts)
-            include_candles: Inclure OHLCV dans la réponse
-
-        Returns:
-            Dict avec meta, series, latest
-        """
+        """Calcule les indicateurs techniques."""
         # Validation timeframe
-        if timeframe not in VALID_TIMEFRAMES:
-            raise ValueError(f"Timeframe invalide: {timeframe}. Valides: {list(VALID_TIMEFRAMES.keys())}")
+        if not is_valid_timeframe(timeframe):
+            raise ValueError(
+                f"Timeframe invalide: {timeframe}. "
+                f"Valides: {list(VALID_TIMEFRAMES.keys())}"
+            )
 
         tf_hours = get_timeframe_hours(timeframe)
         now_ts = datetime.now(timezone.utc)
@@ -420,7 +279,7 @@ class IndicatorService:
         # Calculer fraîcheur
         data_lag = now_ts - max_ts
         data_lag_hours = round(data_lag.total_seconds() / 3600, 2)
-        freshness_status = calculate_freshness_status(data_lag_hours, tf_hours)
+        freshness_status = calculate_freshness_status(data_lag_hours, timeframe)
 
         # Calculer status global
         global_status = calculate_global_status(completeness_status, freshness_status)

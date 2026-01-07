@@ -191,16 +191,15 @@ class TestFreshnessStatus:
 
     def test_fresh(self):
         """Lag < 1 bucket = FRESH."""
-        assert calculate_freshness_status(3.5, 4) == "FRESH"
+        assert calculate_freshness_status(3.5, "4h") == "FRESH"
 
     def test_stale(self):
         """1 bucket <= lag < 2 buckets = STALE."""
-        assert calculate_freshness_status(5.0, 4) == "STALE"
+        assert calculate_freshness_status(5.0, "4h") == "STALE"
 
     def test_very_stale(self):
         """Lag >= 2 buckets = VERY_STALE."""
-        assert calculate_freshness_status(10.0, 4) == "VERY_STALE"
-
+        assert calculate_freshness_status(10.0, "4h") == "VERY_STALE"
 
 class TestGlobalStatus:
     """Tests pour calculate_global_status."""
