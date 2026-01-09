@@ -30,9 +30,11 @@ class Settings(BaseSettings):
 
     # Scheduler
     scheduler_enabled: bool = False
-    scheduler_interval_minutes: int = 240
+    scheduler_interval_minutes: int = 240  # 4h job interval
+    scheduler_interval_30m_minutes: int = 30  # 30m job interval (nouveau)
     scheduler_symbol: str = "BTC/USD"
-    scheduler_days: int = 7
+    scheduler_days: int = 7  # Legacy, non utilisé directement
+
 
     model_config = SettingsConfigDict(
         env_file=".env",
