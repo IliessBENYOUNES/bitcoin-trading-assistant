@@ -1,0 +1,128 @@
+// =============================================================================
+// Market API Client - Bitcoin Trading Assistant
+// =============================================================================
+
+import type {
+  SchedulerStatus,
+  MarketGapsResponse,
+  MarketIndicatorsResponse,
+} from '../types/api';
+
+// -----------------------------------------------------------------------------
+// Configuration
+// -----------------------------------------------------------------------------
+
+const getBaseUrl = (): string => {
+  // Vite expose les variables d'env via import.meta.env
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.trim().replace(/\/$/, ''); // Remove trailing slash
+  }
+  return 'http://localhost:8000';
+};
+
+const BASE_URL = getBaseUrl();
+
+// -----------------------------------------------------------------------------
+// Generic fetch wrapper
+// -----------------------------------------------------------------------------
+
+interface FetchOptions {
+  signal?: AbortSignal;
+}
+
+async function apiFetch<T>(
+  endpoint: string,
+  options: FetchOptions = {}
+): Promise<T> {
+  const url = `${BASE_URL}${endpoint}`;
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+    },
+    signal: options.signal,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+// -----------------------------------------------------------------------------
+// Scheduler Status
+// -----------------------------------------------------------------------------
+
+export async function getSchedulerStatus(
+  options: FetchOptions = {}
+): Promise<SchedulerStatus> {
+  return apiFetch<SchedulerStatus>('/scheduler/status', options);
+}
+
+// -----------------------------------------------------------------------------
+// Market Gaps (Data Quality)
+// -----------------------------------------------------------------------------
+
+export interface GetMarketGapsParams {
+  timeframe: string;
+  days: number;
+}
+
+export async function getMarketGaps(
+  params: GetMarketGapsParams,
+  options: FetchOptions = {}
+): Promise<MarketGapsResponse> {
+  const { timeframe, days } = params;
+  const endpoint = `/market/candles/gaps?timeframe=${encodeURIComponent(timeframe)}&days=${days}`;
+  return apiFetch<MarketGapsResponse>(endpoint, options);
+}
+
+// -----------------------------------------------------------------------------
+// Market Indicators
+// -----------------------------------------------------------------------------
+
+export interface GetIndicatorsParams {
+  timeframe: string;
+  historyDays: number;
+  includeCandles?: boolean;
+}
+
+export async function getIndicators(
+  params: GetIndicatorsParams,
+  options: FetchOptions = {}
+): Promise<MarketIndicatorsResponse> {
+  const { timeframe, historyDays, includeCandles = false } = params;
+  let endpoint = `/market/indicators?timeframe=${encodeURIComponent(timeframe)}&history_days=${historyDays}`;
+  if (includeCandles) {
+    endpoint += '&include_candles=true';
+  }
+  return apiFetch<MarketIndicatorsResponse>(endpoint, options);
+}
+
+// -----------------------------------------------------------------------------
+// Health Check (utilitaire bonus)
+// -----------------------------------------------------------------------------
+
+export interface HealthResponse {
+  status: string;
+}
+
+export async function getHealth(
+  options: FetchOptions = {}
+): Promise<HealthResponse> {
+  return apiFetch<HealthResponse>('/health', options);
+}
+
+export interface HealthDbResponse {
+  database: string;
+}
+
+export async function getHealthDb(
+  options: FetchOptions = {}
+): Promise<HealthDbResponse> {
+  return apiFetch<HealthDbResponse>('/health/db', options);
+}

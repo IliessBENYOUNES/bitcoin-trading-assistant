@@ -1,299 +1,321 @@
-/**
- * Page Dashboard : page principale de l'application.
- */
+// =============================================================================
+// Dashboard.tsx - Main dashboard with indicators, status, and chart
+// =============================================================================
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
-  Container,
-  Typography,
   Box,
-  Button,
-  Alert,
+  Container,
   Grid,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  CircularProgress,
-  Snackbar,
-  Chip,
-  Tooltip
+  Button,
+  Typography,
+  SelectChangeEvent,
+  Alert,
+  Tooltip,
 } from '@mui/material';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import DownloadIcon from '@mui/icons-material/Download';
-import WarningIcon from '@mui/icons-material/Warning';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import {
+  Refresh as RefreshIcon,
+  CloudDownload as FetchIcon,
+} from '@mui/icons-material';
 
-import PriceCard from '../components/PriceCard';
+// Composants
+import { StatusRowConnected } from '../components/StatusRow';
+import { IndicatorPanel } from '../components/IndicatorPanel';
 import CandlestickChart from '../components/CandlestickChart';
-import StatusBar from '../components/StatusBar';
-import { healthApi, marketApi } from '../api/client';
-import type { Candle, MarketInfo, CandleListResponse } from '../types';
+import { ChartErrorBoundary } from '../components/ErrorBoundary';
 
-export default function Dashboard() {
-  // États
-  const [apiStatus, setApiStatus] = useState<'loading' | 'connected' | 'error'>('loading');
-  const [dbStatus, setDbStatus] = useState<'loading' | 'connected' | 'error'>('loading');
-  const [marketInfo, setMarketInfo] = useState<MarketInfo | null>(null);
-  const [candles, setCandles] = useState<Candle[]>([]);
-  const [candlesMetadata, setCandlesMetadata] = useState<Partial<CandleListResponse>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// Hooks
+import { useIndicators } from '../hooks/useIndicators';
+import { useMarketGaps } from '../hooks/useMarketGaps';
+import { useCandles } from '../hooks/useCandles';
+
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
+
+type TimeframeOption = '30m' | '1h' | '4h' | '1d';
+type DaysOption = 1 | 2 | 7 | 14 | 30;
+
+// Timeframes actuellement supportés par le backend
+const SUPPORTED_TIMEFRAMES: TimeframeOption[] = ['30m', '4h'];
+
+function isTimeframeSupported(tf: TimeframeOption): boolean {
+  return SUPPORTED_TIMEFRAMES.includes(tf);
+}
+
+// -----------------------------------------------------------------------------
+// Component
+// -----------------------------------------------------------------------------
+
+const Dashboard: React.FC = () => {
+  // ---------------------------------------------------------------------------
+  // State - User controls
+  // ---------------------------------------------------------------------------
+  const [timeframe, setTimeframe] = useState<TimeframeOption>('4h');
+  const [days, setDays] = useState<DaysOption>(7);
   const [fetching, setFetching] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // Paramètres
-  const [symbol] = useState('BTC/USD');
-  const [timeframe, setTimeframe] = useState('4h');
-  const [days, setDays] = useState(7);
+  const symbol = 'BTC/USD';
 
-  // Vérifier la connexion au backend
-  const checkConnection = useCallback(async () => {
-    try {
-      await healthApi.check();
-      setApiStatus('connected');
-    } catch {
-      setApiStatus('error');
-    }
+  // ---------------------------------------------------------------------------
+  // Hooks - Data fetching
+  // ---------------------------------------------------------------------------
+  const indicators = useIndicators({
+    timeframe,
+    historyDays: days,
+  });
 
-    try {
-      const dbHealth = await healthApi.checkDb();
-      setDbStatus(dbHealth.database === 'connected' ? 'connected' : 'error');
-    } catch {
-      setDbStatus('error');
-    }
-  }, []);
+  const gaps = useMarketGaps({
+    timeframe,
+    days,
+  });
 
-  // Charger les données
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const candles = useCandles({
+    timeframe,
+    days,
+  });
 
-    try {
-      // Charger les infos de marché
-      const info = await marketApi.getMarketInfo(symbol);
-      setMarketInfo(info);
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
+  const handleTimeframeChange = (event: SelectChangeEvent) => {
+    setTimeframe(event.target.value as TimeframeOption);
+    setFetchError(null);
+  };
 
-      // Charger les chandeliers avec le paramètre days pour filtrage rolling
-      const candlesResponse = await marketApi.getCandles(symbol, timeframe, 200, days);
-      setCandles(candlesResponse.data);
-      setCandlesMetadata({
-        count: candlesResponse.count,
-        total_in_db: candlesResponse.total_in_db,
-        expected_count: candlesResponse.expected_count,
-        start_ts: candlesResponse.start_ts,
-        end_ts: candlesResponse.end_ts,
-      });
-    } catch (err) {
-      setError('Erreur lors du chargement des données. Vérifiez que le backend est lancé.');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [symbol, timeframe, days]);
+  const handleDaysChange = (event: SelectChangeEvent) => {
+    setDays(Number(event.target.value) as DaysOption);
+    setFetchError(null);
+  };
 
-  // Récupérer de nouvelles données depuis CoinGecko
-  const fetchNewData = async () => {
-    setFetching(true);
-    setError(null);
+  const handleRefreshAll = () => {
+    indicators.refresh();
+    gaps.refresh();
+    candles.refresh();
+  };
 
-    try {
-      const result = await marketApi.fetchCandles(symbol, days);
+  const handleFetchCandles = async () => {
+    setFetchError(null);
 
-      // Mettre à jour le timeframe selon les jours
-      let newTimeframe = '4h';
-      if (days <= 2) newTimeframe = '30m';
-      else if (days > 30) newTimeframe = '4d';
-
-      setTimeframe(newTimeframe);
-
-      // Recharger les données
-      await loadData();
-
-      // Message de succès détaillé
-      const coverageInfo = result.coverage_pct ? ` (couverture: ${result.coverage_pct}%)` : '';
-      setSuccessMessage(
-          `✅ ${result.inserted} insérées, ${result.updated || 0} mises à jour, ${result.duplicates} existantes${coverageInfo}`
+    // Garde-fou: backend ne supporte pas encore 1h/1d
+    if (!isTimeframeSupported(timeframe)) {
+      setFetchError(
+          `Timeframe "${timeframe}" non alimenté. Utilisez 4h (days>2) ou 30m (days≤2).`
       );
-    } catch (err) {
-      setError('Erreur lors de la récupération des données depuis CoinGecko');
-      console.error(err);
+      return;
+    }
+
+    // Garde-fou: 30m sur CoinGecko = max ~2 jours
+    let effectiveDays = days;
+    if (timeframe === '30m' && days > 2) {
+      effectiveDays = 2;
+      setFetchError(
+          `30m limité à 2 jours max (CoinGecko). Récupération de ${effectiveDays} jour(s).`
+      );
+    }
+
+    try {
+      setFetching(true);
+      const baseUrl =
+          (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(
+              /\/$/,
+              ''
+          ) ?? 'http://localhost:8000';
+
+      const url =
+          `${baseUrl}/market/candles/fetch` +
+          `?symbol=${encodeURIComponent(symbol)}` +
+          `&days=${effectiveDays}`;
+
+      const res = await fetch(url, { method: 'POST' });
+      if (!res.ok) {
+        const text = await res.text().catch(() => 'Erreur inconnue');
+        throw new Error(text);
+      }
+
+      // Refresh UI après fetch
+      candles.refresh();
+      gaps.refresh();
+      indicators.refresh();
+    } catch (e) {
+      setFetchError(e instanceof Error ? e.message : String(e));
     } finally {
       setFetching(false);
     }
   };
 
-  // Charger au démarrage
-  useEffect(() => {
-    checkConnection();
-  }, [checkConnection]);
+  // ---------------------------------------------------------------------------
+  // Render helpers
+  // ---------------------------------------------------------------------------
+  const timeframeNotSupported = !isTimeframeSupported(timeframe);
 
-  // Charger les données quand les paramètres changent
-  useEffect(() => {
-    if (apiStatus === 'connected') {
-      loadData();
-    }
-  }, [apiStatus, loadData]);
-
-  // Calculer le statut des données
-  const getDataStatus = () => {
-    if (!candlesMetadata.expected_count) return null;
-
-    const actual = candlesMetadata.count || 0;
-    const expected = candlesMetadata.expected_count;
-    const diff = expected - actual;
-
-    if (diff <= 1) {
-      return { status: 'ok', message: 'Données complètes', color: 'success' as const };
-    } else if (diff <= 3) {
-      return { status: 'warning', message: `${diff} bougies manquantes`, color: 'warning' as const };
-    } else {
-      return { status: 'error', message: `${diff} bougies manquantes`, color: 'error' as const };
-    }
-  };
-
-  const dataStatus = getDataStatus();
-
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        {/* Header */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4, flexWrap: 'wrap', gap: 2 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 'bold' }}>
-            🚀 Bitcoin Trading Assistant
-          </Typography>
-          <StatusBar apiStatus={apiStatus} dbStatus={dbStatus} />
-        </Box>
-
-        {/* Erreur */}
-        {error && (
-            <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-              {error}
-            </Alert>
-        )}
-
-        {/* Message de succès */}
-        <Snackbar
-            open={!!successMessage}
-            autoHideDuration={6000}
-            onClose={() => setSuccessMessage(null)}
-            message={successMessage}
-        />
-
-        {/* Contrôles */}
-        <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>Timeframe</InputLabel>
-            <Select
-                value={timeframe}
-                label="Timeframe"
-                onChange={(e) => setTimeframe(e.target.value)}
-            >
-              <MenuItem value="30m">30 min</MenuItem>
-              <MenuItem value="4h">4 heures</MenuItem>
-              <MenuItem value="4d">4 jours</MenuItem>
-            </Select>
-          </FormControl>
-
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>Historique</InputLabel>
-            <Select
-                value={days}
-                label="Historique"
-                onChange={(e) => setDays(Number(e.target.value))}
-            >
-              <MenuItem value={1}>1 jour</MenuItem>
-              <MenuItem value={7}>7 jours</MenuItem>
-              <MenuItem value={14}>14 jours</MenuItem>
-              <MenuItem value={30}>30 jours</MenuItem>
-              <MenuItem value={90}>90 jours</MenuItem>
-            </Select>
-          </FormControl>
-
-          <Button
-              variant="outlined"
-              startIcon={<RefreshIcon />}
-              onClick={loadData}
-              disabled={loading}
+      <Box
+          sx={{
+            minHeight: '100vh',
+            backgroundColor: 'background.default',
+            py: 3,
+          }}
+      >
+        <Container maxWidth="xl">
+          {/* ================================================================= */}
+          {/* HEADER: Title + Controls */}
+          {/* ================================================================= */}
+          <Box
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 2,
+                mb: 3,
+              }}
           >
-            Actualiser
-          </Button>
+            <Typography variant="h4" fontWeight={700}>
+              Bitcoin Trading Assistant
+            </Typography>
 
-          <Button
-              variant="contained"
-              startIcon={fetching ? <CircularProgress size={20} color="inherit" /> : <DownloadIcon />}
-              onClick={fetchNewData}
-              disabled={fetching}
-          >
-            {fetching ? 'Récupération...' : 'Récupérer données'}
-          </Button>
-        </Box>
+            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+              {/* Timeframe selector */}
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <InputLabel>Timeframe</InputLabel>
+                <Select
+                    value={timeframe}
+                    label="Timeframe"
+                    onChange={handleTimeframeChange}
+                >
+                  <MenuItem value="30m">30 min</MenuItem>
+                  <Tooltip title="Non alimenté actuellement" arrow>
+                    <MenuItem value="1h" sx={{ opacity: 0.5 }}>
+                      1 heure ⚠️
+                    </MenuItem>
+                  </Tooltip>
+                  <MenuItem value="4h">4 heures</MenuItem>
+                  <Tooltip title="Non alimenté actuellement" arrow>
+                    <MenuItem value="1d" sx={{ opacity: 0.5 }}>
+                      1 jour ⚠️
+                    </MenuItem>
+                  </Tooltip>
+                </Select>
+              </FormControl>
 
-        {/* Indicateurs de données */}
-        <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Tooltip title={`Fenêtre: ${candlesMetadata.start_ts ? new Date(candlesMetadata.start_ts).toLocaleString() : '?'} → ${candlesMetadata.end_ts ? new Date(candlesMetadata.end_ts).toLocaleString() : '?'}`}>
-            <Chip
-                label={`${candlesMetadata.count || 0} affichés (rolling ${days}j)`}
-                size="small"
-                variant="outlined"
-            />
-          </Tooltip>
+              {/* Days selector */}
+              <FormControl size="small" sx={{ minWidth: 100 }}>
+                <InputLabel>Historique</InputLabel>
+                <Select
+                    value={String(days)}
+                    label="Historique"
+                    onChange={handleDaysChange}
+                >
+                  <MenuItem value="1">1 jour</MenuItem>
+                  <MenuItem value="2">2 jours</MenuItem>
+                  <MenuItem value="7">7 jours</MenuItem>
+                  <MenuItem value="14">14 jours</MenuItem>
+                  <MenuItem value="30">30 jours</MenuItem>
+                </Select>
+              </FormControl>
 
-          <Chip
-              label={`${candlesMetadata.total_in_db || 0} en base`}
-              size="small"
-              variant="outlined"
-              color="default"
-          />
+              {/* Fetch candles button */}
+              <Button
+                  variant="contained"
+                  color="secondary"
+                  startIcon={<FetchIcon />}
+                  onClick={handleFetchCandles}
+                  disabled={fetching || timeframeNotSupported}
+              >
+                {fetching ? 'Récupération...' : 'Récupérer données'}
+              </Button>
 
-          {candlesMetadata.expected_count && (
-              <Chip
-                  label={`${candlesMetadata.expected_count} attendus`}
-                  size="small"
-                  variant="outlined"
-                  color="default"
-              />
+              {/* Refresh button */}
+              <Button
+                  variant="contained"
+                  startIcon={<RefreshIcon />}
+                  onClick={handleRefreshAll}
+                  disabled={
+                      indicators.loading || gaps.loading || candles.loading
+                  }
+              >
+                Actualiser
+              </Button>
+            </Box>
+          </Box>
+
+          {/* ================================================================= */}
+          {/* WARNINGS / ERRORS */}
+          {/* ================================================================= */}
+          {timeframeNotSupported && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                Le timeframe "{timeframe}" n'est pas encore alimenté par le
+                backend. Les données affichées peuvent être incomplètes ou absentes.
+              </Alert>
           )}
 
-          {dataStatus && (
-              <Chip
-                  icon={dataStatus.status === 'ok' ? <CheckCircleIcon /> : <WarningIcon />}
-                  label={dataStatus.message}
-                  size="small"
-                  color={dataStatus.color}
-              />
+          {fetchError && (
+              <Alert
+                  severity="error"
+                  sx={{ mb: 2 }}
+                  onClose={() => setFetchError(null)}
+              >
+                {fetchError}
+              </Alert>
           )}
-        </Box>
 
-        {/* Contenu principal */}
-        <Grid container spacing={3}>
-          {/* Carte prix */}
-          <Grid item xs={12} md={4}>
-            <PriceCard marketInfo={marketInfo} loading={loading} />
+          {/* ================================================================= */}
+          {/* STATUS ROW */}
+          {/* ================================================================= */}
+          <Box sx={{ mb: 3 }}>
+            <StatusRowConnected timeframe={timeframe} days={days} />
+          </Box>
+
+          {/* ================================================================= */}
+          {/* MAIN CONTENT */}
+          {/* ================================================================= */}
+          <Grid container spacing={3}>
+            {/* Left column: Indicators */}
+            <Grid item xs={12} lg={4}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <IndicatorPanel
+                    data={indicators.data}
+                    loading={indicators.loading}
+                    error={indicators.error}
+                    onRefresh={indicators.refresh}
+                    timeframe={timeframe}
+                    historyDays={days}
+                />
+              </Box>
+            </Grid>
+
+            {/* Right column: Chart */}
+            <Grid item xs={12} lg={8}>
+              {candles.error && (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    {candles.error}
+                  </Alert>
+              )}
+
+              <ChartErrorBoundary
+                  fallbackMessage="Le graphique a rencontré une erreur inattendue."
+              >
+                <CandlestickChart
+                    candles={candles.candles}
+                    symbol={symbol}
+                    timeframe={timeframe}
+                    loading={candles.loading}
+                />
+              </ChartErrorBoundary>
+            </Grid>
           </Grid>
-
-          {/* Graphique */}
-          <Grid item xs={12} md={8}>
-            <CandlestickChart
-                candles={candles}
-                symbol={symbol}
-                timeframe={timeframe}
-                loading={loading}
-            />
-          </Grid>
-        </Grid>
-
-        {/* Footer avec infos détaillées */}
-        <Box sx={{ mt: 4, textAlign: 'center' }}>
-          <Typography variant="body2" color="text.secondary">
-            Données fournies par CoinGecko
-            {candlesMetadata.start_ts && candlesMetadata.end_ts && (
-                <>
-                  {' • '}
-                  Période: {new Date(candlesMetadata.start_ts).toLocaleDateString()} → {new Date(candlesMetadata.end_ts).toLocaleDateString()}
-                </>
-            )}
-          </Typography>
-        </Box>
-      </Container>
+        </Container>
+      </Box>
   );
-}
+};
+
+export default Dashboard;
