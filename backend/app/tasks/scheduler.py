@@ -7,6 +7,7 @@ Objectifs:
 - State in-memory thread-safe (last_run, next_run, last_result)
 - Ne dépend pas du contexte FastAPI (pas de Depends)
 - Resample 4h → 1d après chaque fetch (PHASE 2A)
+- Resample 30m → 1h après chaque fetch (PHASE 2B)
 
 Variables d'environnement:
 - SCHEDULER_ENABLED: true/false
@@ -31,7 +32,8 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Candle
 from app.services.coingecko_service import CoinGeckoService
-from app.services.resample_service import resample_4h_to_1d
+from app.services.resample_service import resample_4h_to_1d, resample_30m_to_1h
+
 from app.utils import normalize_to_utc, align_to_bucket
 
 # Logger
@@ -97,6 +99,7 @@ def _set_state(**kwargs: Any) -> None:
 def get_status() -> dict[str, Any]:
     """Retourne l'état actuel du scheduler."""
     with _state_lock:
+
         def iso(dt: Any) -> Any:
             if isinstance(dt, datetime):
                 return dt.astimezone(timezone.utc).isoformat()
@@ -237,31 +240,28 @@ def _run_coroutine(coro):
     return asyncio.run(coro)
 
 
-def _run_resample_4h_to_1d(db, symbol: str, min_ts: Optional[datetime], max_ts: Optional[datetime]) -> dict[str, Any]:
+def _run_resample_4h_to_1d(
+        db,
+        symbol: str,
+        min_ts: Optional[datetime],
+        max_ts: Optional[datetime]
+) -> dict[str, Any]:
     """
     Exécute le resample 4h → 1d après le fetch.
-    
-    Args:
-        db: Session SQLAlchemy
-        symbol: Paire de trading
-        min_ts: Timestamp minimum des candles fetchés
-        max_ts: Timestamp maximum des candles fetchés
-    
-    Returns:
-        Dict avec le résultat du resample: {"1d": count} ou {"1d": 0, "error": "..."}
+    Returns: {"1d": count} ou {"1d": 0, "error": "..."} (et éventuellement "skipped": True)
     """
     try:
-        # Étendre la fenêtre de resample pour capturer tous les buckets 1d impactés
-        # On prend min_ts aligné sur 00:00 UTC et max_ts + 1 jour
         if min_ts is None or max_ts is None:
             logger.warning("⚠️ Resample skipped: no min/max timestamps")
             return {"1d": 0, "skipped": True}
 
-        # Aligner min_ts sur le début du jour (00:00 UTC)
+        # Aligner min_ts sur 00:00 UTC
         start_time = min_ts.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # Étendre max_ts jusqu'à la fin du jour suivant pour capturer le bucket partiel
-        end_time = (max_ts + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        # Étendre max_ts au début du jour suivant (bucket inclus)
+        end_time = (max_ts + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
 
         logger.info(f"🔄 Resample 4h→1d: {start_time.isoformat()} → {end_time.isoformat()}")
 
@@ -280,17 +280,57 @@ def _run_resample_4h_to_1d(db, symbol: str, min_ts: Optional[datetime], max_ts: 
         return {"1d": 0, "error": str(e)}
 
 
+def _run_resample_30m_to_1h(
+        db,
+        symbol: str,
+        min_ts: Optional[datetime],
+        max_ts: Optional[datetime]
+) -> dict[str, Any]:
+    """
+    Exécute le resample 30m → 1h après le fetch.
+    Returns: {"1h": count} ou {"1h": 0, "error": "..."} (et éventuellement "skipped": True)
+    """
+    try:
+        if min_ts is None or max_ts is None:
+            logger.warning("⚠️ Resample 30m→1h skipped: no min/max timestamps")
+            return {"1h": 0, "skipped": True}
+
+        # Aligner min_ts sur le début de l'heure (hh:00 UTC)
+        start_time = min_ts.replace(minute=0, second=0, microsecond=0)
+
+        # Étendre max_ts à l'heure suivante (bucket inclus)
+        end_time = (max_ts + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+
+        logger.info(f"🔄 Resample 30m→1h: {start_time.isoformat()} → {end_time.isoformat()}")
+
+        count_1h = resample_30m_to_1h(
+            db=db,
+            symbol=symbol,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        logger.info(f"✅ Resample 30m→1h: {count_1h} candles 1h créés/mis à jour")
+        return {"1h": count_1h}
+
+    except Exception as e:
+        logger.error(f"❌ Resample 30m→1h erreur: {e}")
+        return {"1h": 0, "error": str(e)}
+
+
 def fetch_candles_job() -> None:
     """
     Job APScheduler (sync) — exécute l'async via asyncio.run.
 
     Crée sa propre session DB, la ferme dans finally.
-    
+
     Flow:
-    1. Fetch candles 4h depuis CoinGecko
-    2. Commit les candles 4h
-    3. Resample 4h → 1d (si timeframe == 4h)
-    4. Commit les candles 1d
+    1. Fetch candles 4h ou 30m depuis CoinGecko
+    2. Commit les candles source
+    3. Resample:
+       - si timeframe == 4h => 4h → 1d
+       - si timeframe == 30m => 30m → 1h
+    4. Commit les candles resamplées
     """
     cfg = _read_config()
     symbol = cfg["symbol"]
@@ -308,18 +348,31 @@ def fetch_candles_job() -> None:
         db.commit()
 
         # =====================================================
-        # PHASE 2A: Resample 4h → 1d après commit des candles 4h
+        # FIX CONTRACTUEL: resample doit toujours avoir 1d + 1h
         # =====================================================
-        resample_result = {"1d": 0}
+        resample_result: dict[str, Any] = {"1d": 0, "1h": 0}
 
         if result.get("timeframe") == "4h":
-            resample_result = _run_resample_4h_to_1d(
+            res = _run_resample_4h_to_1d(
                 db=db,
                 symbol=symbol,
                 min_ts=result.get("min_ts"),
                 max_ts=result.get("max_ts"),
             )
-            db.commit()  # Commit les candles 1d
+            # conserve "error"/"skipped" éventuels, et met 1d
+            resample_result.update(res)
+            db.commit()
+
+        elif result.get("timeframe") == "30m":
+            res = _run_resample_30m_to_1h(
+                db=db,
+                symbol=symbol,
+                min_ts=result.get("min_ts"),
+                max_ts=result.get("max_ts"),
+            )
+            # conserve "error"/"skipped" éventuels, et met 1h
+            resample_result.update(res)
+            db.commit()
 
         # Ajouter le résultat du resample au result
         result["resample"] = resample_result
@@ -337,12 +390,13 @@ def fetch_candles_job() -> None:
         )
 
         logger.info(
-            f"✅ Scheduler job terminé: "
+            "✅ Scheduler job terminé: "
             f"fetched={result['fetched']}, "
             f"inserted={result['inserted']}, "
             f"updated={result['updated']}, "
             f"duplicates={result['duplicates']}, "
             f"resample_1d={resample_result.get('1d', 0)}, "
+            f"resample_1h={resample_result.get('1h', 0)}, "
             f"duration={duration}s"
         )
 
@@ -429,7 +483,7 @@ def start_scheduler() -> None:
     )
 
     logger.info(
-        f"🕐 Scheduler démarré: "
+        "🕐 Scheduler démarré: "
         f"interval={cfg['interval_minutes']}min, "
         f"symbol={cfg['symbol']}, "
         f"days={cfg['days']}, "
