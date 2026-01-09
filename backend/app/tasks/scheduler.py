@@ -6,6 +6,7 @@ Objectifs:
 - Une session DB par exécution (safe)
 - State in-memory thread-safe (last_run, next_run, last_result)
 - Ne dépend pas du contexte FastAPI (pas de Depends)
+- Resample 4h → 1d après chaque fetch (PHASE 2A)
 
 Variables d'environnement:
 - SCHEDULER_ENABLED: true/false
@@ -30,6 +31,7 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Candle
 from app.services.coingecko_service import CoinGeckoService
+from app.services.resample_service import resample_4h_to_1d
 from app.utils import normalize_to_utc, align_to_bucket
 
 # Logger
@@ -150,11 +152,19 @@ async def _fetch_and_store(db, symbol: str, days: int) -> dict[str, Any]:
     inserted = 0
     updated = 0
     duplicates = 0
+    min_ts: Optional[datetime] = None
+    max_ts: Optional[datetime] = None
 
     for candle_data in ohlc_data:
         ts = candle_data["timestamp"]
         ts = normalize_to_utc(ts)
         ts = align_to_bucket(ts, timeframe)
+
+        # Track min/max timestamps for resample window
+        if min_ts is None or ts < min_ts:
+            min_ts = ts
+        if max_ts is None or ts > max_ts:
+            max_ts = ts
 
         # Match exact sur timestamp aligné
         existing = db.query(Candle).filter(
@@ -217,6 +227,8 @@ async def _fetch_and_store(db, symbol: str, days: int) -> dict[str, Any]:
         "inserted": inserted,
         "updated": updated,
         "duplicates": duplicates,
+        "min_ts": min_ts,
+        "max_ts": max_ts,
     }
 
 
@@ -225,11 +237,60 @@ def _run_coroutine(coro):
     return asyncio.run(coro)
 
 
+def _run_resample_4h_to_1d(db, symbol: str, min_ts: Optional[datetime], max_ts: Optional[datetime]) -> dict[str, Any]:
+    """
+    Exécute le resample 4h → 1d après le fetch.
+    
+    Args:
+        db: Session SQLAlchemy
+        symbol: Paire de trading
+        min_ts: Timestamp minimum des candles fetchés
+        max_ts: Timestamp maximum des candles fetchés
+    
+    Returns:
+        Dict avec le résultat du resample: {"1d": count} ou {"1d": 0, "error": "..."}
+    """
+    try:
+        # Étendre la fenêtre de resample pour capturer tous les buckets 1d impactés
+        # On prend min_ts aligné sur 00:00 UTC et max_ts + 1 jour
+        if min_ts is None or max_ts is None:
+            logger.warning("⚠️ Resample skipped: no min/max timestamps")
+            return {"1d": 0, "skipped": True}
+
+        # Aligner min_ts sur le début du jour (00:00 UTC)
+        start_time = min_ts.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Étendre max_ts jusqu'à la fin du jour suivant pour capturer le bucket partiel
+        end_time = (max_ts + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+        logger.info(f"🔄 Resample 4h→1d: {start_time.isoformat()} → {end_time.isoformat()}")
+
+        count_1d = resample_4h_to_1d(
+            db=db,
+            symbol=symbol,
+            start_time=start_time,
+            end_time=end_time,
+        )
+
+        logger.info(f"✅ Resample 4h→1d: {count_1d} candles 1d créés/mis à jour")
+        return {"1d": count_1d}
+
+    except Exception as e:
+        logger.error(f"❌ Resample 4h→1d erreur: {e}")
+        return {"1d": 0, "error": str(e)}
+
+
 def fetch_candles_job() -> None:
     """
     Job APScheduler (sync) — exécute l'async via asyncio.run.
 
     Crée sa propre session DB, la ferme dans finally.
+    
+    Flow:
+    1. Fetch candles 4h depuis CoinGecko
+    2. Commit les candles 4h
+    3. Resample 4h → 1d (si timeframe == 4h)
+    4. Commit les candles 1d
     """
     cfg = _read_config()
     symbol = cfg["symbol"]
@@ -246,6 +307,27 @@ def fetch_candles_job() -> None:
         result = _run_coroutine(_fetch_and_store(db, symbol=symbol, days=days))
         db.commit()
 
+        # =====================================================
+        # PHASE 2A: Resample 4h → 1d après commit des candles 4h
+        # =====================================================
+        resample_result = {"1d": 0}
+
+        if result.get("timeframe") == "4h":
+            resample_result = _run_resample_4h_to_1d(
+                db=db,
+                symbol=symbol,
+                min_ts=result.get("min_ts"),
+                max_ts=result.get("max_ts"),
+            )
+            db.commit()  # Commit les candles 1d
+
+        # Ajouter le résultat du resample au result
+        result["resample"] = resample_result
+
+        # Nettoyer les champs internes (min_ts, max_ts ne sont pas sérialisables)
+        result.pop("min_ts", None)
+        result.pop("max_ts", None)
+
         duration = round(time.perf_counter() - start, 3)
         result["duration_seconds"] = duration
 
@@ -260,6 +342,7 @@ def fetch_candles_job() -> None:
             f"inserted={result['inserted']}, "
             f"updated={result['updated']}, "
             f"duplicates={result['duplicates']}, "
+            f"resample_1d={resample_result.get('1d', 0)}, "
             f"duration={duration}s"
         )
 
