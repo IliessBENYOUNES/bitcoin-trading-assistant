@@ -2,7 +2,7 @@
 // Dashboard.tsx - Main dashboard with indicators, status, and chart
 // =============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Box,
   Container,
@@ -22,6 +22,7 @@ import {
   Refresh as RefreshIcon,
   CloudDownload as FetchIcon,
   CheckCircle as SuccessIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
 
 // Composants
@@ -57,7 +58,7 @@ interface FetchResult {
   error?: string;
 }
 
-// Tous les timeframes sont maintenant supportés
+// Tous les timeframes sont supportés
 const SUPPORTED_TIMEFRAMES: TimeframeOption[] = ['30m', '1h', '4h', '1d'];
 
 function isTimeframeSupported(tf: TimeframeOption): boolean {
@@ -77,13 +78,21 @@ function getTriggerEndpoint(tf: TimeframeOption): string {
 }
 
 /**
- * Retourne un label explicatif pour l'utilisateur sur ce que le fetch va faire.
+ * Calcule l'historique effectif en fonction du timeframe.
+ * Pour 30m et 1h, on cap à 1 jour (limite CoinGecko).
  */
-function getFetchDescription(tf: TimeframeOption): string {
+function getEffectiveDays(tf: TimeframeOption, requestedDays: DaysOption): number {
   if (tf === '30m' || tf === '1h') {
-    return 'Récupère 30m + génère 1h';
+    return Math.min(requestedDays, 1);
   }
-  return 'Récupère 4h + génère 1d';
+  return requestedDays;
+}
+
+/**
+ * Vérifie si l'historique est cappé pour ce timeframe.
+ */
+function isHistoryCapped(tf: TimeframeOption, requestedDays: DaysOption): boolean {
+  return (tf === '30m' || tf === '1h') && requestedDays > 1;
 }
 
 // -----------------------------------------------------------------------------
@@ -103,21 +112,34 @@ const Dashboard: React.FC = () => {
   const symbol = 'BTC/USD';
 
   // ---------------------------------------------------------------------------
-  // Hooks - Data fetching
+  // Computed: effectiveDays (cappé pour 30m/1h)
+  // ---------------------------------------------------------------------------
+  const effectiveDays = useMemo(
+      () => getEffectiveDays(timeframe, days),
+      [timeframe, days]
+  );
+
+  const historyCapped = useMemo(
+      () => isHistoryCapped(timeframe, days),
+      [timeframe, days]
+  );
+
+  // ---------------------------------------------------------------------------
+  // Hooks - Data fetching (utilisent effectiveDays)
   // ---------------------------------------------------------------------------
   const indicators = useIndicators({
     timeframe,
-    historyDays: days,
+    historyDays: effectiveDays,
   });
 
   const gaps = useMarketGaps({
     timeframe,
-    days,
+    days: effectiveDays,
   });
 
   const candles = useCandles({
     timeframe,
-    days,
+    days: effectiveDays,
   });
 
   // ---------------------------------------------------------------------------
@@ -145,11 +167,8 @@ const Dashboard: React.FC = () => {
     setFetchError(null);
     setFetchResult(null);
 
-    // Garde-fou: vérifier si timeframe supporté
     if (!isTimeframeSupported(timeframe)) {
-      setFetchError(
-          `Timeframe "${timeframe}" non supporté.`
-      );
+      setFetchError(`Timeframe "${timeframe}" non supporté.`);
       return;
     }
 
@@ -274,7 +293,6 @@ const Dashboard: React.FC = () => {
                   startIcon={<FetchIcon />}
                   onClick={handleFetchCandles}
                   disabled={fetching || timeframeNotSupported}
-                  title={getFetchDescription(timeframe)}
               >
                 {fetching ? 'Récupération...' : 'Fetch API'}
               </Button>
@@ -386,19 +404,24 @@ const Dashboard: React.FC = () => {
               </Alert>
           )}
 
-          {/* Info pour 30m/1h: limité à 1 jour via scheduler */}
-          {(timeframe === '30m' || timeframe === '1h') && days > 1 && (
-              <Alert severity="info" sx={{ mb: 2 }}>
-                Note: Le scheduler 30m récupère 1 jour de données (limite CoinGecko).
-                L'historique affiché peut être limité.
+          {/* Info: historique cappé pour 30m/1h */}
+          {historyCapped && (
+              <Alert
+                  severity="info"
+                  icon={<InfoIcon />}
+                  sx={{ mb: 2 }}
+              >
+                <strong>Limite CoinGecko :</strong> Les timeframes 30m et 1h sont disponibles sur 1 jour maximum.
+                L'affichage est limité à {effectiveDays} jour (vous avez sélectionné {days} jours).
+                Pour un historique plus long, utilisez 4h ou 1d.
               </Alert>
           )}
 
           {/* ================================================================= */}
-          {/* STATUS ROW */}
+          {/* STATUS ROW (utilise effectiveDays) */}
           {/* ================================================================= */}
           <Box sx={{ mb: 3 }}>
-            <StatusRowConnected timeframe={timeframe} days={days} />
+            <StatusRowConnected timeframe={timeframe} days={effectiveDays} />
           </Box>
 
           {/* ================================================================= */}
@@ -414,7 +437,7 @@ const Dashboard: React.FC = () => {
                     error={indicators.error}
                     onRefresh={indicators.refresh}
                     timeframe={timeframe}
-                    historyDays={days}
+                    historyDays={effectiveDays}
                 />
               </Box>
             </Grid>
@@ -430,7 +453,7 @@ const Dashboard: React.FC = () => {
               {/* Message si aucune donnée */}
               {noData && !candles.error && (
                   <Alert severity="info" sx={{ mb: 2 }}>
-                    Aucune donnée disponible pour {timeframe} / {days} jour(s).
+                    Aucune donnée disponible pour {timeframe} / {effectiveDays} jour(s).
                     Cliquez sur "Fetch API" pour récupérer les données.
                   </Alert>
               )}
