@@ -194,6 +194,17 @@ class TestRunResample4hTo1d:
 # =========================
 # Tests Job Integration
 # =========================
+@pytest.fixture
+def mock_session():
+    """
+    Fixture manquante: mock SessionLocal pour éviter d'ouvrir une vraie DB
+    et stabiliser les tests de scheduler.
+    """
+    with patch("app.tasks.scheduler.SessionLocal") as mock_session_local:
+        db = MagicMock()
+        mock_session_local.return_value = db
+        yield db
+
 
 class TestFetchCandlesJobWithResample:
     """Tests pour fetch_candles_job avec resample intégré."""
@@ -269,45 +280,35 @@ class TestFetchCandlesJobWithResample:
         assert "1d" in last_result["resample"]
         assert last_result["resample"]["1d"] >= 0  # Peut être 0 si la fenêtre ne couvre pas un jour complet
 
-    def test_job_30m_does_not_resample(self, monkeypatch):
-        """Le job 30m (days<=2) ne déclenche pas le resample 4h→1d."""
-        mock_settings = MagicMock()
-        mock_settings.scheduler_enabled = True
-        mock_settings.scheduler_interval_minutes = 5
-        mock_settings.scheduler_symbol = "BTC/USD"
-        mock_settings.scheduler_days = 2  # 2 jours = timeframe 30m
+    def test_job_30m_does_not_resample(self, mock_settings, mock_session):
+        """
+        Vérifie que le job 30m n'exécute PAS resample_4h_to_1d.
+        (Il fait resample_30m_to_1h à la place)
+        """
+        from app.tasks.scheduler import fetch_candles_30m_job, scheduler_state
 
-        monkeypatch.setattr(sched, "get_settings", lambda: mock_settings)
-
-        fake_db = MagicMock()
-        monkeypatch.setattr(sched, "SessionLocal", lambda: fake_db)
-
-        def fake_run(_coro):
-            return {
+        with patch("app.tasks.scheduler._run_coroutine") as mock_run:
+            mock_run.return_value = {
                 "status": "success",
-                "symbol": "BTC/USD",
-                "days": 2,
-                "timeframe": "30m",  # 30m, pas 4h
-                "fetched": 96,
-                "inserted": 10,
+                "fetched": 48,
+                "inserted": 48,
                 "updated": 0,
-                "duplicates": 86,
-                "min_ts": datetime(2026, 1, 1, tzinfo=timezone.utc),
-                "max_ts": datetime(2026, 1, 2, tzinfo=timezone.utc),
+                "duplicates": 0,
+                "min_ts": datetime(2024, 1, 1, 0, 0, tzinfo=timezone.utc),
+                "max_ts": datetime(2024, 1, 1, 23, 30, tzinfo=timezone.utc),
             }
 
-        monkeypatch.setattr(sched, "_run_coroutine", fake_run)
+            with patch("app.tasks.scheduler.resample_4h_to_1d") as mock_resample_4h:
+                with patch("app.tasks.scheduler.resample_30m_to_1h", return_value=2):
+                    fetch_candles_30m_job()
 
-        # Exécuter le job
-        sched.fetch_candles_job()
+                    # Le job 30m ne doit PAS appeler resample_4h_to_1d
+                    mock_resample_4h.assert_not_called()
 
-        # Vérifications
-        status = sched.get_status()
-        last_result = status["last_result"]
-
-        assert last_result["status"] == "success"
-        # resample doit être {"1d": 0} car timeframe != 4h
-        assert last_result["resample"]["1d"] == 0
+                    # Vérifier que le résultat a le contrat correct
+                    last_result = scheduler_state["jobs"]["30m"]["last_result"]
+                    assert last_result["resample"]["1d"] == 0  # Pas de resample 1d
+                    assert last_result["resample"]["1h"] == 2  # Resample 1h fait
 
     def test_job_resample_error_does_not_fail_job(self, monkeypatch, mock_settings):
         """Une erreur dans le resample ne fait pas échouer le job principal."""
