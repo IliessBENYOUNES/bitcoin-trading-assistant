@@ -41,7 +41,7 @@ type TimeframeOption = '30m' | '1h' | '4h' | '1d';
 type DaysOption = 1 | 2 | 7 | 14 | 30;
 
 // Timeframes actuellement supportés par le backend
-const SUPPORTED_TIMEFRAMES: TimeframeOption[] = ['30m', '4h'];
+const SUPPORTED_TIMEFRAMES: TimeframeOption[] = ['30m', '4h', '1d'];
 
 function isTimeframeSupported(tf: TimeframeOption): boolean {
   return SUPPORTED_TIMEFRAMES.includes(tf);
@@ -193,11 +193,7 @@ const Dashboard: React.FC = () => {
                     onChange={handleTimeframeChange}
                 >
                   <MenuItem value="30m">30 min</MenuItem>
-                  <Tooltip title="Non alimenté actuellement" arrow>
-                    <MenuItem value="1h" sx={{ opacity: 0.5 }}>
-                      1 heure ⚠️
-                    </MenuItem>
-                  </Tooltip>
+                  <MenuItem value="1d">1 jour</MenuItem>
                   <MenuItem value="4h">4 heures</MenuItem>
                   <Tooltip title="Non alimenté actuellement" arrow>
                     <MenuItem value="1d" sx={{ opacity: 0.5 }}>
