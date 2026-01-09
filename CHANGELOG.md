@@ -1,9 +1,32 @@
 # Changelog
 
-All notable changes to the Bitcoin Trading Assistant project.
+All notable changes to this project will be documented in this file.
 
-Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+## [0.5.1] - 2026-01-09
 
+### Added
+- **Scheduler resample 4h→1d**: après chaque fetch CoinGecko 4h, les candles sont automatiquement agrégés en timeframe 1d
+- `/scheduler/status` expose `last_result.resample.1d` avec le nombre de candles 1d créés
+- 7 nouveaux tests backend pour le resample (`test_scheduler_resample_1d.py`)
+- Support `db_upsert.py` dialect-aware (SQLite + PostgreSQL)
+- Support `resample_service.py` pour agrégation OHLCV
+
+### Fixed
+- Candles 1d alignés sur 00:00 UTC (l'affichage peut montrer +01:00 selon timezone locale)
+
+### Technical
+- 89 tests backend passing
+- Resample idempotent (upsert, pas de duplication)
+- Erreur resample isolée (ne fait pas échouer le job principal)
+
+## [0.5.0] - 2026-01-08
+
+### Added
+- Frontend Dashboard complet avec indicateurs RSI/MACD/SMA/Bollinger
+- Chips DATA: FRESH/STALE/GAPS + SCHEDULER: ON/OFF
+- Graphique chandeliers Lightweight Charts
+- Bouton "Récupérer données" avec guards timeframe
+- ErrorBoundary pour le graphique
 ---
 
 ## [v0.4-scheduler] - 2026-01-08
