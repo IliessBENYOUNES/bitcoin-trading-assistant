@@ -1,0 +1,30 @@
+# Root .gitignore (monorepo)
+
+# IDE
+.idea/
+.vscode/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/node_modules/.vite/
+
+# Python
+backend/venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+
+# DB artifacts
+*.db
+test.db
+backend/test.db
+
+# Archives
+*.zip
+
+# Env
+.env
+.env.*
+!.env.example
