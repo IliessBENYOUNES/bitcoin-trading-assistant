@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 1er avril 2026
 > **Version :** v0.6.0
 > **Branche :** `master`
-> **Dernier commit :** `8d443e6` — fix: restore Dashboard.tsx
+> **Dernier commit :** `49dccb2` — docs: add CURRENT_STATE.md and AGENT.md
 
 ---
 
@@ -220,7 +220,38 @@ python -m pytest tests/ -v
 
 ---
 
-## 7. Ce qui n'est PAS encore fait
+## 7. Vision : BTC Insight → INFINI
+
+Le projet suit une trajectoire en 3 étapes (détails : [ROADMAP_INFINI.md](./ROADMAP_INFINI.md)) :
+
+| Étape | Nom | Versions | Description | Status |
+|-------|-----|----------|-------------|--------|
+| **1** | BTC Insight | v0.2 → v0.9 | Assistant visuel, pédagogique | 🔄 En cours |
+| **2** | INFINI v1 | v1.0 → v1.5 | Assistant intelligent, décisionnel | ⬜ Non commencé |
+| **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
+
+**Position actuelle :** Fin du **Niveau 1** (Socle marché). Entrée dans le **Niveau 2** (Intelligence analytique).
+
+---
+
+## 8. Prochaine étape : v0.7 — Moteur de Signaux
+
+Le système passe de "afficher des chiffres" à "interpréter et expliquer" :
+
+| Fichier à créer | Description |
+|-----------------|-------------|
+| `backend/app/services/signal_service.py` | Interpréter RSI/MACD/SMA/Bollinger → signaux structurés |
+| `backend/app/schemas/signal.py` | Schémas SignalItem, CompositeScore, SignalResponse |
+| `backend/app/api/routes/market.py` | Ajouter `GET /market/signals` |
+| `backend/tests/test_signals.py` | Tests unitaires pour chaque interpréteur |
+| `frontend/src/components/SignalPanel.tsx` | Jauge score, liste signaux, consensus |
+| `frontend/src/hooks/useSignals.ts` | Hook + types TypeScript |
+
+**Résultat attendu :** L'utilisateur voit *"RSI en surachat (72), MACD croisé baissier → Score -65 (baissier, confiance haute)"* au lieu de juste des chiffres.
+
+---
+
+## 9. Ce qui n'est PAS encore fait
 
 | Feature | Phase | Status |
 |---------|-------|--------|
@@ -237,7 +268,7 @@ python -m pytest tests/ -v
 
 ---
 
-## 8. Problèmes connus
+## 10. Problèmes connus
 
 | # | Problème | Sévérité | Notes |
 |---|----------|----------|-------|

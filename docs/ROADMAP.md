@@ -1,6 +1,43 @@
-# 🗺️ Roadmap — Bitcoin Trading Assistant
+# 🗺️ Roadmap — Bitcoin Trading Assistant → INFINI
 
-## État actuel (v0.6.0)
+> **Dernière mise à jour :** 1er avril 2026
+> **Document de référence détaillé :** [ROADMAP_INFINI.md](./ROADMAP_INFINI.md) (976 lignes)
+
+---
+
+## Vision : 3 étapes vers INFINI
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  ÉTAPE 1 — BTC Insight (v0.2 → v0.9)                               │
+│  Assistant visuel, modulaire, pédagogique                           │
+│  ├── Données marché temps réel          ✅ Livré (v0.2-v0.6)       │
+│  ├── Indicateurs techniques             ✅ Livré (v0.3)            │
+│  ├── Signaux & scoring                  ⬜ Prochaine étape (v0.7)  │
+│  ├── Alertes visuelles                  ⬜ Planifié (v0.8)         │
+│  └── News & sentiment                   ⬜ Planifié (v0.9)         │
+│                                                                      │
+│  ÉTAPE 2 — INFINI v1 (v1.0 → v1.5)                                 │
+│  Assistant intelligent, décisionnel                                  │
+│  ├── Moteur de décision / règles        ⬜ Planifié (v1.0)         │
+│  ├── Backtesting engine                 ⬜ Planifié (v1.1)         │
+│  ├── Multi-assets                       ⬜ Planifié (v1.2)         │
+│  ├── Risk management engine             ⬜ Planifié (v1.3)         │
+│  ├── Paper trading                      ⬜ Planifié (v1.4)         │
+│  └── Production (Docker, CI/CD, Auth)   ⬜ Planifié (v1.5)         │
+│                                                                      │
+│  ÉTAPE 3 — INFINI v2 (v2.0+)                                       │
+│  Assistant autonome (sous contrôle humain)                           │
+│  ├── Exécution automatisée              ⬜ Futur                    │
+│  ├── Mode fantôme (observer sans agir)  ⬜ Futur                    │
+│  ├── Apprentissage de stratégies        ⬜ Futur                    │
+│  └── Kill switch & audit trail          ⬜ Futur                    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## État actuel : v0.6.0 — Fin du Niveau 1 (Socle marché)
 
 | Composant | Status |
 |-----------|--------|
@@ -10,79 +47,135 @@
 | Frontend Dashboard | ✅ Complet |
 | Indicateurs (RSI, MACD, SMA, Bollinger) | ✅ Complet |
 | Chart Lightweight Charts | ✅ Complet |
+| 110 tests backend | ✅ Tous passing |
 
 ---
 
-## Phase 3 : Améliorations UX (v0.7)
+## PROCHAINE ÉTAPE : v0.7 — Moteur de Signaux (Niveau 2)
+
+> Le projet passe du **Niveau 1** (données + affichage) au **Niveau 2** (intelligence analytique).
+> Le système commence à *interpréter* et *penser*.
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
-| 3.1 Cap effectiveDays 30m/1h | 🔴 Haute | 1h | Éviter faux GAPS (Option A - en cours) |
-| 3.2 Dark/Light mode toggle | 🟡 Moyenne | 2h | ThemeProvider MUI |
-| 3.3 Responsive mobile | 🟡 Moyenne | 3h | Breakpoints, menu hamburger |
-| 3.4 Persistance localStorage | 🟢 Basse | 1h | Sauvegarder timeframe/days préférés |
+| 7.1 `signal_service.py` | 🔴 Haute | 4h | Interpréter RSI/MACD/SMA/Bollinger → signaux structurés |
+| 7.2 Schéma `SignalResponse` | 🔴 Haute | 1h | SignalItem, CompositeScore, consensus |
+| 7.3 `GET /market/signals` | 🔴 Haute | 2h | Endpoint API retournant signaux + score |
+| 7.4 Score composite | 🔴 Haute | 3h | Agrégation -100/+100, confiance, convergence |
+| 7.5 `test_signals.py` | 🔴 Haute | 4h | Tests unitaires pour chaque interpréteur |
+| 7.6 `SignalPanel.tsx` | 🟡 Moyenne | 4h | Jauge, liste signaux, badge consensus |
+| 7.7 Hook `useSignals.ts` | 🟡 Moyenne | 1h | Fetch + types TypeScript |
+
+**Livrable v0.7 :**
+> L'utilisateur voit un panel qui dit : *"RSI en surachat (72), MACD croisé baissier, prix sous SMA50 → Score -65 (baissier, confiance haute)"* au lieu de juste voir des chiffres bruts.
 
 ---
 
-## Phase 4 : Alertes & Notifications (v0.8)
+## Phase v0.8 — Alertes & Notifications
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
-| 4.1 Modèle Alert en DB | 🔴 Haute | 2h | SQLAlchemy model: price, RSI, MACD thresholds |
-| 4.2 API CRUD /alerts | 🔴 Haute | 3h | GET/POST/PUT/DELETE |
-| 4.3 Service AlertChecker | 🔴 Haute | 4h | Job scheduler qui évalue les conditions |
-| 4.4 UI AlertPanel | 🟡 Moyenne | 4h | Formulaire création + liste alertes actives |
-| 4.5 Notifications browser | 🟡 Moyenne | 2h | Web Push API ou polling |
-| 4.6 Webhook/Discord/Telegram | 🟢 Basse | 3h | Notifications externes |
+| 8.1 Modèle Alert en DB | 🔴 Haute | 2h | SQLAlchemy: seuils prix, RSI, MACD, signaux |
+| 8.2 API CRUD `/alerts` | 🔴 Haute | 3h | GET/POST/PUT/DELETE |
+| 8.3 Service AlertChecker | 🔴 Haute | 4h | Job scheduler évaluant les conditions |
+| 8.4 UI AlertPanel | 🟡 Moyenne | 4h | Formulaire + liste alertes actives |
+| 8.5 Notifications browser | 🟡 Moyenne | 2h | Web Push ou polling |
+| 8.6 Webhook Discord/Telegram | 🟢 Basse | 3h | Notifications externes |
 
 ---
 
-## Phase 5 : Multi-Assets (v0.9)
+## Phase v0.9 — News & Sentiment
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
-| 5.1 Dropdown symbole | 🔴 Haute | 2h | BTC/USD, ETH/USD, SOL/USD... |
-| 5.2 Scheduler multi-symbol | 🔴 Haute | 4h | Loop sur liste configurable |
-| 5.3 Dashboard comparatif | 🟡 Moyenne | 4h | Vue multi-charts ou tabs |
-| 5.4 Heatmap correlation | 🟢 Basse | 6h | Matrice de corrélation entre assets |
+| 9.1 Collecteur de news | 🔴 Haute | 4h | RSS, CryptoCompare, ou API news |
+| 9.2 Classification sentiment | 🔴 Haute | 6h | Positif / neutre / négatif par article |
+| 9.3 Score d'impact | 🟡 Moyenne | 3h | Fort / moyen / faible |
+| 9.4 Intégration au scoring | 🟡 Moyenne | 4h | Pondérer le score composite avec le sentiment |
+| 9.5 UI NewsPanel | 🟡 Moyenne | 4h | Fil d'actus classé avec filtres |
 
 ---
 
-## Phase 6 : Backtesting (v1.0)
+## Phase v1.0 — Moteur de Décision (INFINI v1)
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
-| 6.1 Modèle Strategy | 🔴 Haute | 3h | Entry/exit rules en JSON ou Python |
-| 6.2 Engine backtest | 🔴 Haute | 8h | Simuler trades sur historique |
-| 6.3 Métriques performance | 🔴 Haute | 4h | Sharpe, Max Drawdown, Win Rate |
-| 6.4 UI Backtest results | 🟡 Moyenne | 6h | Equity curve, trades table |
-| 6.5 Optimisation paramètres | 🟢 Basse | 8h | Grid search sur indicateurs |
+| 10.1 Moteur de règles | 🔴 Haute | 8h | Conditions combinées paramétrables |
+| 10.2 Scénarios multi-outcome | 🔴 Haute | 6h | "Hausse 65% / Stable 25% / Baisse 10%" |
+| 10.3 Recommandations explicables | 🔴 Haute | 4h | Raison en langage naturel |
+| 10.4 API `/market/decision` | 🔴 Haute | 3h | Endpoint structuré |
+| 10.5 UI DecisionPanel | 🟡 Moyenne | 6h | Scénarios visuels + confiance |
 
 ---
 
-## Phase 7 : Trading Live (v1.1) ⚠️
+## Phase v1.1 — Backtesting
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
-| 7.1 Intégration exchange API | 🔴 Haute | 8h | Kraken/Binance via ccxt |
-| 7.2 Paper trading mode | 🔴 Haute | 6h | Simulation sans argent réel |
-| 7.3 Execution engine | 🔴 Haute | 10h | Market/Limit orders |
-| 7.4 Position management | 🔴 Haute | 6h | Stop-loss, take-profit |
-| 7.5 Risk management | 🔴 Haute | 4h | Max position size, daily loss limit |
-| 7.6 Audit trail | 🔴 Haute | 4h | Log toutes les décisions |
+| 11.1 Modèle Strategy | 🔴 Haute | 3h | Entry/exit rules en JSON |
+| 11.2 Engine backtest | 🔴 Haute | 8h | Replay signaux/décisions sur historique |
+| 11.3 Métriques performance | 🔴 Haute | 4h | Sharpe, Max Drawdown, Win Rate |
+| 11.4 UI Backtest results | 🟡 Moyenne | 6h | Equity curve, trades table |
 
 ---
 
-## Phase 8 : Déploiement Production (v1.2)
+## Phase v1.2 — Multi-Assets
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
-| 8.1 Docker Compose | 🔴 Haute | 3h | Backend + Frontend + PostgreSQL |
-| 8.2 CI/CD GitHub Actions | 🟡 Moyenne | 4h | Tests + Build + Deploy |
-| 8.3 PostgreSQL migration | 🔴 Haute | 2h | Remplacer SQLite |
-| 8.4 Auth JWT | 🟡 Moyenne | 6h | Login/Register |
-| 8.5 HTTPS + Reverse proxy | 🔴 Haute | 2h | Nginx/Caddy |
-| 8.6 Monitoring | 🟢 Basse | 4h | Prometheus + Grafana |
+| 12.1 Dropdown symbole | 🔴 Haute | 2h | BTC/USD, ETH/USD, SOL/USD... |
+| 12.2 Scheduler multi-symbol | 🔴 Haute | 4h | Loop sur liste configurable |
+| 12.3 Dashboard comparatif | 🟡 Moyenne | 4h | Multi-charts ou tabs |
+| 12.4 Heatmap corrélation | 🟢 Basse | 6h | Matrice inter-assets |
+
+---
+
+## Phase v1.3 — Risk Management
+
+| Tâche | Priorité | Effort | Description |
+|-------|----------|--------|-------------|
+| 13.1 Stop-loss / Take-profit | 🔴 Haute | 4h | Configurables par position |
+| 13.2 Limite d'exposition | 🔴 Haute | 3h | % max du portefeuille |
+| 13.3 Limite perte journalière | 🔴 Haute | 3h | Kill switch si dépassé |
+| 13.4 Dashboard risque | 🟡 Moyenne | 4h | Visualisation exposition |
+
+---
+
+## Phase v1.4 — Paper Trading
+
+| Tâche | Priorité | Effort | Description |
+|-------|----------|--------|-------------|
+| 14.1 Carnet d'ordres fictif | 🔴 Haute | 6h | Market/Limit simulés |
+| 14.2 Suivi positions | 🔴 Haute | 4h | PnL temps réel simulé |
+| 14.3 Journal de trading | 🔴 Haute | 3h | Log toutes les décisions |
+| 14.4 Mode fantôme | 🟡 Moyenne | 2h | Observer sans agir |
+
+---
+
+## Phase v1.5 — Production Ready
+
+| Tâche | Priorité | Effort | Description |
+|-------|----------|--------|-------------|
+| 15.1 Docker Compose | 🔴 Haute | 3h | Backend + Frontend + PostgreSQL |
+| 15.2 CI/CD GitHub Actions | 🟡 Moyenne | 4h | Tests + Build + Deploy |
+| 15.3 Auth JWT | 🟡 Moyenne | 6h | Login/Register |
+| 15.4 HTTPS + Reverse proxy | 🔴 Haute | 2h | Nginx/Caddy |
+| 15.5 Monitoring | 🟢 Basse | 4h | Prometheus + Grafana |
+
+---
+
+## Phase v2.0+ — INFINI Mode Autonome ⚠️
+
+> Ce mode ne sera activé qu'après validation complète par backtesting + paper trading.
+
+| Tâche | Priorité | Effort | Description |
+|-------|----------|--------|-------------|
+| 20.1 Connecteur exchange | 🔴 Haute | 8h | Kraken/Binance via ccxt |
+| 20.2 Exécution conditionnelle | 🔴 Haute | 10h | 3+ signaux convergents requis |
+| 20.3 Trailing stop | 🔴 Haute | 4h | Stop-loss dynamique |
+| 20.4 Audit trail complet | 🔴 Haute | 4h | Log chaque décision + raison |
+| 20.5 Kill switch physique | 🔴 Haute | 2h | Bouton d'arrêt d'urgence |
+| 20.6 Spécialisation stratégies | 🟢 Basse | 20h+ | Scalping, breakout, etc. |
 
 ---
 
@@ -91,33 +184,37 @@
 ```
 2026
 ├── Avril
-│   ├── [✅] v0.5 - UI stable 4h
-│   ├── [✅] v0.5.1 - Resample 4h→1d
-│   ├── [✅] v0.6.0 - Dual jobs + tous timeframes
-│   └── [🔄] v0.7.0 - UX improvements (en cours)
+│   ├── [✅] v0.6.0 — Socle marché complet (4 timeframes, dual-jobs)
+│   └── [🔄] v0.7.0 — Moteur de signaux (PROCHAINE ÉTAPE)
 │
 ├── Mai
-│   ├── [ ] v0.8.0 - Alertes & Notifications
-│   └── [ ] v0.9.0 - Multi-Assets
+│   ├── [ ] v0.8.0 — Alertes & Notifications
+│   └── [ ] v0.9.0 — News & Sentiment
 │
 ├── Juin
-│   └── [ ] v1.0.0 - Backtesting
+│   └── [ ] v1.0.0 — Moteur de Décision (INFINI v1 commence)
 │
 ├── Juillet
-│   └── [ ] v1.1.0 - Paper Trading
+│   ├── [ ] v1.1.0 — Backtesting
+│   └── [ ] v1.2.0 — Multi-Assets
 │
-└── Août
-    └── [ ] v1.2.0 - Production Ready
+├── Août
+│   ├── [ ] v1.3.0 — Risk Management
+│   └── [ ] v1.4.0 — Paper Trading
+│
+├── Septembre
+│   └── [ ] v1.5.0 — Production Ready
+│
+└── Q4 2026+
+    └── [ ] v2.0.0 — INFINI Mode Autonome
 ```
 
 ---
 
-## Priorités immédiates (semaine du 31 mars 2026)
+## Principes directeurs
 
-| # | Tâche | Fichiers | Temps |
-|---|-------|----------|-------|
-| 1 | ✅ Cap effectiveDays 30m/1h | Dashboard.tsx | 30 min |
-| 2 | ✅ Commit v0.6.0 | git tag | 5 min |
-| 3 | Dark/Light mode | theme.ts, App.tsx | 2h |
-| 4 | Tests E2E basiques | Playwright/Cypress | 4h |
-
+1. **Fiabilité des données avant tout** — Aucun signal ne vaut rien si les données sont fausses
+2. **Intelligence progressive** — Pas de moteur de décision avant le moteur de signal
+3. **Explicabilité permanente** — Chaque signal doit pouvoir être expliqué en une phrase
+4. **Contrôle humain garanti** — L'automatisation est un outil, pas un pilote
+5. **Itération rapide** — Chaque release apporte une valeur concrète et testable
