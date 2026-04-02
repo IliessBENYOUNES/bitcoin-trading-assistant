@@ -28,6 +28,8 @@ import {
 // Composants
 import { StatusRowConnected } from '../components/StatusRow';
 import { IndicatorPanel } from '../components/IndicatorPanel';
+import { SignalPanel } from '../components/SignalPanel';
+import { AlertPanel } from '../components/AlertPanel';
 import CandlestickChart from '../components/CandlestickChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
 
@@ -35,6 +37,8 @@ import { ChartErrorBoundary } from '../components/ErrorBoundary';
 import { useIndicators } from '../hooks/useIndicators';
 import { useMarketGaps } from '../hooks/useMarketGaps';
 import { useCandles } from '../hooks/useCandles';
+import { useSignals } from '../hooks/useSignals';
+import { useAlerts } from '../hooks/useAlerts';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -142,6 +146,17 @@ const Dashboard: React.FC = () => {
     days: effectiveDays,
   });
 
+  const signals = useSignals({
+    timeframe,
+    historyDays: effectiveDays,
+  });
+
+  // Hook alertes avec polling toutes les 60s
+  const alertsHook = useAlerts({
+    timeframe,
+    pollInterval: 60000,
+  });
+
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
@@ -161,6 +176,8 @@ const Dashboard: React.FC = () => {
     indicators.refresh();
     gaps.refresh();
     candles.refresh();
+    signals.refresh();
+    alertsHook.refresh();
   };
 
   const handleFetchCandles = async () => {
@@ -211,6 +228,8 @@ const Dashboard: React.FC = () => {
       candles.refresh();
       gaps.refresh();
       indicators.refresh();
+      signals.refresh();
+      alertsHook.check(); // Vérifie les alertes après un fetch
 
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : String(e));
@@ -303,7 +322,7 @@ const Dashboard: React.FC = () => {
                   startIcon={<RefreshIcon />}
                   onClick={handleRefreshAll}
                   disabled={
-                      indicators.loading || gaps.loading || candles.loading
+                      indicators.loading || gaps.loading || candles.loading || signals.loading
                   }
               >
                 Actualiser
@@ -431,6 +450,26 @@ const Dashboard: React.FC = () => {
             {/* Left column: Indicators */}
             <Grid item xs={12} lg={4}>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <SignalPanel
+                    data={signals.data}
+                    loading={signals.loading}
+                    error={signals.error}
+                    onRefresh={signals.refresh}
+                    timeframe={timeframe}
+                    historyDays={effectiveDays}
+                />
+                <AlertPanel
+                    alerts={alertsHook.alerts}
+                    notifications={alertsHook.notifications}
+                    loading={alertsHook.loading}
+                    error={alertsHook.error}
+                    onRefresh={alertsHook.refresh}
+                    onAdd={alertsHook.add}
+                    onDelete={alertsHook.remove}
+                    onCheck={alertsHook.check}
+                    onDismissNotifications={alertsHook.dismissNotifications}
+                    timeframe={timeframe}
+                />
                 <IndicatorPanel
                     data={indicators.data}
                     loading={indicators.loading}

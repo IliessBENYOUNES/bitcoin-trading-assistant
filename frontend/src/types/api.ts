@@ -126,3 +126,85 @@ export interface FetchState<T> {
   loading: boolean;
   error: string | null;
 }
+
+// -----------------------------------------------------------------------------
+// Market Signals (/market/signals)
+// -----------------------------------------------------------------------------
+
+export type SignalDirection = 'bullish' | 'bearish' | 'neutral';
+export type ConfidenceLevel = 'high' | 'medium' | 'low';
+
+export interface SignalItem {
+  indicator: string;
+  direction: SignalDirection;
+  strength: number;
+  value: number | null;
+  message: string;
+}
+
+export interface CompositeScore {
+  score: number;
+  direction: SignalDirection;
+  confidence: ConfidenceLevel;
+  consensus: string;
+  bullish_count: number;
+  bearish_count: number;
+  neutral_count: number;
+}
+
+export interface MarketSignalsResponse {
+  meta: IndicatorsMeta;
+  signals: SignalItem[];
+  composite: CompositeScore;
+  summary: string;
+}
+
+// -----------------------------------------------------------------------------
+// Alerts (/alerts)
+// -----------------------------------------------------------------------------
+
+export type ConditionType = 'price' | 'rsi' | 'macd_hist' | 'score';
+export type AlertOperator = 'above' | 'below';
+export type AlertStatus = 'active' | 'triggered' | 'disabled';
+
+export interface AlertItem {
+  id: number;
+  symbol: string;
+  timeframe: string;
+  condition_type: ConditionType;
+  operator: AlertOperator;
+  threshold: number;
+  message: string | null;
+  status: AlertStatus;
+  recurring: boolean;
+  created_at: string | null;
+  triggered_at: string | null;
+  triggered_value: number | null;
+}
+
+export interface AlertCreate {
+  symbol?: string;
+  timeframe?: string;
+  condition_type: ConditionType;
+  operator: AlertOperator;
+  threshold: number;
+  message?: string;
+  recurring?: boolean;
+}
+
+export interface AlertNotification {
+  alert_id: number;
+  condition_type: string;
+  operator: string;
+  threshold: number;
+  current_value: number;
+  message: string;
+  triggered_at: string;
+}
+
+export interface AlertCheckResponse {
+  checked: number;
+  triggered: number;
+  notifications: AlertNotification[];
+}
+

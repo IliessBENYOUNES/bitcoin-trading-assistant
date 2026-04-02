@@ -1,8 +1,8 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v0.4-scheduler
-## Date: 2026-01-08
+## Version: v0.8.0
+## Date: 2026-04-02
 
 ---
 
@@ -26,6 +26,18 @@
 | FR-SCH-002 | Periodic fetch job | Job executes at configured interval | ✅ PASS | `last_run_time` populated |
 | FR-SCH-003 | Scheduler status endpoint | `GET /scheduler/status` returns state | ✅ PASS | See proof below |
 | FR-SCH-004 | Job success reporting | `last_result.status: "success"` on success | ✅ PASS | `{"status":"success","fetched":42}` |
+| **FR-SIG-001** | **Interpret RSI → signal** | **RSI >70 → bearish, <30 → bullish** | **✅ PASS** | **52 tests passing** |
+| **FR-SIG-002** | **Interpret MACD → signal** | **MACD crossover → directional signal** | **✅ PASS** | **test_macd_bullish_crossover** |
+| **FR-SIG-003** | **Interpret SMA → signal** | **Price vs SMA20/50/200 → trend signal** | **✅ PASS** | **test_sma_above_all** |
+| **FR-SIG-004** | **Interpret Bollinger → signal** | **Price vs bands → overbought/oversold** | **✅ PASS** | **test_bollinger_above_upper** |
+| **FR-SIG-005** | **Composite score -100/+100** | **Weighted aggregation with confidence** | **✅ PASS** | **test_all_bullish, test_all_bearish** |
+| **FR-SIG-006** | **GET /market/signals endpoint** | **Returns signals + composite + summary** | **✅ PASS** | **test_signals_endpoint_with_data** |
+| **FR-SIG-007** | **SignalPanel UI** | **Gauge, signal list, consensus badge** | **✅ PASS** | **tsc --noEmit clean** |
+| **FR-ALT-001** | **Modèle Alert en DB** | **Table alerts avec conditions, seuils, status** | **✅ PASS** | **48 tests passing** |
+| **FR-ALT-002** | **API CRUD /alerts** | **GET/POST/PUT/DELETE + check + notifications** | **✅ PASS** | **test_create_alert, test_delete_alert** |
+| **FR-ALT-003** | **Évaluation conditions** | **Prix, RSI, MACD hist, score vs seuils** | **✅ PASS** | **test_check_price_above_triggered** |
+| **FR-ALT-004** | **Alertes récurrentes** | **one-shot ou recurring (réarme après trigger)** | **✅ PASS** | **test_recurring_stays_active** |
+| **FR-ALT-005** | **AlertPanel UI** | **Formulaire + liste + notifications polling** | **✅ PASS** | **tsc --noEmit clean** |
 
 ---
 
@@ -35,7 +47,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 88 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 210 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 
@@ -95,7 +107,12 @@
 |-----------|-------|--------|
 | test_health.py | 3 | ✅ |
 | test_market.py | 4 | ✅ |
-| test_indicators.py | 35 | ✅ |
-| test_time_buckets.py | 30 | ✅ |
-| test_scheduler.py | 16 | ✅ |
-| **Total** | **88** | ✅ |
+| test_indicators.py | 25 | ✅ |
+| test_time_buckets.py | 17 | ✅ |
+| test_scheduler.py | 8 | ✅ |
+| test_scheduler_dual_jobs.py | 13 | ✅ |
+| test_scheduler_resample_1d.py | 7 | ✅ |
+| test_scheduler_resample_1h.py | 6 | ✅ |
+| **test_signals.py** | **52** | **✅** |
+| **test_alerts.py** | **48** | **✅** |
+| **Total** | **210** | ✅ |

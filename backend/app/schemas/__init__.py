@@ -11,9 +11,35 @@ from app.schemas.candle import (
     CandleListResponse,
 )
 
+from app.schemas.signal import (
+    SignalItem,
+    SignalDirection,
+    ConfidenceLevel,
+    CompositeScore,
+    SignalResponse,
+)
+
+from app.schemas.alert import (
+    AlertCreate,
+    AlertUpdate,
+    AlertResponse,
+    AlertNotification,
+    AlertCheckResponse,
+)
+
 __all__ = [
     "CandleBase",
     "CandleCreate",
     "CandleResponse",
     "CandleListResponse",
+    "SignalItem",
+    "SignalDirection",
+    "ConfidenceLevel",
+    "CompositeScore",
+    "SignalResponse",
+    "AlertCreate",
+    "AlertUpdate",
+    "AlertResponse",
+    "AlertNotification",
+    "AlertCheckResponse",
 ]

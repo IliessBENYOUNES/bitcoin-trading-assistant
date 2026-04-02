@@ -29,6 +29,7 @@ STATUS GLOBAL :
 - STALE+GAPS : Pas fraîche ET des trous
 """
 from app.services.indicator_service import IndicatorService
+from app.services.signal_service import SignalService
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
@@ -76,6 +77,41 @@ def get_indicators(
             history_days=effective_days,
             end_ts=end_ts,
             include_candles=include_candles,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get(
+    "/signals",
+    response_model=dict,
+    summary="Signaux de trading (interprétation des indicateurs)",
+    description="Interprète RSI, MACD, SMA et Bollinger en signaux structurés avec score composite -100/+100.",
+)
+def get_signals(
+        symbol: str = Query(default="BTC/USD"),
+        timeframe: str = Query(default="4h"),
+        history_days: Optional[int] = Query(default=None, ge=1, le=365),
+        days: Optional[int] = Query(default=None, ge=1, le=365),  # alias toléré
+        end_ts: Optional[datetime] = Query(default=None),
+        db: Session = Depends(get_db),
+) -> dict:
+    """
+    Retourne les signaux de trading basés sur les indicateurs techniques.
+
+    Chaque indicateur est interprété en un signal (bullish/bearish/neutral)
+    avec une force et un message explicatif. Un score composite agrège
+    l'ensemble en une note de -100 (très baissier) à +100 (très haussier).
+    """
+    effective_days = history_days if history_days is not None else (days if days is not None else 7)
+
+    service = SignalService(db)
+    try:
+        return service.analyze(
+            symbol=symbol,
+            timeframe=timeframe,
+            history_days=effective_days,
+            end_ts=end_ts,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))

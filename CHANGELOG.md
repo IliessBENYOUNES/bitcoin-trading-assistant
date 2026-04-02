@@ -1,8 +1,77 @@
-cd C:\Users\ilies\git\bitcoin-trading-assistant\backend
-.\venv\Scripts\activate
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000# Changelog
+# Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [0.8.0] - 2026-04-02
+
+### Added
+- **Alert System**: Système complet d'alertes configurables avec évaluation automatique
+- Modèle Alert en base (condition_type, operator, threshold, status, recurring)
+- API CRUD complète : `GET/POST/PUT/DELETE /alerts` + `POST /alerts/check` + `GET /alerts/notifications`
+- `alert_service.py` : CRUD + évaluation prix, RSI, MACD hist, score composite vs seuils
+- `alert.py` schemas : AlertCreate, AlertUpdate, AlertResponse, AlertNotification, AlertCheckResponse
+- Conditions supportées : `price`, `rsi`, `macd_hist`, `score` avec opérateurs `above` (≥) / `below` (≤)
+- Alertes one-shot ou récurrentes (se réarment après déclenchement)
+- `AlertPanel.tsx` : formulaire de création, liste des alertes, notifications polling
+- `useAlerts.ts` : hook React avec CRUD + check + polling automatique (60s)
+- Types TypeScript : AlertItem, AlertCreate, AlertNotification, AlertCheckResponse
+- 48 nouveaux tests backend (CRUD, évaluation, récurrence, endpoints)
+- `CLAUDE.md` : source unique de vérité pour l'agent IA (fusionne AGENT.md)
+
+### Changed
+- Dashboard intègre l'AlertPanel entre SignalPanel et IndicatorPanel
+- Bouton "Actualiser" rafraîchit aussi les alertes
+- Bouton "Fetch API" déclenche un check des alertes après le fetch
+- `marketApi.ts` : ajout des fonctions `getAlerts()`, `createAlert()`, `deleteAlert()`, `checkAlerts()`
+- `AGENT.md` : pointe désormais vers `CLAUDE.md` comme source de vérité
+- `schemas/__init__.py` : export des schémas alert
+- `models/__init__.py` : export du modèle Alert
+- `main.py` : inclusion du router alerts
+
+### Technical
+- 210 tests backend passing (162 existants + 48 nouveaux)
+- Frontend tsc --noEmit sans erreur
+- Aucune dépendance ajoutée (utilise l'existant)
+
+## [0.7.0] - 2026-04-02
+
+### Added
+- **Signal Engine**: Moteur d'interprétation des indicateurs techniques en signaux structurés
+- `GET /market/signals` endpoint retournant signaux + score composite -100/+100
+- `signal_service.py` : interpréteurs RSI, MACD, SMA, Bollinger → direction + force + message
+- `signal.py` schemas : SignalItem, CompositeScore, ConfidenceLevel, SignalResponse
+- Score composite avec confiance (high/medium/low) et consensus (unanimous/majority/divided)
+- Résumé lisible auto-généré (ex: "RSI en surachat (72), MACD croisé baissier → Score -65")
+- `SignalPanel.tsx` : jauge de score, liste signaux détaillés, badges consensus/confiance
+- `useSignals.ts` : hook React pour fetch des signaux
+- Types TypeScript : SignalItem, CompositeScore, MarketSignalsResponse
+- 52 nouveaux tests backend (interpréteurs, composite, intégration, endpoint)
+
+### Changed
+- Dashboard intègre le SignalPanel au-dessus de l'IndicatorPanel
+- Bouton "Actualiser" rafraîchit aussi les signaux
+- `marketApi.ts` : ajout de `getSignals()`
+- `schemas/__init__.py` : export des schémas signal
+
+### Fixed
+- Nettoyage du CHANGELOG.md (suppression des commandes shell en tête de fichier)
+
+### Technical
+- 162 tests backend passing (110 existants + 52 nouveaux)
+- Frontend tsc --noEmit sans erreur
+- Aucune dépendance ajoutée (utilise l'existant)
+
+## [0.6.0] - 2026-04-01
+
+### Added
+- Dual-jobs scheduler (4h + 30m) avec resample automatique
+- 4 timeframes supportés : 30m, 1h, 4h, 1d
+- Frontend : sélecteur timeframe + historique, cap CoinGecko
+- `StatusRow`, `DataFreshnessChip`, `SchedulerChip`
+- Documentation CURRENT_STATE.md et AGENT.md
+
+### Technical
+- 110 tests backend passing
 
 ## [0.5.1] - 2026-01-09
 

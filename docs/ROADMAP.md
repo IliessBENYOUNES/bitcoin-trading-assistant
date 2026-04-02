@@ -1,6 +1,6 @@
 # 🗺️ Roadmap — Bitcoin Trading Assistant → INFINI
 
-> **Dernière mise à jour :** 1er avril 2026
+> **Dernière mise à jour :** 2 avril 2026
 > **Document de référence détaillé :** [ROADMAP_INFINI.md](./ROADMAP_INFINI.md) (976 lignes)
 
 ---
@@ -13,9 +13,9 @@
 │  Assistant visuel, modulaire, pédagogique                           │
 │  ├── Données marché temps réel          ✅ Livré (v0.2-v0.6)       │
 │  ├── Indicateurs techniques             ✅ Livré (v0.3)            │
-│  ├── Signaux & scoring                  ⬜ Prochaine étape (v0.7)  │
-│  ├── Alertes visuelles                  ⬜ Planifié (v0.8)         │
-│  └── News & sentiment                   ⬜ Planifié (v0.9)         │
+│  ├── Signaux & scoring                  ✅ Livré (v0.7)            │
+│  ├── Alertes visuelles                  ✅ Livré (v0.8)            │
+│  └── News & sentiment                   ⬜ Prochaine étape (v0.9)  │
 │                                                                      │
 │  ÉTAPE 2 — INFINI v1 (v1.0 → v1.5)                                 │
 │  Assistant intelligent, décisionnel                                  │
@@ -37,7 +37,7 @@
 
 ---
 
-## État actuel : v0.6.0 — Fin du Niveau 1 (Socle marché)
+## État actuel : v0.8.0 — Alertes & Notifications (Livré)
 
 | Composant | Status |
 |-----------|--------|
@@ -47,44 +47,34 @@
 | Frontend Dashboard | ✅ Complet |
 | Indicateurs (RSI, MACD, SMA, Bollinger) | ✅ Complet |
 | Chart Lightweight Charts | ✅ Complet |
-| 110 tests backend | ✅ Tous passing |
+| Signal Engine (interprétation + score) | ✅ Complet (v0.7) |
+| SignalPanel (jauge + liste + consensus) | ✅ Complet (v0.7) |
+| **Alert System (CRUD + check + notifications)** | **✅ Complet (v0.8)** |
+| **AlertPanel (formulaire + liste + polling)** | **✅ Complet (v0.8)** |
+| 210 tests backend | ✅ Tous passing |
 
 ---
 
-## PROCHAINE ÉTAPE : v0.7 — Moteur de Signaux (Niveau 2)
+## ✅ LIVRÉ : v0.7 — Moteur de Signaux (Niveau 2)
 
-> Le projet passe du **Niveau 1** (données + affichage) au **Niveau 2** (intelligence analytique).
-> Le système commence à *interpréter* et *penser*.
+> Le système interprète les indicateurs et génère des signaux structurés.
 
-| Tâche | Priorité | Effort | Description |
-|-------|----------|--------|-------------|
-| 7.1 `signal_service.py` | 🔴 Haute | 4h | Interpréter RSI/MACD/SMA/Bollinger → signaux structurés |
-| 7.2 Schéma `SignalResponse` | 🔴 Haute | 1h | SignalItem, CompositeScore, consensus |
-| 7.3 `GET /market/signals` | 🔴 Haute | 2h | Endpoint API retournant signaux + score |
-| 7.4 Score composite | 🔴 Haute | 3h | Agrégation -100/+100, confiance, convergence |
-| 7.5 `test_signals.py` | 🔴 Haute | 4h | Tests unitaires pour chaque interpréteur |
-| 7.6 `SignalPanel.tsx` | 🟡 Moyenne | 4h | Jauge, liste signaux, badge consensus |
-| 7.7 Hook `useSignals.ts` | 🟡 Moyenne | 1h | Fetch + types TypeScript |
+| Tâche | Priorité | Effort | Description | Status |
+|-------|----------|--------|-------------|--------|
+| 7.1 `signal_service.py` | 🔴 Haute | 4h | Interpréter RSI/MACD/SMA/Bollinger → signaux structurés | ✅ |
+| 7.2 Schéma `SignalResponse` | 🔴 Haute | 1h | SignalItem, CompositeScore, consensus | ✅ |
+| 7.3 `GET /market/signals` | 🔴 Haute | 2h | Endpoint API retournant signaux + score | ✅ |
+| 7.4 Score composite | 🔴 Haute | 3h | Agrégation -100/+100, confiance, convergence | ✅ |
+| 7.5 `test_signals.py` | 🔴 Haute | 4h | Tests unitaires pour chaque interpréteur (52 tests) | ✅ |
+| 7.6 `SignalPanel.tsx` | 🟡 Moyenne | 4h | Jauge, liste signaux, badge consensus | ✅ |
+| 7.7 Hook `useSignals.ts` | 🟡 Moyenne | 1h | Fetch + types TypeScript | ✅ |
 
 **Livrable v0.7 :**
-> L'utilisateur voit un panel qui dit : *"RSI en surachat (72), MACD croisé baissier, prix sous SMA50 → Score -65 (baissier, confiance haute)"* au lieu de juste voir des chiffres bruts.
+> ✅ L'utilisateur voit un panel qui dit : *"RSI en surachat (72), MACD croisé baissier, prix sous SMA50 → Score -65 (baissier, confiance haute)"* au lieu de juste voir des chiffres bruts.
 
 ---
 
-## Phase v0.8 — Alertes & Notifications
-
-| Tâche | Priorité | Effort | Description |
-|-------|----------|--------|-------------|
-| 8.1 Modèle Alert en DB | 🔴 Haute | 2h | SQLAlchemy: seuils prix, RSI, MACD, signaux |
-| 8.2 API CRUD `/alerts` | 🔴 Haute | 3h | GET/POST/PUT/DELETE |
-| 8.3 Service AlertChecker | 🔴 Haute | 4h | Job scheduler évaluant les conditions |
-| 8.4 UI AlertPanel | 🟡 Moyenne | 4h | Formulaire + liste alertes actives |
-| 8.5 Notifications browser | 🟡 Moyenne | 2h | Web Push ou polling |
-| 8.6 Webhook Discord/Telegram | 🟢 Basse | 3h | Notifications externes |
-
----
-
-## Phase v0.9 — News & Sentiment
+## PROCHAINE ÉTAPE : v0.9 — News & Sentiment
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
@@ -93,6 +83,24 @@
 | 9.3 Score d'impact | 🟡 Moyenne | 3h | Fort / moyen / faible |
 | 9.4 Intégration au scoring | 🟡 Moyenne | 4h | Pondérer le score composite avec le sentiment |
 | 9.5 UI NewsPanel | 🟡 Moyenne | 4h | Fil d'actus classé avec filtres |
+
+---
+
+## ✅ LIVRÉ : v0.8 — Alertes & Notifications
+
+> Le système passe de "interpréter" à "alerter proactivement".
+
+| Tâche | Priorité | Effort | Description | Status |
+|-------|----------|--------|-------------|--------|
+| 8.1 Modèle Alert en DB | 🔴 Haute | 2h | SQLAlchemy: seuils prix, RSI, MACD, signaux | ✅ |
+| 8.2 API CRUD `/alerts` | 🔴 Haute | 3h | GET/POST/PUT/DELETE + check + notifications | ✅ |
+| 8.3 Service AlertChecker | 🔴 Haute | 4h | Évaluation conditions vs données marché | ✅ |
+| 8.4 UI AlertPanel | 🟡 Moyenne | 4h | Formulaire + liste alertes actives + notifications | ✅ |
+| 8.5 Polling notifications | 🟡 Moyenne | 2h | Polling automatique toutes les 60s | ✅ |
+| 8.6 48 tests backend | 🔴 Haute | 3h | CRUD, évaluation, récurrence, endpoints | ✅ |
+
+**Livrable v0.8 :**
+> ✅ L'utilisateur configure *"M'alerter si RSI > 75"* ou *"Prix > 70000$"* et reçoit une notification quand la condition est remplie. Les alertes peuvent être one-shot ou récurrentes.
 
 ---
 
@@ -185,11 +193,12 @@
 2026
 ├── Avril
 │   ├── [✅] v0.6.0 — Socle marché complet (4 timeframes, dual-jobs)
-│   └── [🔄] v0.7.0 — Moteur de signaux (PROCHAINE ÉTAPE)
+│   ├── [✅] v0.7.0 — Moteur de signaux (LIVRÉ)
+│   └── [✅] v0.8.0 — Alertes & Notifications (LIVRÉ)
 │
 ├── Mai
-│   ├── [ ] v0.8.0 — Alertes & Notifications
-│   └── [ ] v0.9.0 — News & Sentiment
+│   ├── [🔄] v0.9.0 — News & Sentiment (PROCHAINE ÉTAPE)
+│   └── [ ] v1.0.0 — Moteur de Décision (INFINI v1 commence)
 │
 ├── Juin
 │   └── [ ] v1.0.0 — Moteur de Décision (INFINI v1 commence)

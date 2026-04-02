@@ -6,6 +6,10 @@ import type {
   SchedulerStatus,
   MarketGapsResponse,
   MarketIndicatorsResponse,
+  MarketSignalsResponse,
+  AlertItem,
+  AlertCreate,
+  AlertCheckResponse,
 } from '../types/api';
 
 // -----------------------------------------------------------------------------
@@ -104,6 +108,24 @@ export async function getIndicators(
 }
 
 // -----------------------------------------------------------------------------
+// Market Signals
+// -----------------------------------------------------------------------------
+
+export interface GetSignalsParams {
+  timeframe: string;
+  historyDays: number;
+}
+
+export async function getSignals(
+  params: GetSignalsParams,
+  options: FetchOptions = {}
+): Promise<MarketSignalsResponse> {
+  const { timeframe, historyDays } = params;
+  const endpoint = `/market/signals?timeframe=${encodeURIComponent(timeframe)}&history_days=${historyDays}`;
+  return apiFetch<MarketSignalsResponse>(endpoint, options);
+}
+
+// -----------------------------------------------------------------------------
 // Health Check (utilitaire bonus)
 // -----------------------------------------------------------------------------
 
@@ -126,3 +148,64 @@ export async function getHealthDb(
 ): Promise<HealthDbResponse> {
   return apiFetch<HealthDbResponse>('/health/db', options);
 }
+
+// -----------------------------------------------------------------------------
+// Alerts CRUD
+// -----------------------------------------------------------------------------
+
+export async function getAlerts(
+  options: FetchOptions = {}
+): Promise<AlertItem[]> {
+  return apiFetch<AlertItem[]>('/alerts', options);
+}
+
+export async function createAlert(
+  data: AlertCreate,
+  options: FetchOptions = {}
+): Promise<AlertItem> {
+  const url = `${BASE_URL}/alerts`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(data),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<AlertItem>;
+}
+
+export async function deleteAlert(
+  alertId: number,
+  options: FetchOptions = {}
+): Promise<void> {
+  const url = `${BASE_URL}/alerts/${alertId}`;
+  const response = await fetch(url, {
+    method: 'DELETE',
+    signal: options.signal,
+  });
+  if (!response.ok && response.status !== 204) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+}
+
+export async function checkAlerts(
+  params: { timeframe: string },
+  options: FetchOptions = {}
+): Promise<AlertCheckResponse> {
+  const url = `${BASE_URL}/alerts/check?timeframe=${encodeURIComponent(params.timeframe)}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<AlertCheckResponse>;
+}
+
