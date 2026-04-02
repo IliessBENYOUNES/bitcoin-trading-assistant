@@ -41,6 +41,8 @@ from app.database import get_db
 from app.models import Candle
 from app.schemas import CandleResponse, CandleListResponse
 from app.services.coingecko_service import CoinGeckoService
+from app.services.data_source_router import DataSourceRouter
+from app.services.resample_service import resample_30m_to_1h, resample_30m_to_4h, resample_4h_to_1d
 import httpx
 
 # Router avec préfixe /market
@@ -465,34 +467,62 @@ def detect_gaps(
 @router.post(
     "/candles/fetch",
     response_model=dict,
-    summary="Récupérer les données depuis CoinGecko",
-    description="Appelle l'API CoinGecko et stocke les chandeliers en base de données"
+    summary="Récupérer les données depuis Binance/CoinGecko",
+    description=(
+        "Appelle l'API Binance (prioritaire) ou CoinGecko (fallback) "
+        "et stocke les chandeliers en base de données. "
+        "Supporte toutes les combinaisons timeframe × jours."
+    )
 )
 async def fetch_candles(
         symbol: str = Query(default="BTC/USD", description="Paire de trading"),
         days: int = Query(default=7, ge=1, le=365, description="Nombre de jours d'historique"),
+        timeframe: Optional[str] = Query(
+            default=None,
+            description="Timeframe explicite (30m, 1h, 4h, 1d). Si absent, auto-détection selon days."
+        ),
         db: Session = Depends(get_db)
 ) -> dict:
     """
-    Récupère les données OHLC depuis CoinGecko et les stocke en base.
+    Récupère les données OHLCV et les stocke en base.
+
+    Utilise Binance comme source principale (OHLCV natif, volume réel,
+    toute granularité) avec CoinGecko en fallback.
+
+    Si timeframe n'est pas spécifié, auto-détection selon days :
+    - days <= 2 : 30m
+    - days <= 30 : 4h
+    - days > 30 : 4d (legacy CoinGecko)
     """
     try:
-        # Appel à l'API CoinGecko
-        ohlc_data = await coingecko_service.get_ohlc(symbol=symbol, days=days)
+        # Déterminer le timeframe
+        if timeframe is None:
+            if days <= 2:
+                timeframe = "30m"
+            elif days <= 30:
+                timeframe = "4h"
+            else:
+                timeframe = "4d"
+
+        # Valider le timeframe
+        valid_timeframes = {"30m", "1h", "4h", "1d", "4d"}
+        if timeframe not in valid_timeframes:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Timeframe '{timeframe}' non supporté. Valeurs: {valid_timeframes}"
+            )
+
+        # Utiliser DataSourceRouter (Binance prioritaire, CoinGecko fallback)
+        router = DataSourceRouter()
+        ohlc_data = await router.get_candles(
+            symbol=symbol, timeframe=timeframe, days=days
+        )
 
         if not ohlc_data:
             raise HTTPException(
                 status_code=502,
-                detail="Aucune donnée reçue de CoinGecko"
+                detail="Aucune donnée reçue (Binance + CoinGecko)"
             )
-
-        # Déterminer le timeframe selon le nombre de jours
-        if days <= 2:
-            timeframe = "30m"
-        elif days <= 30:
-            timeframe = "4h"
-        else:
-            timeframe = "4d"
 
         # Insérer les données en base
         inserted = 0
@@ -539,7 +569,7 @@ async def fetch_candles(
                 low_price=candle_data["low"],
                 close_price=candle_data["close"],
                 volume=candle_data["volume"],
-                source="coingecko"
+                source="binance"
             )
 
             db.add(candle)
@@ -547,8 +577,21 @@ async def fetch_candles(
 
         db.commit()
 
+        # Resample en chaîne si nécessaire
+        resample_results = {}
+        if timeframe == "30m":
+            # 30m → 1h, 30m → 4h, puis 4h → 1d
+            resample_results["1h"] = resample_30m_to_1h(db=db, symbol=symbol)
+            resample_results["4h"] = resample_30m_to_4h(db=db, symbol=symbol)
+            resample_results["1d"] = resample_4h_to_1d(db=db, symbol=symbol)
+            db.commit()
+        elif timeframe == "4h":
+            # 4h → 1d
+            resample_results["1d"] = resample_4h_to_1d(db=db, symbol=symbol)
+            db.commit()
+
         tf_hours = get_timeframe_hours(timeframe)
-        expected = int((days * 24) / tf_hours) + 1
+        expected = int((days * 24) / tf_hours) + 1 if tf_hours > 0 else 0
 
         return {
             "message": "Données récupérées avec succès",
@@ -560,7 +603,8 @@ async def fetch_candles(
             "updated": updated,
             "duplicates": duplicates,
             "expected_theoretical": expected,
-            "coverage_pct": round((len(ohlc_data) / expected) * 100, 1) if expected > 0 else 0
+            "coverage_pct": round((len(ohlc_data) / expected) * 100, 1) if expected > 0 else 0,
+            "resample": resample_results if resample_results else None,
         }
 
     except httpx.HTTPError as e:

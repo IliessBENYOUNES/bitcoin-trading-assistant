@@ -1,23 +1,23 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 2 avril 2026
-> **Version :** v0.9.4
+> **Version :** v0.9.5
 > **Branche :** `master`
-> **Dernier commit :** feat(ui): premium dashboard overhaul — animations, GlowingCard, PriceTicker, SectionHeaders
+> **Dernier commit :** feat(data): add Binance API + DataSourceRouter — all timeframe×days combinations unlocked
 
 ---
 
 ## 1. Vue d'ensemble
 
-Bitcoin Trading Assistant (alias **BTC Insight**) est un outil d'aide à la lecture du marché Bitcoin. Il collecte des données OHLCV depuis CoinGecko, les stocke en base, les agrège sur 4 timeframes, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, et affiche tout dans un dashboard interactif.
+Bitcoin Trading Assistant (alias **BTC Insight**) est un outil d'aide à la lecture du marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur 4 timeframes, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, et affiche tout dans un dashboard interactif.
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v0.9.0** |
+| Version courante | **v0.9.5** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **253 tests**, tous passing ✅ |
+| Tests backend | **298 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -37,7 +37,7 @@ bitcoin-trading-assistant/
 │   │   │   ├── health.py       # GET /health, /health/db
 │   │   │   ├── market.py       # GET /market/candles, indicators, gaps, price, signals
 │   │   │   ├── alerts.py       # CRUD /alerts + POST /alerts/check
-│   │   │   ├── news.py         # ← NOUVEAU (v0.9) — GET /news, GET /news/sentiment
+│   │   │   ├── news.py         # GET /news, GET /news/sentiment
 │   │   │   └── scheduler.py    # GET /scheduler/status, POST trigger
 │   │   ├── models/
 │   │   │   ├── candle.py       # Modèle Candle (OHLCV + timeframe)
@@ -46,20 +46,22 @@ bitcoin-trading-assistant/
 │   │   │   ├── candle.py       # Schémas Pydantic candle
 │   │   │   ├── signal.py       # Schémas SignalItem, CompositeScore, SignalResponse
 │   │   │   ├── alert.py        # AlertCreate, AlertResponse, AlertCheck
-│   │   │   └── news.py         # ← NOUVEAU (v0.9) — NewsItem, NewsSentimentSummary, NewsResponse
+│   │   │   └── news.py         # NewsItem, NewsSentimentSummary, NewsResponse
 │   │   ├── services/
-│   │   │   ├── coingecko_service.py  # Client HTTP CoinGecko
-│   │   │   ├── indicator_service.py  # RSI, MACD, SMA, Bollinger
-│   │   │   ├── signal_service.py     # Interprétation → signaux + score composite
-│   │   │   ├── alert_service.py      # CRUD alertes + évaluation conditions
-│   │   │   ├── news_service.py       # ← NOUVEAU (v0.9) — RSS + sentiment + impact
-│   │   │   └── resample_service.py   # Agrégation 30m→1h, 4h→1d
+│   │   │   ├── binance_service.py     # ← NOUVEAU (v0.9.5) — Client HTTP Binance (OHLCV natif)
+│   │   │   ├── data_source_router.py  # ← NOUVEAU (v0.9.5) — Routeur Binance/CoinGecko
+│   │   │   ├── coingecko_service.py   # Client HTTP CoinGecko (fallback)
+│   │   │   ├── indicator_service.py   # RSI, MACD, SMA, Bollinger
+│   │   │   ├── signal_service.py      # Interprétation → signaux + score composite
+│   │   │   ├── alert_service.py       # CRUD alertes + évaluation conditions
+│   │   │   ├── news_service.py        # RSS + sentiment + impact
+│   │   │   └── resample_service.py    # Agrégation 30m→1h, 30m→4h, 1h→4h, 4h→1d
 │   │   ├── tasks/
-│   │   │   └── scheduler.py    # APScheduler dual-jobs (4h + 30m)
+│   │   │   └── scheduler.py    # APScheduler dual-jobs (4h + 30m) via DataSourceRouter
 │   │   └── utils/
 │   │       ├── time_buckets.py # Alignement UTC, fenêtres glissantes
 │   │       └── db_upsert.py    # Upsert dialect-aware
-│   └── tests/                  # 253 tests pytest
+│   └── tests/                  # 298 tests pytest
 │       ├── test_health.py
 │       ├── test_indicators.py
 │       ├── test_market.py
@@ -67,9 +69,10 @@ bitcoin-trading-assistant/
 │       ├── test_scheduler_dual_jobs.py
 │       ├── test_scheduler_resample_1d.py
 │       ├── test_scheduler_resample_1h.py
-│       ├── test_signals.py          # (v0.7)
-│       ├── test_alerts.py           # (v0.8) — 48 tests alertes
-│       ├── test_news.py             # ← NOUVEAU (v0.9) — 43 tests news
+│       ├── test_signals.py
+│       ├── test_alerts.py
+│       ├── test_news.py
+│       ├── test_binance_and_router.py  # ← NOUVEAU (v0.9.5) — 45 tests Binance + router + combinaisons
 │       └── test_time_buckets.py
 │
 ├── frontend/                   # React SPA
@@ -149,13 +152,15 @@ bitcoin-trading-assistant/
 
 | Service | Description | Status |
 |---------|-------------|--------|
-| **CoinGecko Service** | Client HTTP async, mapping symboles, gestion timeouts | ✅ |
+| **Binance Service** | **Client HTTP async Binance, OHLCV natif toute granularité, pagination auto** | ✅ **NOUVEAU v0.9.5** |
+| **DataSource Router** | **Routeur intelligent Binance (prioritaire) / CoinGecko (fallback)** | ✅ **NOUVEAU v0.9.5** |
+| **CoinGecko Service** | Client HTTP async, mapping symboles, gestion timeouts (fallback) | ✅ |
 | **Indicator Service** | RSI(14), MACD(12,26,9), SMA(20,50,200), Bollinger(20,2) | ✅ |
 | **Signal Service** | Interprétation indicateurs → signaux + score composite -100/+100 | ✅ (v0.7) |
 | **Alert Service** | CRUD alertes + évaluation conditions (prix, RSI, MACD, score) | ✅ (v0.8) |
-| **News Service** | **Collecte RSS + classification sentiment + score d'impact** | ✅ **NOUVEAU v0.9** |
-| **Resample Service** | Agrégation OHLCV 30m→1h et 4h→1d, idempotent via upsert | ✅ |
-| **Scheduler Dual-Jobs** | Job 4h (fetch 7j → 4h → resample 1d) + Job 30m (fetch 1j → 30m → resample 1h) | ✅ |
+| **News Service** | Collecte RSS + classification sentiment + score d'impact | ✅ (v0.9) |
+| **Resample Service** | Agrégation OHLCV 30m→1h, **30m→4h, 1h→4h**, 4h→1d, idempotent via upsert | ✅ **MAJ v0.9.5** |
+| **Scheduler Dual-Jobs** | Job 4h + Job 30m via DataSourceRouter | ✅ **MAJ v0.9.5** |
 
 ### 3.3 Backend — Moteur de Signaux (v0.7)
 
@@ -195,10 +200,13 @@ bitcoin-trading-assistant/
 
 | Timeframe | Source | Méthode |
 |-----------|--------|---------|
-| **30m** | CoinGecko direct | Job 30m fetch 1 jour |
-| **1h** | Resample 30m→1h | Agrégation automatique |
-| **4h** | CoinGecko direct | Job 4h fetch 7 jours |
-| **1d** | Resample 4h→1d | Agrégation automatique |
+| **30m** | Binance direct (CoinGecko fallback) | Toute période (1j–90j+) |
+| **1h** | Binance direct ou Resample 30m→1h | Toute période |
+| **4h** | Binance direct ou Resample 30m→4h, 1h→4h | Toute période |
+| **1d** | Binance direct ou Resample 4h→1d | Toute période |
+
+> **v0.9.5 : Toutes les 24 combinaisons timeframe × jours sont maintenant possibles**
+> grâce à Binance comme source principale (pas de contrainte de granularité).
 
 ### 3.7 Frontend — Composants
 
@@ -219,14 +227,14 @@ bitcoin-trading-assistant/
 ### 3.8 Frontend — Contrôles utilisateur
 
 - Sélecteur timeframe : 30m, 1h, 4h, 1d
-- Sélecteur historique : 1, 2, 7, 14, 30 jours
-- Cap automatique à 1 jour pour 30m/1h (limite CoinGecko)
+- Sélecteur historique : 1, 2, 7, 14, 30, **90** jours
+- **Toutes les combinaisons timeframe × jours sont supportées** (Binance API)
 - Bouton "Fetch API" avec routing intelligent (trigger 30m ou 4h selon timeframe)
 - Bouton "Actualiser" pour refresh local (inclut signaux + alertes + news)
 - Affichage résultat fetch (inserted, updated, duplicates, resample)
 - Panel signaux avec jauge, liste, confiance et consensus (v0.7)
 - Panel alertes avec formulaire, liste, notifications polling (v0.8)
-- **Panel news avec jauge sentiment, liste articles, filtres, liens cliquables** (v0.9)
+- Panel news avec jauge sentiment, liste articles, filtres, liens cliquables (v0.9)
 
 ---
 
@@ -243,9 +251,10 @@ bitcoin-trading-assistant/
 | test_scheduler_resample_1h.py | 6 | Resample 30m→1h, OHLCV, idempotent |
 | test_signals.py | 52 | RSI/MACD/SMA/Bollinger interpréteurs, composite, résumé, intégration, endpoint |
 | test_alerts.py | 48 | CRUD, évaluation, récurrence, endpoints |
-| **test_news.py** | **43** | **Sentiment, impact, RSS, résumé, résilience, endpoints** |
+| test_news.py | 43 | Sentiment, impact, RSS, résumé, résilience, endpoints |
+| **test_binance_and_router.py** | **45** | **Binance parsing, DataSourceRouter fallback, 24 combinaisons, resample 30m→4h, 1h→4h** |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **253** | **Tous passing ✅** |
+| **TOTAL** | **298** | **Tous passing ✅** |
 
 ---
 

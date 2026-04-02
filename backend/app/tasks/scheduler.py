@@ -37,7 +37,11 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.models import Candle
 from app.services.coingecko_service import CoinGeckoService
-from app.services.resample_service import resample_4h_to_1d, resample_30m_to_1h
+from app.services.data_source_router import DataSourceRouter
+from app.services.resample_service import (
+    resample_4h_to_1d, resample_30m_to_1h,
+    resample_30m_to_4h, resample_1h_to_4h,
+)
 from app.utils import normalize_to_utc, align_to_bucket
 
 logger = logging.getLogger(__name__)
@@ -227,13 +231,16 @@ def _timeframe_from_days(days: int) -> str:
 # =========================
 async def _fetch_and_store(db, symbol: str, days: int, timeframe: str) -> dict[str, Any]:
     """
-    Fetch CoinGecko (async) + upsert in DB.
+    Fetch via DataSourceRouter (Binance prioritaire, CoinGecko fallback)
+    + upsert in DB.
 
     timeframe is explicit (no auto-detection here).
     Returns min_ts/max_ts for resample window.
     """
-    service = CoinGeckoService()
-    ohlc_data = await service.get_ohlc(symbol=symbol, days=days)
+    router = DataSourceRouter()
+    ohlc_data = await router.get_candles(
+        symbol=symbol, timeframe=timeframe, days=days
+    )
 
     if not ohlc_data:
         raise RuntimeError("CoinGecko: aucune donnée OHLC reçue")
@@ -354,6 +361,23 @@ def _run_resample_30m_to_1h(db, symbol: str, min_ts: Optional[datetime], max_ts:
         return {"1h": count_1h}
     except Exception as e:
         return {"1h": 0, "error": str(e)}
+
+
+def _run_resample_30m_to_4h(db, symbol: str, min_ts: Optional[datetime], max_ts: Optional[datetime]) -> Dict[str, Any]:
+    """Resample 30m → 4h pour compléter la chaîne de données."""
+    try:
+        if min_ts is None or max_ts is None:
+            return {"4h": 0, "skipped": True}
+
+        start_time = min_ts.replace(hour=(min_ts.hour // 4) * 4, minute=0, second=0, microsecond=0)
+        end_time = (max_ts + timedelta(hours=4)).replace(
+            hour=((max_ts.hour // 4) * 4), minute=0, second=0, microsecond=0
+        )
+
+        count_4h = resample_30m_to_4h(db=db, symbol=symbol, start_time=start_time, end_time=end_time)
+        return {"4h": count_4h}
+    except Exception as e:
+        return {"4h": 0, "error": str(e)}
 
 
 def _update_next_run_time_legacy() -> None:
@@ -481,9 +505,13 @@ def fetch_candles_30m_job() -> None:
         result = _run_coroutine(_fetch_and_store(db, symbol=symbol, days=days, timeframe=timeframe))
         db.commit()
 
+        # Resample chaîne complète : 30m → 1h, 30m → 4h
         resample_data = _run_resample_30m_to_1h(db, symbol, result.get("min_ts"), result.get("max_ts"))
+        resample_4h_data = _run_resample_30m_to_4h(db, symbol, result.get("min_ts"), result.get("max_ts"))
         db.commit()
 
+        # Merge resample results
+        resample_data.update(resample_4h_data)
         result["resample"] = _build_resample_contract(resample_data)
         result.pop("min_ts", None)
         result.pop("max_ts", None)

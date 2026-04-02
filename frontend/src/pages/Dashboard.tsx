@@ -55,7 +55,7 @@ import { useNews } from '../hooks/useNews';
 // -----------------------------------------------------------------------------
 
 type TimeframeOption = '30m' | '1h' | '4h' | '1d';
-type DaysOption = 1 | 2 | 7 | 14 | 30;
+type DaysOption = 1 | 2 | 7 | 14 | 30 | 90;
 
 interface FetchResult {
   status: string;
@@ -80,13 +80,14 @@ function getTriggerEndpoint(tf: TimeframeOption): string {
   return '/scheduler/trigger/4h';
 }
 
-function getEffectiveDays(tf: TimeframeOption, requestedDays: DaysOption): number {
-  if (tf === '30m' || tf === '1h') return Math.min(requestedDays, 1);
+// Toutes les combinaisons timeframe × jours sont maintenant possibles
+// grâce à Binance comme source de données (pas de contrainte de granularité)
+function getEffectiveDays(_tf: TimeframeOption, requestedDays: DaysOption): number {
   return requestedDays;
 }
 
-function isHistoryCapped(tf: TimeframeOption, requestedDays: DaysOption): boolean {
-  return (tf === '30m' || tf === '1h') && requestedDays > 1;
+function isHistoryCapped(_tf: TimeframeOption, _requestedDays: DaysOption): boolean {
+  return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -321,6 +322,7 @@ const Dashboard: React.FC = () => {
                 <MenuItem value="7">7j</MenuItem>
                 <MenuItem value="14">14j</MenuItem>
                 <MenuItem value="30">30j</MenuItem>
+                <MenuItem value="90">90j</MenuItem>
               </Select>
             </FormControl>
 
@@ -440,8 +442,7 @@ const Dashboard: React.FC = () => {
         )}
         {historyCapped && (
           <Alert severity="info" icon={<InfoIcon />} sx={{ mb: 2 }}>
-            <strong>Limite CoinGecko :</strong> 30m/1h limités à 1 jour max.
-            Affichage: {effectiveDays}j (sélection: {days}j). Utilisez 4h/1d pour plus d'historique.
+            <strong>Source Binance :</strong> Toutes les combinaisons timeframe/jours sont supportées.
           </Alert>
         )}
 

@@ -146,6 +146,69 @@ def resample_4h_to_1d(
     )
 
 
+def resample_30m_to_4h(
+        db: Session,
+        symbol: str = "BTC/USD",
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+) -> int:
+    """
+    Resample 30m -> 4h.
+
+    Utile quand on a des données 30m sur plusieurs jours (via Binance)
+    et qu'on veut générer les candles 4h correspondants.
+
+    Args:
+        db: Session SQLAlchemy
+        symbol: Paire de trading
+        start_time: Début de la fenêtre (optionnel)
+        end_time: Fin de la fenêtre (optionnel)
+
+    Returns:
+        Nombre de candles 4h créés/mis à jour
+    """
+    return _resample(
+        db=db,
+        symbol=symbol,
+        source_tf="30m",
+        target_tf="4h",
+        candles_per_bucket=8,  # 8 candles 30m = 1 candle 4h
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+
+def resample_1h_to_4h(
+        db: Session,
+        symbol: str = "BTC/USD",
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+) -> int:
+    """
+    Resample 1h -> 4h.
+
+    Utile quand on a des données 1h et qu'on veut générer les candles 4h.
+
+    Args:
+        db: Session SQLAlchemy
+        symbol: Paire de trading
+        start_time: Début de la fenêtre (optionnel)
+        end_time: Fin de la fenêtre (optionnel)
+
+    Returns:
+        Nombre de candles 4h créés/mis à jour
+    """
+    return _resample(
+        db=db,
+        symbol=symbol,
+        source_tf="1h",
+        target_tf="4h",
+        candles_per_bucket=4,  # 4 candles 1h = 1 candle 4h
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+
 def resample_all(
         db: Session,
         symbol: str = "BTC/USD",
@@ -155,6 +218,12 @@ def resample_all(
     """
     Lance tous les resamplings disponibles.
 
+    Ordre important : on resample du plus fin vers le plus grossier
+    pour que chaque étape puisse s'appuyer sur les données générées
+    par l'étape précédente.
+
+    Chaîne : 30m -> 1h -> 4h -> 1d
+
     Returns:
         Dict avec le nombre de candles créés par timeframe
     """
@@ -162,6 +231,12 @@ def resample_all(
 
     # 30m -> 1h
     results["1h"] = resample_30m_to_1h(db, symbol, start_time, end_time)
+
+    # 30m -> 4h (directement depuis 30m, plus précis)
+    results["4h_from_30m"] = resample_30m_to_4h(db, symbol, start_time, end_time)
+
+    # 1h -> 4h (complète si on a des 1h sans 30m source)
+    results["4h_from_1h"] = resample_1h_to_4h(db, symbol, start_time, end_time)
 
     # 4h -> 1d
     results["1d"] = resample_4h_to_1d(db, symbol, start_time, end_time)

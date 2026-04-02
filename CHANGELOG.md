@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.5] - 2026-04-02
+
+### Added
+- **Binance Service** (`binance_service.py`): Client HTTP async pour l'API publique Binance (OHLCV natif, toute granularité, pagination automatique, volume réel)
+- **DataSource Router** (`data_source_router.py`): Routeur intelligent — Binance (prioritaire) avec fallback CoinGecko automatique
+- **Resample 30m→4h** et **1h→4h**: Nouveaux resamplings pour chaîne complète 30m→1h→4h→1d
+- **45 nouveaux tests**: BinanceService (parsing, mapping), DataSourceRouter (fallback), 24 combinaisons paramétrées, resample 30m→4h et 1h→4h
+- Option **90 jours** dans le sélecteur d'historique du Dashboard
+
+### Changed
+- **Toutes les 24 combinaisons timeframe × jours débloquées** (30m+30j, 1h+14j, 4h+1j, 1d+2j, etc.)
+- Endpoint `POST /market/candles/fetch` accepte désormais un paramètre `timeframe` explicite (optionnel, rétrocompatible)
+- Endpoint `POST /market/candles/fetch` utilise DataSourceRouter (Binance + CoinGecko fallback)
+- Scheduler `_fetch_and_store()` utilise DataSourceRouter au lieu de CoinGecko directement
+- Job 30m resample maintenant aussi en 4h (chaîne complète)
+- `resample_all()` orchestre la chaîne complète : 30m→1h, 30m→4h, 1h→4h, 4h→1d
+- Suppression du cap frontend "30m/1h limité à 1 jour" — plus de limitation
+
+### Technical
+- 298 tests backend passing (253 → 298, +45)
+- Frontend tsc --noEmit sans erreur
+- Aucune nouvelle dépendance npm/pip (httpx déjà inclus)
+- Source Binance : BTCUSDT (Tether) ≈ BTC/USD (<0.1% écart)
+
 ## [0.9.3] - 2026-04-02
 
 ### Changed
