@@ -254,7 +254,7 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
               }}
             >
               <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.65rem', color: 'text.secondary' }}>
-                {timeframe} / {historyDays}j
+                {timeframe} / {historyDays < 1 ? `${Math.round(historyDays * 24)}h` : historyDays === 365 ? '1an' : `${historyDays}j`}
               </Typography>
             </Box>
           </Box>

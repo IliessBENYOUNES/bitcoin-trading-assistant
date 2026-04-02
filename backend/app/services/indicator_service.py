@@ -221,7 +221,7 @@ class IndicatorService:
             self,
             symbol: str = "BTC/USD",
             timeframe: str = "4h",
-            history_days: int = 7,
+            history_days: float = 7,
             end_ts: Optional[datetime] = None,
             include_candles: bool = False
     ) -> dict:

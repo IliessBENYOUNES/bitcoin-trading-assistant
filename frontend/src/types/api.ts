@@ -64,11 +64,12 @@ export interface MarketGapsResponse {
   symbol: string;
   timeframe: string;
   days: number;
-  now_utc: string;
-  freshness: GapsFreshness;
-  completeness: GapsCompleteness;
-  stats: GapsStats;
+  now_utc?: string;
+  freshness?: GapsFreshness;
+  completeness?: GapsCompleteness;
+  stats?: GapsStats;
   global_status: "OK" | "STALE" | "GAPS" | "NO_DATA";
+  error?: string;
 }
 
 // -----------------------------------------------------------------------------

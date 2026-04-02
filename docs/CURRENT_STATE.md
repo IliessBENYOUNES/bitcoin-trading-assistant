@@ -1,23 +1,23 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 2 avril 2026
-> **Version :** v0.9.5
+> **Version :** v0.9.6
 > **Branche :** `master`
-> **Dernier commit :** feat(data): add Binance API + DataSourceRouter — all timeframe×days combinations unlocked
+> **Dernier commit :** feat(trading): all 14 Binance timeframes + live WebSocket price + fractional durations
 
 ---
 
 ## 1. Vue d'ensemble
 
-Bitcoin Trading Assistant (alias **BTC Insight**) est un outil d'aide à la lecture du marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur 4 timeframes, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, et affiche tout dans un dashboard interactif.
+Bitcoin Trading Assistant (alias **BTC Insight**) est un outil d'aide à la lecture du marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur **14 timeframes**, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, affiche un **prix BTC temps réel via WebSocket Binance**, et affiche tout dans un dashboard interactif.
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v0.9.5** |
+| Version courante | **v0.9.6** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **298 tests**, tous passing ✅ |
+| Tests backend | **342 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -48,20 +48,20 @@ bitcoin-trading-assistant/
 │   │   │   ├── alert.py        # AlertCreate, AlertResponse, AlertCheck
 │   │   │   └── news.py         # NewsItem, NewsSentimentSummary, NewsResponse
 │   │   ├── services/
-│   │   │   ├── binance_service.py     # ← NOUVEAU (v0.9.5) — Client HTTP Binance (OHLCV natif)
-│   │   │   ├── data_source_router.py  # ← NOUVEAU (v0.9.5) — Routeur Binance/CoinGecko
+│   │   │   ├── binance_service.py     # Client HTTP Binance (14 intervalles natifs)
+│   │   │   ├── data_source_router.py  # Routeur Binance/CoinGecko
 │   │   │   ├── coingecko_service.py   # Client HTTP CoinGecko (fallback)
 │   │   │   ├── indicator_service.py   # RSI, MACD, SMA, Bollinger
 │   │   │   ├── signal_service.py      # Interprétation → signaux + score composite
 │   │   │   ├── alert_service.py       # CRUD alertes + évaluation conditions
 │   │   │   ├── news_service.py        # RSS + sentiment + impact
-│   │   │   └── resample_service.py    # Agrégation 30m→1h, 30m→4h, 1h→4h, 4h→1d
+│   │   │   └── resample_service.py    # Agrégation multi-timeframe (14 niveaux)
 │   │   ├── tasks/
 │   │   │   └── scheduler.py    # APScheduler dual-jobs (4h + 30m) via DataSourceRouter
 │   │   └── utils/
-│   │       ├── time_buckets.py # Alignement UTC, fenêtres glissantes
+│   │       ├── time_buckets.py # Alignement UTC 14 timeframes, fenêtres glissantes
 │   │       └── db_upsert.py    # Upsert dialect-aware
-│   └── tests/                  # 298 tests pytest
+│   └── tests/                  # 342 tests pytest
 │       ├── test_health.py
 │       ├── test_indicators.py
 │       ├── test_market.py
@@ -72,26 +72,27 @@ bitcoin-trading-assistant/
 │       ├── test_signals.py
 │       ├── test_alerts.py
 │       ├── test_news.py
-│       ├── test_binance_and_router.py  # ← NOUVEAU (v0.9.5) — 45 tests Binance + router + combinaisons
+│       ├── test_binance_and_router.py  # 66+ combinaisons paramétrées
 │       └── test_time_buckets.py
 │
 ├── frontend/                   # React SPA
 │   └── src/
 │       ├── App.tsx
 │       ├── pages/
-│       │   └── Dashboard.tsx   # Page principale (+ SignalPanel + AlertPanel + NewsPanel)
+│       │   └── Dashboard.tsx   # Page principale (14 TF + 15 durées + live price)
 │       ├── components/
 │       │   ├── CandlestickChart.tsx   # Graphique Lightweight Charts
 │       │   ├── IndicatorPanel.tsx     # Panel RSI/MACD/SMA/Bollinger
-│       │   ├── SignalPanel.tsx        # (v0.7) — Jauge score, signaux, consensus
-│       │   ├── AlertPanel.tsx         # (v0.8) — Formulaire + liste alertes
-│       │   ├── NewsPanel.tsx          # ← NOUVEAU (v0.9) — News + sentiment + filtres
-│       │   ├── GlowingCard.tsx        # ← NOUVEAU (v0.9.4) — Card animée premium
-│       │   ├── SectionHeader.tsx      # ← NOUVEAU (v0.9.4) — Titre section avec gradient
-│       │   ├── PriceTicker.tsx        # ← NOUVEAU (v0.9.4) — Prix BTC LIVE animé
+│       │   ├── SignalPanel.tsx        # Jauge score, signaux, consensus
+│       │   ├── AlertPanel.tsx         # Formulaire + liste alertes
+│       │   ├── AlertPresets.tsx       # 12 stratégies éprouvées en 1 clic
+│       │   ├── NewsPanel.tsx          # News + sentiment + filtres
+│       │   ├── GlowingCard.tsx        # Card animée premium
+│       │   ├── SectionHeader.tsx      # Titre section avec gradient
+│       │   ├── PriceTicker.tsx        # ← MAJ v0.9.6 — Prix BTC LIVE WebSocket + 24h stats
 │       │   ├── StatusRow.tsx          # Barre de statut connectée
 │       │   ├── StatusBar.tsx          # Barre de statut UI
-│       │   ├── DataFreshnessChip.tsx  # Chip FRESH/STALE/GAPS
+│       │   ├── DataFreshnessChip.tsx  # ← MAJ v0.9.6 — Gestion NO_DATA
 │       │   ├── SchedulerChip.tsx      # Chip ON/OFF scheduler
 │       │   ├── PriceCard.tsx          # Carte prix courant
 │       │   └── ErrorBoundary.tsx      # Error boundary graphique
@@ -100,14 +101,15 @@ bitcoin-trading-assistant/
 │       │   ├── useIndicators.ts       # Fetch indicateurs API
 │       │   ├── useMarketGaps.ts       # Fetch gaps API
 │       │   ├── useSchedulerStatus.ts  # Fetch scheduler status
-│       │   ├── useSignals.ts          # (v0.7) — Fetch signaux API
-│       │   ├── useAlerts.ts           # (v0.8) — CRUD + check alertes
-│       │   └── useNews.ts            # ← NOUVEAU (v0.9) — Fetch news + polling
+│       │   ├── useSignals.ts          # Fetch signaux API
+│       │   ├── useAlerts.ts           # CRUD + check alertes
+│       │   ├── useNews.ts             # Fetch news + polling
+│       │   └── useLivePrice.ts        # ← NOUVEAU v0.9.6 — WebSocket Binance temps réel
 │       ├── api/
 │       │   ├── client.ts             # Axios instance
-│       │   └── marketApi.ts          # API calls typées (+ news)
+│       │   └── marketApi.ts          # API calls typées
 │       └── types/
-│           ├── api.ts               # Types TypeScript (+ News types)
+│           ├── api.ts               # Types TypeScript (+ MarketGapsResponse optionnel)
 │           └── index.ts             # Barrel exports
 │
 └── docs/
@@ -129,21 +131,21 @@ bitcoin-trading-assistant/
 | GET | `/health` | Health check | ✅ |
 | GET | `/health/db` | Health check DB | ✅ |
 | GET | `/market/candles` | Liste candles (filtres: timeframe, symbol, days, limit) | ✅ |
-| POST | `/market/candles/fetch` | Fetch manuel CoinGecko | ✅ |
-| GET | `/market/candles/gaps` | Analyse qualité données (fraîcheur + complétude) | ✅ |
-| GET | `/market/indicators` | Indicateurs techniques (RSI, MACD, SMA, Bollinger) | ✅ |
-| GET | `/market/signals` | Signaux de trading + score composite | ✅ (v0.7) |
+| POST | `/market/candles/fetch` | Fetch manuel (14 timeframes, jours fractionnels) | ✅ **MAJ v0.9.6** |
+| GET | `/market/candles/gaps` | Analyse qualité données (fraîcheur + complétude) | ✅ **MAJ v0.9.6** |
+| GET | `/market/indicators` | Indicateurs techniques (RSI, MACD, SMA, Bollinger) | ✅ **MAJ v0.9.6** |
+| GET | `/market/signals` | Signaux de trading + score composite | ✅ **MAJ v0.9.6** |
 | GET | `/market/price` | Prix courant | ✅ |
 | GET | `/market/info` | Info marché | ✅ |
-| GET | `/alerts` | Lister les alertes | ✅ (v0.8) |
-| POST | `/alerts` | Créer une alerte | ✅ (v0.8) |
-| GET | `/alerts/{id}` | Récupérer une alerte | ✅ (v0.8) |
-| PUT | `/alerts/{id}` | Modifier une alerte | ✅ (v0.8) |
-| DELETE | `/alerts/{id}` | Supprimer une alerte | ✅ (v0.8) |
-| POST | `/alerts/check` | Évaluer les alertes actives | ✅ (v0.8) |
-| GET | `/alerts/notifications` | Alertes récemment déclenchées | ✅ (v0.8) |
-| GET | `/news` | **Liste des news crypto avec sentiment** | ✅ **NOUVEAU v0.9** |
-| GET | `/news/sentiment` | **Résumé du sentiment global** | ✅ **NOUVEAU v0.9** |
+| GET | `/alerts` | Lister les alertes | ✅ |
+| POST | `/alerts` | Créer une alerte | ✅ |
+| GET | `/alerts/{id}` | Récupérer une alerte | ✅ |
+| PUT | `/alerts/{id}` | Modifier une alerte | ✅ |
+| DELETE | `/alerts/{id}` | Supprimer une alerte | ✅ |
+| POST | `/alerts/check` | Évaluer les alertes actives | ✅ |
+| GET | `/alerts/notifications` | Alertes récemment déclenchées | ✅ |
+| GET | `/news` | Liste des news crypto avec sentiment | ✅ |
+| GET | `/news/sentiment` | Résumé du sentiment global | ✅ |
 | GET | `/scheduler/status` | État scheduler + dernier résultat par job | ✅ |
 | POST | `/scheduler/trigger/4h` | Trigger manuel job 4h | ✅ |
 | POST | `/scheduler/trigger/30m` | Trigger manuel job 30m | ✅ |
@@ -152,17 +154,38 @@ bitcoin-trading-assistant/
 
 | Service | Description | Status |
 |---------|-------------|--------|
-| **Binance Service** | **Client HTTP async Binance, OHLCV natif toute granularité, pagination auto** | ✅ **NOUVEAU v0.9.5** |
-| **DataSource Router** | **Routeur intelligent Binance (prioritaire) / CoinGecko (fallback)** | ✅ **NOUVEAU v0.9.5** |
+| **Binance Service** | Client HTTP async Binance, **14 intervalles natifs** (1m→1w), pagination auto | ✅ **MAJ v0.9.6** |
+| **DataSource Router** | Routeur intelligent Binance (prioritaire) / CoinGecko (fallback) | ✅ |
 | **CoinGecko Service** | Client HTTP async, mapping symboles, gestion timeouts (fallback) | ✅ |
-| **Indicator Service** | RSI(14), MACD(12,26,9), SMA(20,50,200), Bollinger(20,2) | ✅ |
-| **Signal Service** | Interprétation indicateurs → signaux + score composite -100/+100 | ✅ (v0.7) |
-| **Alert Service** | CRUD alertes + évaluation conditions (prix, RSI, MACD, score) | ✅ (v0.8) |
-| **News Service** | Collecte RSS + classification sentiment + score d'impact | ✅ (v0.9) |
-| **Resample Service** | Agrégation OHLCV 30m→1h, **30m→4h, 1h→4h**, 4h→1d, idempotent via upsert | ✅ **MAJ v0.9.5** |
-| **Scheduler Dual-Jobs** | Job 4h + Job 30m via DataSourceRouter | ✅ **MAJ v0.9.5** |
+| **Indicator Service** | RSI(14), MACD(12,26,9), SMA(20,50,200), Bollinger(20,2), **jours fractionnels** | ✅ **MAJ v0.9.6** |
+| **Signal Service** | Interprétation indicateurs → signaux + score composite -100/+100, **jours fractionnels** | ✅ **MAJ v0.9.6** |
+| **Alert Service** | CRUD alertes + évaluation conditions (prix, RSI, MACD, score) | ✅ |
+| **News Service** | Collecte RSS + classification sentiment + score d'impact | ✅ |
+| **Resample Service** | Agrégation OHLCV **14 timeframes**, idempotent via upsert | ✅ **MAJ v0.9.6** |
+| **Scheduler Dual-Jobs** | Job 4h + Job 30m via DataSourceRouter | ✅ |
 
-### 3.3 Backend — Moteur de Signaux (v0.7)
+### 3.3 Backend — Timeframes supportés (v0.9.6)
+
+| Timeframe | Source | Intervalle |
+|-----------|--------|------------|
+| **1m** | Binance direct | 1 minute |
+| **3m** | Binance direct | 3 minutes |
+| **5m** | Binance direct | 5 minutes |
+| **15m** | Binance direct | 15 minutes |
+| **30m** | Binance direct (CoinGecko fallback) | 30 minutes |
+| **1h** | Binance direct ou Resample 30m→1h | 1 heure |
+| **2h** | Binance direct | 2 heures |
+| **4h** | Binance direct ou Resample | 4 heures |
+| **6h** | Binance direct | 6 heures |
+| **8h** | Binance direct | 8 heures |
+| **12h** | Binance direct | 12 heures |
+| **1d** | Binance direct ou Resample 4h→1d | 1 jour |
+| **3d** | Binance direct | 3 jours |
+| **1w** | Binance direct | 1 semaine |
+
+> **v0.9.6 : 14 timeframes × 15 durées = toutes les combinaisons possibles**
+
+### 3.4 Backend — Moteur de Signaux (v0.7)
 
 | Interpréteur | Logique | Status |
 |--------------|---------|--------|
@@ -173,7 +196,7 @@ bitcoin-trading-assistant/
 | **Score composite** | Agrégation pondérée -100/+100, confiance, consensus | ✅ |
 | **Résumé lisible** | Génération automatique d'un résumé en français | ✅ |
 
-### 3.4 Backend — Système d'Alertes (v0.8)
+### 3.5 Backend — Système d'Alertes (v0.8)
 
 | Fonctionnalité | Description | Status |
 |----------------|-------------|--------|
@@ -184,7 +207,7 @@ bitcoin-trading-assistant/
 | **Récurrence** | Alertes one-shot ou récurrentes | ✅ |
 | **Notifications** | Génération de messages de notification structurés | ✅ |
 
-### 3.5 Backend — News & Sentiment (v0.9)
+### 3.6 Backend — News & Sentiment (v0.9)
 
 | Fonctionnalité | Description | Status |
 |----------------|-------------|--------|
@@ -196,45 +219,35 @@ bitcoin-trading-assistant/
 | **Score global** | Agrégation pondérée -100/+100 avec impact | ✅ |
 | **Filtre sentiment** | Filtrer par positive/negative/neutral | ✅ |
 
-### 3.6 Backend — Timeframes supportés
-
-| Timeframe | Source | Méthode |
-|-----------|--------|---------|
-| **30m** | Binance direct (CoinGecko fallback) | Toute période (1j–90j+) |
-| **1h** | Binance direct ou Resample 30m→1h | Toute période |
-| **4h** | Binance direct ou Resample 30m→4h, 1h→4h | Toute période |
-| **1d** | Binance direct ou Resample 4h→1d | Toute période |
-
-> **v0.9.5 : Toutes les 24 combinaisons timeframe × jours sont maintenant possibles**
-> grâce à Binance comme source principale (pas de contrainte de granularité).
-
 ### 3.7 Frontend — Composants
 
 | Composant | Description | Status |
 |-----------|-------------|--------|
-| **Dashboard** | Page principale avec sélecteurs timeframe/historique | ✅ |
+| **Dashboard** | Page principale avec **14 TF + 15 durées** + live price | ✅ **MAJ v0.9.6** |
 | **CandlestickChart** | Graphique chandeliers (Lightweight Charts) | ✅ |
 | **IndicatorPanel** | Affichage RSI, MACD, SMA, Bollinger avec couleurs | ✅ |
-| **SignalPanel** | Jauge score composite, liste signaux, consensus | ✅ (v0.7) |
-| **AlertPanel** | Formulaire création + liste alertes + notifications | ✅ (v0.8) |
-| **AlertPresets** | **12 stratégies éprouvées en 1 clic (Wilder, Appel, Elder, Brandt)** | ✅ **NOUVEAU v0.9.1** |
-| **NewsPanel** | **News crypto + sentiment + filtres + jauge** | ✅ **NOUVEAU v0.9** |
+| **SignalPanel** | Jauge score composite, liste signaux, consensus | ✅ |
+| **AlertPanel** | Formulaire création + liste alertes + notifications | ✅ |
+| **AlertPresets** | 12 stratégies éprouvées en 1 clic | ✅ |
+| **NewsPanel** | News crypto + sentiment + filtres + jauge | ✅ |
+| **PriceTicker** | **Prix BTC LIVE WebSocket Binance + variation 24h + high/low + volume** | ✅ **MAJ v0.9.6** |
+| **DataFreshnessChip** | Chip FRESH / STALE / GAPS + **gestion NO_DATA** | ✅ **MAJ v0.9.6** |
 | **StatusRow** | Barre de statut (fraîcheur + scheduler) | ✅ |
-| **DataFreshnessChip** | Chip FRESH / STALE / GAPS | ✅ |
 | **SchedulerChip** | Chip scheduler ON / OFF | ✅ |
 | **ErrorBoundary** | Protection crash graphique | ✅ |
 
 ### 3.8 Frontend — Contrôles utilisateur
 
-- Sélecteur timeframe : 30m, 1h, 4h, 1d
-- Sélecteur historique : 1, 2, 7, 14, 30, **90** jours
-- **Toutes les combinaisons timeframe × jours sont supportées** (Binance API)
-- Bouton "Fetch API" avec routing intelligent (trigger 30m ou 4h selon timeframe)
+- Sélecteur timeframe : **1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w** (14 options)
+- Sélecteur durée : **1h30, 3h, 6h, 12h, 1j, 2j, 3j, 5j, 7j, 14j, 30j, 60j, 90j, 180j, 1an** (15 options)
+- **Prix BTC temps réel via WebSocket Binance** (~1 update/seconde)
+- Variation 24h, High/Low 24h, Volume 24h dans le PriceTicker
+- Bouton "Fetch API" appel direct `/market/candles/fetch` (tous timeframes)
 - Bouton "Actualiser" pour refresh local (inclut signaux + alertes + news)
 - Affichage résultat fetch (inserted, updated, duplicates, resample)
-- Panel signaux avec jauge, liste, confiance et consensus (v0.7)
-- Panel alertes avec formulaire, liste, notifications polling (v0.8)
-- Panel news avec jauge sentiment, liste articles, filtres, liens cliquables (v0.9)
+- Panel signaux avec jauge, liste, confiance et consensus
+- Panel alertes avec formulaire, liste, notifications polling
+- Panel news avec jauge sentiment, liste articles, filtres, liens cliquables
 
 ---
 
@@ -252,9 +265,9 @@ bitcoin-trading-assistant/
 | test_signals.py | 52 | RSI/MACD/SMA/Bollinger interpréteurs, composite, résumé, intégration, endpoint |
 | test_alerts.py | 48 | CRUD, évaluation, récurrence, endpoints |
 | test_news.py | 43 | Sentiment, impact, RSS, résumé, résilience, endpoints |
-| **test_binance_and_router.py** | **45** | **Binance parsing, DataSourceRouter fallback, 24 combinaisons, resample 30m→4h, 1h→4h** |
+| **test_binance_and_router.py** | **89** | **Binance 14 intervalles, DataSourceRouter fallback, 66 combinaisons, resample** |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **298** | **Tous passing ✅** |
+| **TOTAL** | **342** | **Tous passing ✅** |
 
 ---
 
@@ -277,6 +290,7 @@ bitcoin-trading-assistant/
 - MUI (Material UI) 5.15
 - Lightweight Charts 4.1
 - Axios 1.6.5
+- Framer Motion 11.x
 
 ### Infrastructure
 - PostgreSQL (prod) / SQLite (tests)
@@ -320,7 +334,7 @@ Le projet suit une trajectoire en 3 étapes (détails : [ROADMAP_INFINI.md](./RO
 | **2** | INFINI v1 | v1.0 → v1.5 | Assistant intelligent, décisionnel | ⬜ Non commencé |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Fin Étape 1** — BTC Insight complet (données + indicateurs + signaux + alertes + news)
+**Position actuelle :** **Fin Étape 1** — BTC Insight complet (données + indicateurs + signaux + alertes + news + prix live)
 
 ---
 

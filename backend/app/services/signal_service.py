@@ -511,7 +511,7 @@ class SignalService:
         self,
         symbol: str = "BTC/USD",
         timeframe: str = "4h",
-        history_days: int = 7,
+        history_days: float = 7,
         end_ts: Optional[datetime] = None,
     ) -> dict:
         """

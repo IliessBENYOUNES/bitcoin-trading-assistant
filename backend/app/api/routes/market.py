@@ -43,6 +43,7 @@ from app.schemas import CandleResponse, CandleListResponse
 from app.services.coingecko_service import CoinGeckoService
 from app.services.data_source_router import DataSourceRouter
 from app.services.resample_service import resample_30m_to_1h, resample_30m_to_4h, resample_4h_to_1d
+from app.utils.time_buckets import align_to_bucket as utils_align_to_bucket
 import httpx
 
 # Router avec préfixe /market
@@ -63,8 +64,8 @@ coingecko_service = CoinGeckoService()
 def get_indicators(
         symbol: str = Query(default="BTC/USD"),
         timeframe: str = Query(default="4h"),
-        history_days: Optional[int] = Query(default=None, ge=1, le=365),
-        days: Optional[int] = Query(default=None, ge=1, le=365),  # alias toléré
+        history_days: Optional[float] = Query(default=None, ge=0.0625, le=365),
+        days: Optional[float] = Query(default=None, ge=0.0625, le=365),  # alias toléré
         end_ts: Optional[datetime] = Query(default=None),
         include_candles: bool = Query(default=False),
         db: Session = Depends(get_db),
@@ -93,8 +94,8 @@ def get_indicators(
 def get_signals(
         symbol: str = Query(default="BTC/USD"),
         timeframe: str = Query(default="4h"),
-        history_days: Optional[int] = Query(default=None, ge=1, le=365),
-        days: Optional[int] = Query(default=None, ge=1, le=365),  # alias toléré
+        history_days: Optional[float] = Query(default=None, ge=0.0625, le=365),
+        days: Optional[float] = Query(default=None, ge=0.0625, le=365),  # alias toléré
         end_ts: Optional[datetime] = Query(default=None),
         db: Session = Depends(get_db),
 ) -> dict:
@@ -122,10 +123,20 @@ def get_signals(
 def get_timeframe_hours(timeframe: str) -> float:
     """Convertit un timeframe en nombre d'heures."""
     mapping = {
+        "1m": 1 / 60,
+        "3m": 3 / 60,
+        "5m": 5 / 60,
+        "15m": 15 / 60,
         "30m": 0.5,
         "1h": 1,
+        "2h": 2,
         "4h": 4,
+        "6h": 6,
+        "8h": 8,
+        "12h": 12,
         "1d": 24,
+        "3d": 72,
+        "1w": 168,
         "4d": 96,
     }
     return mapping.get(timeframe, 4)
@@ -157,16 +168,19 @@ def get_rolling_window_from_max_ts(max_ts: datetime, days: int, timeframe: str) 
 
     # Aligner max_ts sur le bucket (devrait déjà l'être, mais par sécurité)
     max_ts_utc = normalize_to_utc(max_ts)
-    if tf_hours >= 1:
+    if timeframe in ("3d", "1w"):
+        # Pour 3d/1w, on aligne en jours
+        end_ts = max_ts_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif tf_hours >= 1:
         hour_floor = max_ts_utc.replace(minute=0, second=0, microsecond=0)
         bucket_hour = (hour_floor.hour // int(tf_hours)) * int(tf_hours)
         end_ts = hour_floor.replace(hour=bucket_hour)
     else:
-        # 30m
-        if max_ts_utc.minute >= 30:
-            end_ts = max_ts_utc.replace(minute=30, second=0, microsecond=0)
-        else:
-            end_ts = max_ts_utc.replace(minute=0, second=0, microsecond=0)
+        # Sub-hourly: 1m, 3m, 5m, 15m, 30m
+        tf_minutes = int(tf_hours * 60)
+        minute_floor = max_ts_utc.replace(second=0, microsecond=0)
+        bucket_minute = (minute_floor.minute // tf_minutes) * tf_minutes
+        end_ts = minute_floor.replace(minute=bucket_minute)
 
     # Calculer start_ts
     total_hours = days * 24
@@ -186,17 +200,20 @@ def get_rolling_window_from_now(days: int, timeframe: str) -> tuple[datetime, da
     tf_hours = get_timeframe_hours(timeframe)
 
     # Aligner end_ts sur le dernier bucket complet
-    if tf_hours >= 1:
+    if timeframe in ("3d", "1w"):
+        # Pour 3d/1w, on aligne en jours
+        end_ts = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif tf_hours >= 1:
         hour_floor = now_utc.replace(minute=0, second=0, microsecond=0)
         hours_since_midnight = hour_floor.hour
         bucket_hour = (hours_since_midnight // int(tf_hours)) * int(tf_hours)
         end_ts = hour_floor.replace(hour=bucket_hour)
     else:
+        # Sub-hourly: 1m, 3m, 5m, 15m, 30m
+        tf_minutes = int(tf_hours * 60)
         minute_floor = now_utc.replace(second=0, microsecond=0)
-        if minute_floor.minute >= 30:
-            end_ts = minute_floor.replace(minute=30)
-        else:
-            end_ts = minute_floor.replace(minute=0)
+        bucket_minute = (minute_floor.minute // tf_minutes) * tf_minutes
+        end_ts = minute_floor.replace(minute=bucket_minute)
 
     # Calculer start_ts
     total_hours = days * 24
@@ -231,7 +248,7 @@ def get_candles(
         symbol: str = Query(default="BTC/USD", description="Paire de trading"),
         timeframe: str = Query(default="4h", description="Intervalle de temps"),
         limit: int = Query(default=100, ge=1, le=1000, description="Nombre max de résultats"),
-        days: Optional[int] = Query(default=None, ge=1, le=365, description="Fenêtre rolling en jours (optionnel)"),
+        days: Optional[float] = Query(default=None, ge=0.0625, le=365, description="Fenêtre rolling en jours (supporte les fractions, ex: 0.25 = 6h)"),
         anchor: str = Query(default="max_ts", pattern="^(max_ts|now)$", description="Ancrage: max_ts (complétude) ou now (fraîcheur)"),
         db: Session = Depends(get_db)
 ) -> dict:
@@ -329,7 +346,7 @@ def get_candles(
 def detect_gaps(
         symbol: str = Query(default="BTC/USD", description="Paire de trading"),
         timeframe: str = Query(default="4h", description="Intervalle de temps"),
-        days: int = Query(default=7, ge=1, le=90, description="Fenêtre en jours"),
+        days: float = Query(default=7, ge=0.0625, le=90, description="Fenêtre en jours (supporte les fractions)"),
         db: Session = Depends(get_db)
 ) -> dict:
     """
@@ -395,16 +412,16 @@ def detect_gaps(
         Candle.timestamp <= end_ts
     ).all()
 
-    # Normaliser en UTC pour comparaison
+    # Normaliser en UTC et aligner sur le bucket du timeframe pour comparaison
     existing_utc: set[datetime] = set()
     for (ts,) in existing_candles:
-        ts_utc = normalize_to_utc(ts).replace(minute=0, second=0, microsecond=0)
+        ts_utc = utils_align_to_bucket(normalize_to_utc(ts), timeframe)
         existing_utc.add(ts_utc)
 
     # Trouver les trous
     missing: list[str] = []
     for expected in expected_buckets:
-        expected_normalized = expected.replace(minute=0, second=0, microsecond=0)
+        expected_normalized = utils_align_to_bucket(expected, timeframe)
         if expected_normalized not in existing_utc:
             missing.append(expected.isoformat())
 
@@ -476,7 +493,7 @@ def detect_gaps(
 )
 async def fetch_candles(
         symbol: str = Query(default="BTC/USD", description="Paire de trading"),
-        days: int = Query(default=7, ge=1, le=365, description="Nombre de jours d'historique"),
+        days: float = Query(default=7, ge=0.0625, le=365, description="Nombre de jours d'historique (supporte les fractions)"),
         timeframe: Optional[str] = Query(
             default=None,
             description="Timeframe explicite (30m, 1h, 4h, 1d). Si absent, auto-détection selon days."
@@ -505,7 +522,7 @@ async def fetch_candles(
                 timeframe = "4d"
 
         # Valider le timeframe
-        valid_timeframes = {"30m", "1h", "4h", "1d", "4d"}
+        valid_timeframes = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "4d"}
         if timeframe not in valid_timeframes:
             raise HTTPException(
                 status_code=422,

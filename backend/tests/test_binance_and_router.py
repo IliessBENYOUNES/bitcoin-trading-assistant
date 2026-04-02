@@ -41,17 +41,18 @@ class TestBinanceServiceSymbolMapping:
 class TestBinanceServiceIntervalMapping:
     """Tests du mapping d'intervalles."""
 
+    def test_5m_interval(self):
+        service = BinanceService()
+        assert service._get_binance_interval("5m") == "5m"
+
+    def test_15m_interval(self):
+        service = BinanceService()
+        assert service._get_binance_interval("15m") == "15m"
+
     def test_30m_interval(self):
         service = BinanceService()
         assert service._get_binance_interval("30m") == "30m"
 
-    def test_1h_interval(self):
-        service = BinanceService()
-        assert service._get_binance_interval("1h") == "1h"
-
-    def test_4h_interval(self):
-        service = BinanceService()
-        assert service._get_binance_interval("4h") == "4h"
 
     def test_1d_interval(self):
         service = BinanceService()
@@ -60,6 +61,14 @@ class TestBinanceServiceIntervalMapping:
 
 class TestBinanceServiceTimeframeMs:
     """Tests de la conversion timeframe en millisecondes."""
+
+    def test_5m_is_300000ms(self):
+        service = BinanceService()
+        assert service._timeframe_to_ms("5m") == 300_000
+
+    def test_15m_is_900000ms(self):
+        service = BinanceService()
+        assert service._timeframe_to_ms("15m") == 900_000
 
     def test_30m_is_1800000ms(self):
         service = BinanceService()
@@ -214,10 +223,10 @@ class TestDataSourceRouter:
 # =============================================================================
 
 class TestAllCombinations:
-    """Vérifie que toutes les 24 combinaisons timeframe × jours sont acceptées."""
+    """Vérifie que toutes les 66 combinaisons timeframe × jours sont acceptées."""
 
-    TIMEFRAMES = ["30m", "1h", "4h", "1d"]
-    DAYS_OPTIONS = [1, 2, 7, 14, 30, 90]
+    TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h", "1d"]
+    DAYS_OPTIONS = [1, 2, 3, 5, 7, 14, 30, 60, 90, 180, 365]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("timeframe", TIMEFRAMES)

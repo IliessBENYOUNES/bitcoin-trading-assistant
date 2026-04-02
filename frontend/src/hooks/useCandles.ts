@@ -41,7 +41,7 @@ export function useCandles({ timeframe, days }: UseCandlesParams): UseCandlesRes
                     import.meta.env.VITE_API_BASE_URL as string | undefined
                 )?.replace(/\/+$/, '') || 'http://localhost:8000';
 
-                const url = `${baseUrl}/market/candles?timeframe=${encodeURIComponent(timeframe)}&days=${days}`;
+                const url = `${baseUrl}/market/candles?timeframe=${encodeURIComponent(timeframe)}&days=${days}&limit=1000`;
 
                 console.log('[useCandles] Fetching:', url);
 

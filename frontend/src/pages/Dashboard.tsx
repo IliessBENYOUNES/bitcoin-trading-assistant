@@ -49,13 +49,15 @@ import { useCandles } from '../hooks/useCandles';
 import { useSignals } from '../hooks/useSignals';
 import { useAlerts } from '../hooks/useAlerts';
 import { useNews } from '../hooks/useNews';
+import { useLivePrice } from '../hooks/useLivePrice';
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
 
-type TimeframeOption = '30m' | '1h' | '4h' | '1d';
-type DaysOption = 1 | 2 | 7 | 14 | 30 | 90;
+type TimeframeOption = '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '6h' | '8h' | '12h' | '1d' | '3d' | '1w';
+// Fractions de jour : 0.0625 = 1h30, 0.125 = 3h, 0.25 = 6h, 0.5 = 12h
+type DaysOption = 0.0625 | 0.125 | 0.25 | 0.5 | 1 | 2 | 3 | 5 | 7 | 14 | 30 | 60 | 90 | 180 | 365;
 
 interface FetchResult {
   status: string;
@@ -69,16 +71,12 @@ interface FetchResult {
   error?: string;
 }
 
-const SUPPORTED_TIMEFRAMES: TimeframeOption[] = ['30m', '1h', '4h', '1d'];
+const SUPPORTED_TIMEFRAMES: TimeframeOption[] = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w'];
 
 function isTimeframeSupported(tf: TimeframeOption): boolean {
   return SUPPORTED_TIMEFRAMES.includes(tf);
 }
 
-function getTriggerEndpoint(tf: TimeframeOption): string {
-  if (tf === '30m' || tf === '1h') return '/scheduler/trigger/30m';
-  return '/scheduler/trigger/4h';
-}
 
 // Toutes les combinaisons timeframe × jours sont maintenant possibles
 // grâce à Binance comme source de données (pas de contrainte de granularité)
@@ -88,6 +86,19 @@ function getEffectiveDays(_tf: TimeframeOption, requestedDays: DaysOption): numb
 
 function isHistoryCapped(_tf: TimeframeOption, _requestedDays: DaysOption): boolean {
   return false;
+}
+
+/** Formate un nombre de jours en label lisible (ex: 0.25 → "6h", 7 → "7j") */
+function formatDuration(days: number): string {
+  if (days < 1) {
+    const hours = days * 24;
+    if (hours === Math.floor(hours)) return `${hours}h`;
+    const h = Math.floor(hours);
+    const m = Math.round((hours - h) * 60);
+    return `${h}h${m.toString().padStart(2, '0')}`;
+  }
+  if (days === 365) return '1an';
+  return `${days}j`;
 }
 
 // -----------------------------------------------------------------------------
@@ -116,8 +127,11 @@ const Dashboard: React.FC = () => {
   const alertsHook = useAlerts({ timeframe, pollInterval: 60000 });
   const news = useNews({ limit: 20, pollInterval: 300000 });
 
-  // Get latest price from indicators data
-  const currentPrice = indicators.data?.latest?.close ?? null;
+  // Prix BTC temps réel via WebSocket Binance (~1 update/seconde)
+  const livePrice = useLivePrice();
+
+  // Utilise le prix live si disponible, sinon fallback sur indicators
+  const currentPrice = livePrice.price ?? indicators.data?.latest?.close ?? null;
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -156,24 +170,32 @@ const Dashboard: React.FC = () => {
       setFetching(true);
       const baseUrl =
         (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? 'http://localhost:8000';
-      const triggerEndpoint = getTriggerEndpoint(timeframe);
-      const url = `${baseUrl}${triggerEndpoint}`;
-      const res = await fetch(url, { method: 'POST' });
+
+      // Appel direct à /market/candles/fetch avec le timeframe et les jours sélectionnés
+      // Cela fonctionne pour TOUS les timeframes (1m, 3m, 5m, ... 1w)
+      const fetchUrl = `${baseUrl}/market/candles/fetch?timeframe=${encodeURIComponent(timeframe)}&days=${effectiveDays}`;
+      const res = await fetch(fetchUrl, { method: 'POST' });
 
       if (!res.ok) {
         const text = await res.text().catch(() => 'Erreur inconnue');
         throw new Error(text);
       }
 
-      const statusRes = await fetch(`${baseUrl}/scheduler/status`);
-      if (statusRes.ok) {
-        const statusData = await statusRes.json();
-        const jobType = (timeframe === '30m' || timeframe === '1h') ? '30m' : '4h';
-        const jobResult = statusData?.jobs?.[jobType]?.last_result;
-        if (jobResult) setFetchResult(jobResult);
-      }
+      const result = await res.json();
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Adapter la réponse au format FetchResult attendu
+      setFetchResult({
+        status: 'success',
+        timeframe: result.timeframe ?? timeframe,
+        fetched: result.fetched ?? 0,
+        inserted: result.inserted ?? 0,
+        updated: result.updated ?? 0,
+        duplicates: result.duplicates ?? 0,
+        resample: result.resample ?? undefined,
+        duration_seconds: result.duration_seconds ?? undefined,
+      });
+
+      await new Promise(resolve => setTimeout(resolve, 300));
 
       candles.refresh();
       gaps.refresh();
@@ -286,7 +308,16 @@ const Dashboard: React.FC = () => {
 
           {/* Price Ticker */}
           <Box sx={{ display: { xs: 'none', md: 'flex' }, ml: 2 }}>
-            <PriceTicker price={currentPrice} loading={indicators.loading} />
+            <PriceTicker
+              price={currentPrice}
+              previousPrice={livePrice.previousPrice}
+              change24h={livePrice.change24h}
+              high24h={livePrice.high24h}
+              low24h={livePrice.low24h}
+              volume24h={livePrice.volume24h}
+              connected={livePrice.connected}
+              loading={!livePrice.connected && indicators.loading}
+            />
           </Box>
 
           {/* Spacer */}
@@ -302,27 +333,46 @@ const Dashboard: React.FC = () => {
                 onChange={handleTimeframeChange}
                 sx={{ fontSize: { xs: '0.8rem', sm: '0.85rem' } }}
               >
+                <MenuItem value="1m">1m</MenuItem>
+                <MenuItem value="3m">3m</MenuItem>
+                <MenuItem value="5m">5m</MenuItem>
+                <MenuItem value="15m">15m</MenuItem>
                 <MenuItem value="30m">30m</MenuItem>
                 <MenuItem value="1h">1h</MenuItem>
+                <MenuItem value="2h">2h</MenuItem>
                 <MenuItem value="4h">4h</MenuItem>
+                <MenuItem value="6h">6h</MenuItem>
+                <MenuItem value="8h">8h</MenuItem>
+                <MenuItem value="12h">12h</MenuItem>
                 <MenuItem value="1d">1d</MenuItem>
+                <MenuItem value="3d">3d</MenuItem>
+                <MenuItem value="1w">1w</MenuItem>
               </Select>
             </FormControl>
 
             <FormControl size="small" sx={{ minWidth: { xs: 70, sm: 90 } }}>
-              <InputLabel>Jours</InputLabel>
+              <InputLabel>Durée</InputLabel>
               <Select
                 value={String(days)}
-                label="Jours"
+                label="Durée"
                 onChange={handleDaysChange}
                 sx={{ fontSize: { xs: '0.8rem', sm: '0.85rem' } }}
               >
+                <MenuItem value="0.0625">1h30</MenuItem>
+                <MenuItem value="0.125">3h</MenuItem>
+                <MenuItem value="0.25">6h</MenuItem>
+                <MenuItem value="0.5">12h</MenuItem>
                 <MenuItem value="1">1j</MenuItem>
                 <MenuItem value="2">2j</MenuItem>
+                <MenuItem value="3">3j</MenuItem>
+                <MenuItem value="5">5j</MenuItem>
                 <MenuItem value="7">7j</MenuItem>
                 <MenuItem value="14">14j</MenuItem>
                 <MenuItem value="30">30j</MenuItem>
+                <MenuItem value="60">60j</MenuItem>
                 <MenuItem value="90">90j</MenuItem>
+                <MenuItem value="180">180j</MenuItem>
+                <MenuItem value="365">1an</MenuItem>
               </Select>
             </FormControl>
 
@@ -383,7 +433,16 @@ const Dashboard: React.FC = () => {
       <Container maxWidth="xl" sx={{ pt: { xs: 1.5, sm: 2.5 }, pb: 4, px: { xs: 1.5, sm: 3 } }}>
         {/* Mobile Price Ticker */}
         <Box sx={{ display: { xs: 'block', md: 'none' }, mb: 1.5 }}>
-          <PriceTicker price={currentPrice} loading={indicators.loading} />
+          <PriceTicker
+            price={currentPrice}
+            previousPrice={livePrice.previousPrice}
+            change24h={livePrice.change24h}
+            high24h={livePrice.high24h}
+            low24h={livePrice.low24h}
+            volume24h={livePrice.volume24h}
+            connected={livePrice.connected}
+            loading={!livePrice.connected && indicators.loading}
+          />
         </Box>
 
         {/* ================================================================= */}
@@ -460,7 +519,7 @@ const Dashboard: React.FC = () => {
           {candles.error && <Alert severity="error" sx={{ mb: 2 }}>{candles.error}</Alert>}
           {noData && !candles.error && (
             <Alert severity="info" sx={{ mb: 2 }}>
-              Aucune donnée pour {timeframe} / {effectiveDays}j. Cliquez sur "Fetch API".
+              Aucune donnée pour {timeframe} / {formatDuration(effectiveDays)}. Cliquez sur "Fetch API".
             </Alert>
           )}
           <ChartErrorBoundary fallbackMessage="Le graphique a rencontré une erreur.">

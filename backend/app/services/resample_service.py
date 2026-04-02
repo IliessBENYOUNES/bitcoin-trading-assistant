@@ -40,16 +40,49 @@ def align_to_bucket(dt: datetime, timeframe: str) -> datetime:
     """Aligne un timestamp sur le début de son bucket."""
     dt_utc = normalize_to_utc(dt)
 
-    if timeframe == "30m":
+    if timeframe == "1m":
+        return dt_utc.replace(second=0, microsecond=0)
+    elif timeframe == "3m":
+        minute = (dt_utc.minute // 3) * 3
+        return dt_utc.replace(minute=minute, second=0, microsecond=0)
+    elif timeframe == "5m":
+        minute = (dt_utc.minute // 5) * 5
+        return dt_utc.replace(minute=minute, second=0, microsecond=0)
+    elif timeframe == "15m":
+        minute = (dt_utc.minute // 15) * 15
+        return dt_utc.replace(minute=minute, second=0, microsecond=0)
+    elif timeframe == "30m":
         minute = 0 if dt_utc.minute < 30 else 30
         return dt_utc.replace(minute=minute, second=0, microsecond=0)
     elif timeframe == "1h":
         return dt_utc.replace(minute=0, second=0, microsecond=0)
+    elif timeframe == "2h":
+        hour = (dt_utc.hour // 2) * 2
+        return dt_utc.replace(hour=hour, minute=0, second=0, microsecond=0)
     elif timeframe == "4h":
         hour = (dt_utc.hour // 4) * 4
         return dt_utc.replace(hour=hour, minute=0, second=0, microsecond=0)
+    elif timeframe == "6h":
+        hour = (dt_utc.hour // 6) * 6
+        return dt_utc.replace(hour=hour, minute=0, second=0, microsecond=0)
+    elif timeframe == "8h":
+        hour = (dt_utc.hour // 8) * 8
+        return dt_utc.replace(hour=hour, minute=0, second=0, microsecond=0)
+    elif timeframe == "12h":
+        hour = (dt_utc.hour // 12) * 12
+        return dt_utc.replace(hour=hour, minute=0, second=0, microsecond=0)
     elif timeframe == "1d":
         return dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif timeframe == "3d":
+        days_since_epoch = (dt_utc - datetime(1970, 1, 1, tzinfo=timezone.utc)).days
+        aligned_days = (days_since_epoch // 3) * 3
+        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        return epoch + timedelta(days=aligned_days)
+    elif timeframe == "1w":
+        days_since_monday = dt_utc.weekday()
+        return (dt_utc - timedelta(days=days_since_monday)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
     return dt_utc
 
 

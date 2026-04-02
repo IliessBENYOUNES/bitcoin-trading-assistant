@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.6] - 2026-04-02
+
+### Added
+- **14 timeframes Binance**: Support complet de tous les intervalles Binance natifs (1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w)
+- **Prix BTC temps réel via WebSocket**: `useLivePrice` hook connecté à `wss://stream.binance.com:9443/ws/btcusdt@ticker` (~1 update/seconde)
+- **PriceTicker enrichi**: Variation 24h (%), High/Low 24h, Volume 24h en BTC, indicateur de connexion WebSocket, flash vert/rouge sur changement de prix
+- **15 options de durée**: Durées fractionnelles (1h30, 3h, 6h, 12h) en plus des durées en jours (1j→1an)
+- **44 nouveaux tests**: 66 combinaisons paramétrées (6 TF × 11 durées), tests intervalles 5m/15m
+
+### Changed
+- Endpoints `/market/indicators`, `/market/signals`, `/market/candles`, `/market/candles/gaps`, `/market/candles/fetch` acceptent maintenant les jours fractionnels (`float` au lieu de `int`)
+- `align_to_bucket` étendu dans `time_buckets.py` et `resample_service.py` pour 14 timeframes (dont 3d aligné sur epoch, 1w aligné sur lundi)
+- `BinanceService` supporte 14 intervalles avec mapping millisecondes complet
+- Dashboard: sélecteur timeframe 14 options, sélecteur durée 15 options, fetch direct via `/market/candles/fetch`
+- `DataFreshnessChip`: gestion gracieuse du status `NO_DATA` (pas de crash si freshness/completeness absents)
+- `MarketGapsResponse` TypeScript: champs `freshness`, `completeness`, `stats`, `now_utc` rendus optionnels
+- `useCandles`: ajout `limit=1000` par défaut pour supporter les petits timeframes
+- Labels durée affichés en heures quand < 1 jour (ex: "6h" au lieu de "0.25j")
+
+### Technical
+- 342 tests backend passing (298 → 342, +44)
+- Frontend tsc --noEmit sans erreur
+- Aucune nouvelle dépendance npm/pip
+- WebSocket Binance : reconnexion automatique avec backoff exponentiel (max 10 tentatives)
+
 ## [0.9.5] - 2026-04-02
 
 ### Added

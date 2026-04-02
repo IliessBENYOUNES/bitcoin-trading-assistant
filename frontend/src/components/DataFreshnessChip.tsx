@@ -40,6 +40,11 @@ function getChipStatus(data: MarketGapsResponse | null, error: string | null): C
 
   const { freshness, completeness, global_status } = data;
 
+  // NO_DATA: le backend n'envoie pas freshness/completeness
+  if (global_status === 'NO_DATA' || !freshness || !completeness) {
+    return 'gaps';
+  }
+
   // GAPS takes priority (data incomplete)
   if (completeness.status !== 'OK' || global_status === 'GAPS') {
     return 'gaps';
@@ -116,6 +121,17 @@ function buildTooltipContent(
   }
 
   const { freshness, completeness, global_status, timeframe, days } = data;
+
+  // NO_DATA: le backend ne renvoie pas freshness/completeness
+  if (global_status === 'NO_DATA' || !freshness || !completeness) {
+    return (
+      <Box sx={{ p: 0.5, fontSize: '0.85rem' }}>
+        <Box><strong>Timeframe:</strong> {timeframe} / {days} days</Box>
+        <Box><strong>Global Status:</strong> {global_status}</Box>
+        <Box sx={{ mt: 1 }}>Aucune donnée en base pour ce timeframe. Cliquez sur "Fetch API".</Box>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 0.5, fontSize: '0.85rem' }}>
