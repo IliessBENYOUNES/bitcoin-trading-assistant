@@ -58,6 +58,7 @@ function getActionEmoji(action: ActionType): string {
     case 'acheter': return '🟢';
     case 'vendre': return '🔴';
     case 'attendre': return '⚪';
+    default: return '⚪';
   }
 }
 
@@ -66,6 +67,7 @@ function getActionLabel(action: ActionType): string {
     case 'acheter': return 'ACHETER';
     case 'vendre': return 'VENDRE';
     case 'attendre': return 'ATTENDRE';
+    default: return 'ATTENDRE';
   }
 }
 
@@ -74,6 +76,7 @@ function getActionColor(action: ActionType): string {
     case 'acheter': return '#00E676';
     case 'vendre': return '#FF1744';
     case 'attendre': return '#6B7280';
+    default: return '#6B7280';
   }
 }
 
@@ -82,6 +85,7 @@ function getDirectionColor(direction: SignalDirection): string {
     case 'bullish': return '#00E676';
     case 'bearish': return '#FF1744';
     case 'neutral': return '#6B7280';
+    default: return '#6B7280';
   }
 }
 
@@ -90,6 +94,7 @@ function getConfidenceLabel(confidence: ConfidenceLevel): string {
     case 'high': return 'Haute';
     case 'medium': return 'Moyenne';
     case 'low': return 'Basse';
+    default: return 'Basse';
   }
 }
 
@@ -98,6 +103,7 @@ function getConfidenceColor(confidence: ConfidenceLevel): 'success' | 'warning' 
     case 'high': return 'success';
     case 'medium': return 'warning';
     case 'low': return 'default';
+    default: return 'default';
   }
 }
 
@@ -350,7 +356,7 @@ const RecommendationCard: React.FC<{ recommendation: DecisionResponse['recommend
         {/* Reasons */}
         {recommendation.reasons.length > 0 && (
           <Box sx={{ pl: 1 }}>
-            {recommendation.reasons.map((reason, i) => (
+            {recommendation.reasons.map((reason: string, i: number) => (
               <Typography
                 key={i}
                 variant="caption"
@@ -585,7 +591,7 @@ export const DecisionPanel: React.FC<DecisionPanelProps> = ({
         </Typography>
 
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, mb: 2 }}>
-          {scenarios.map((scenario, index) => (
+          {scenarios.map((scenario: Scenario, index: number) => (
             <ScenarioBar
               key={scenario.label}
               scenario={scenario}

@@ -2,7 +2,7 @@
 // Dashboard.tsx — Premium dark trading dashboard with animations
 // =============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Container,
@@ -26,7 +26,6 @@ import {
   Refresh as RefreshIcon,
   CloudDownload as FetchIcon,
   CheckCircle as SuccessIcon,
-  Info as InfoIcon,
   CurrencyBitcoin as BitcoinIcon,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -82,13 +81,6 @@ function isTimeframeSupported(tf: TimeframeOption): boolean {
 
 // Toutes les combinaisons timeframe × jours sont maintenant possibles
 // grâce à Binance comme source de données (pas de contrainte de granularité)
-function getEffectiveDays(_tf: TimeframeOption, requestedDays: DaysOption): number {
-  return requestedDays;
-}
-
-function isHistoryCapped(_tf: TimeframeOption, _requestedDays: DaysOption): boolean {
-  return false;
-}
 
 /** Formate un nombre de jours en label lisible (ex: 0.25 → "6h", 7 → "7j") */
 function formatDuration(days: number): string {
@@ -116,8 +108,8 @@ const Dashboard: React.FC = () => {
 
   const symbol = 'BTC/USD';
 
-  const effectiveDays = useMemo(() => getEffectiveDays(timeframe, days), [timeframe, days]);
-  const historyCapped = useMemo(() => isHistoryCapped(timeframe, days), [timeframe, days]);
+  // Toutes les combinaisons sont directement supportées par Binance
+  const effectiveDays = days;
 
   // ---------------------------------------------------------------------------
   // Hooks
@@ -502,11 +494,6 @@ const Dashboard: React.FC = () => {
         {fetchError && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setFetchError(null)}>
             {fetchError}
-          </Alert>
-        )}
-        {historyCapped && (
-          <Alert severity="info" icon={<InfoIcon />} sx={{ mb: 2 }}>
-            <strong>Source Binance :</strong> Toutes les combinaisons timeframe/jours sont supportées.
           </Alert>
         )}
 
