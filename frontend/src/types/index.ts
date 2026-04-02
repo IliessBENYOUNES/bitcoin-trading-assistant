@@ -32,6 +32,12 @@ export type {
   AlertCreate,
   AlertNotification,
   AlertCheckResponse,
+  // News & Sentiment
+  SentimentType,
+  ImpactLevel,
+  NewsItem,
+  NewsSentimentSummary,
+  NewsResponse,
 } from './api';
 
 // Représente un chandelier (bougie) OHLCV

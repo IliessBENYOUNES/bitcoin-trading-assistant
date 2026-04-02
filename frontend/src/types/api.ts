@@ -209,3 +209,36 @@ export interface AlertCheckResponse {
   notifications: AlertNotification[];
 }
 
+// -----------------------------------------------------------------------------
+// News & Sentiment (/news)
+// -----------------------------------------------------------------------------
+
+export type SentimentType = 'positive' | 'negative' | 'neutral';
+export type ImpactLevel = 'high' | 'medium' | 'low';
+
+export interface NewsItem {
+  title: string;
+  url: string | null;
+  source: string;
+  published_at: string | null;
+  sentiment: SentimentType;
+  impact: ImpactLevel;
+  keywords: string[];
+  description: string | null;
+}
+
+export interface NewsSentimentSummary {
+  total_articles: number;
+  positive_count: number;
+  negative_count: number;
+  neutral_count: number;
+  overall_sentiment: SentimentType;
+  sentiment_score: number;
+}
+
+export interface NewsResponse {
+  items: NewsItem[];
+  summary: NewsSentimentSummary;
+  meta: Record<string, unknown>;
+}
+

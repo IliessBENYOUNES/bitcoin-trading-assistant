@@ -1,7 +1,8 @@
 // =============================================================================
 // Market API Client - Bitcoin Trading Assistant
 // Exports: getSchedulerStatus, getMarketGaps, getIndicators, getSignals,
-//          getAlerts, createAlert, deleteAlert, checkAlerts
+//          getAlerts, createAlert, deleteAlert, checkAlerts,
+//          getNews, getNewsSentiment
 // =============================================================================
 
 import type {
@@ -12,6 +13,8 @@ import type {
   AlertItem,
   AlertCreate,
   AlertCheckResponse,
+  NewsResponse,
+  NewsSentimentSummary,
 } from '../types';
 
 // -----------------------------------------------------------------------------
@@ -209,5 +212,32 @@ export async function checkAlerts(
     throw new Error(`API Error ${response.status}: ${errorText}`);
   }
   return response.json() as Promise<AlertCheckResponse>;
+}
+
+// -----------------------------------------------------------------------------
+// News & Sentiment
+// -----------------------------------------------------------------------------
+
+export interface GetNewsParams {
+  limit?: number;
+  sentiment?: string;
+}
+
+export async function getNews(
+  params: GetNewsParams = {},
+  options: FetchOptions = {}
+): Promise<NewsResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.limit) searchParams.set('limit', String(params.limit));
+  if (params.sentiment) searchParams.set('sentiment', params.sentiment);
+  const qs = searchParams.toString();
+  const endpoint = `/news${qs ? `?${qs}` : ''}`;
+  return apiFetch<NewsResponse>(endpoint, options);
+}
+
+export async function getNewsSentiment(
+  options: FetchOptions = {}
+): Promise<NewsSentimentSummary> {
+  return apiFetch<NewsSentimentSummary>('/news/sentiment', options);
 }
 

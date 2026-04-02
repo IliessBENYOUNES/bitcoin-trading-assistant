@@ -30,6 +30,7 @@ import { StatusRowConnected } from '../components/StatusRow';
 import { IndicatorPanel } from '../components/IndicatorPanel';
 import { SignalPanel } from '../components/SignalPanel';
 import { AlertPanel } from '../components/AlertPanel';
+import { NewsPanel } from '../components/NewsPanel';
 import CandlestickChart from '../components/CandlestickChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
 
@@ -39,6 +40,7 @@ import { useMarketGaps } from '../hooks/useMarketGaps';
 import { useCandles } from '../hooks/useCandles';
 import { useSignals } from '../hooks/useSignals';
 import { useAlerts } from '../hooks/useAlerts';
+import { useNews } from '../hooks/useNews';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -157,6 +159,12 @@ const Dashboard: React.FC = () => {
     pollInterval: 60000,
   });
 
+  // Hook news avec polling toutes les 5 minutes
+  const news = useNews({
+    limit: 20,
+    pollInterval: 300000,
+  });
+
   // ---------------------------------------------------------------------------
   // Handlers
   // ---------------------------------------------------------------------------
@@ -178,6 +186,7 @@ const Dashboard: React.FC = () => {
     candles.refresh();
     signals.refresh();
     alertsHook.refresh();
+    news.refresh();
   };
 
   const handleFetchCandles = async () => {
@@ -469,6 +478,12 @@ const Dashboard: React.FC = () => {
                     onCheck={alertsHook.check}
                     onDismissNotifications={alertsHook.dismissNotifications}
                     timeframe={timeframe}
+                />
+                <NewsPanel
+                    data={news.data}
+                    loading={news.loading}
+                    error={news.error}
+                    onRefresh={news.refresh}
                 />
                 <IndicatorPanel
                     data={indicators.data}
