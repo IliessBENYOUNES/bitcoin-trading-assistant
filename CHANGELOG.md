@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.1] - 2026-04-02
+
+### Added
+- **Smart Alert Presets**: 12 stratégies d'alertes éprouvées activables en 1 clic
+- `AlertPresets.tsx` : composant avec 3 catégories (Accumulation, Protection, Avancées)
+- Stratégies basées sur les travaux de Wilder (RSI), Appel (MACD), Elder, Brandt
+- RSI Survente (< 30), RSI Capitulation (< 20), MACD Haussier, Score Convergence (> 60)
+- RSI Surachat (> 70), RSI Euphorie (> 80), MACD Baissier, Score Baissier (< -60)
+- DCA Intelligent (Saylor), Euphorie Maximale (> 80), Capitulation Totale (< -80), RSI Pullback (< 45)
+- Bouton "Tout activer" par catégorie ou global
+- Détection automatique des presets déjà actifs (pas de doublons)
+- Description détaillée avec contexte historique et preuves de performance pour chaque stratégie
+
+### Changed
+- AlertPanel intègre le composant AlertPresets entre le formulaire et la liste
+
+### Technical
+- 253 tests backend passing (aucun changement backend)
+- Frontend tsc --noEmit sans erreur
+
 ## [0.9.0] - 2026-04-02
 
 ### Added

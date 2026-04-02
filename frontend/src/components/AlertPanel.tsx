@@ -50,6 +50,7 @@ import type {
   AlertOperator,
   AlertStatus,
 } from '../types';
+import { AlertPresets } from './AlertPresets';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -514,6 +515,13 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
             <AlertForm onAdd={onAdd} timeframe={timeframe} />
           </Box>
         </Collapse>
+
+        {/* Stratégies éprouvées (presets) */}
+        <AlertPresets
+          onAdd={onAdd}
+          existingAlerts={alerts}
+          timeframe={timeframe}
+        />
 
         <Divider sx={{ my: 1 }} />
 

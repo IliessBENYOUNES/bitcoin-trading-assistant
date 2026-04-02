@@ -1,7 +1,7 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 2 avril 2026
-> **Version :** v0.9.0
+> **Version :** v0.9.1
 > **Branche :** `master`
 > **Dernier commit :** 384463f — feat(news): add NewsPanel frontend + useNews hook + Dashboard integration v0.9
 
@@ -206,6 +206,7 @@ bitcoin-trading-assistant/
 | **IndicatorPanel** | Affichage RSI, MACD, SMA, Bollinger avec couleurs | ✅ |
 | **SignalPanel** | Jauge score composite, liste signaux, consensus | ✅ (v0.7) |
 | **AlertPanel** | Formulaire création + liste alertes + notifications | ✅ (v0.8) |
+| **AlertPresets** | **12 stratégies éprouvées en 1 clic (Wilder, Appel, Elder, Brandt)** | ✅ **NOUVEAU v0.9.1** |
 | **NewsPanel** | **News crypto + sentiment + filtres + jauge** | ✅ **NOUVEAU v0.9** |
 | **StatusRow** | Barre de statut (fraîcheur + scheduler) | ✅ |
 | **DataFreshnessChip** | Chip FRESH / STALE / GAPS | ✅ |
