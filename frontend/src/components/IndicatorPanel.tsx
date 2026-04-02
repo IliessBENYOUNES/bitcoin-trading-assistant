@@ -1,10 +1,9 @@
 // =============================================================================
-// IndicatorPanel - Technical indicators display card
+// IndicatorPanel — Premium technical indicators with mini-cards & visual bars
 // =============================================================================
 
 import React from 'react';
 import {
-  Card,
   CardContent,
   CardHeader,
   Typography,
@@ -14,8 +13,8 @@ import {
   Skeleton,
   Alert,
   Chip,
-  Divider,
   IconButton,
+  LinearProgress,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -23,7 +22,9 @@ import {
   TrendingDown as TrendingDownIcon,
   TrendingFlat as TrendingFlatIcon,
 } from '@mui/icons-material';
+import { motion } from 'framer-motion';
 import type { MarketIndicatorsResponse } from '../types';
+import { GlowingCard, ACCENT } from './GlowingCard';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -42,10 +43,7 @@ export interface IndicatorPanelProps {
 // Helpers
 // -----------------------------------------------------------------------------
 
-function formatValue(
-  value: number | null | undefined,
-  decimals: number = 2
-): string {
+function formatValue(value: number | null | undefined, decimals: number = 2): string {
   if (value === null || value === undefined) return '—';
   return value.toFixed(decimals);
 }
@@ -74,37 +72,69 @@ function getRsiInterpretation(rsi: number | null): {
   color: string;
   icon: React.ReactElement;
 } {
-  if (rsi === null) {
-    return { label: 'N/A', color: 'text.secondary', icon: <TrendingFlatIcon /> };
-  }
-  if (rsi >= 70) {
-    return { label: 'Overbought', color: 'error.main', icon: <TrendingUpIcon /> };
-  }
-  if (rsi <= 30) {
-    return { label: 'Oversold', color: 'success.main', icon: <TrendingDownIcon /> };
-  }
-  return { label: 'Neutral', color: 'text.secondary', icon: <TrendingFlatIcon /> };
+  if (rsi === null) return { label: 'N/A', color: '#6B7280', icon: <TrendingFlatIcon /> };
+  if (rsi >= 70) return { label: 'Overbought', color: '#FF1744', icon: <TrendingUpIcon /> };
+  if (rsi <= 30) return { label: 'Oversold', color: '#00E676', icon: <TrendingDownIcon /> };
+  return { label: 'Neutral', color: '#6B7280', icon: <TrendingFlatIcon /> };
 }
 
 function getMacdInterpretation(
   macd: number | null,
   signal: number | null
 ): { label: string; color: string } {
-  if (macd === null || signal === null) {
-    return { label: 'N/A', color: 'text.secondary' };
-  }
-  if (macd > signal) {
-    return { label: 'Bullish', color: 'success.main' };
-  }
-  if (macd < signal) {
-    return { label: 'Bearish', color: 'error.main' };
-  }
-  return { label: 'Neutral', color: 'text.secondary' };
+  if (macd === null || signal === null) return { label: 'N/A', color: '#6B7280' };
+  if (macd > signal) return { label: 'Bullish', color: '#00E676' };
+  if (macd < signal) return { label: 'Bearish', color: '#FF1744' };
+  return { label: 'Neutral', color: '#6B7280' };
 }
 
 // -----------------------------------------------------------------------------
 // Sub-components
 // -----------------------------------------------------------------------------
+
+/** Mini-card for a single indicator section */
+const IndicatorMiniCard: React.FC<{
+  title: string;
+  accentColor: string;
+  children: React.ReactNode;
+  delay?: number;
+}> = ({ title, accentColor, children, delay = 0 }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 15 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ delay, duration: 0.4 }}
+  >
+    <Box
+      sx={{
+        p: 1.5,
+        borderRadius: 2,
+        backgroundColor: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.05)',
+        borderTop: `2px solid ${accentColor}40`,
+        transition: 'all 0.2s ease',
+        '&:hover': {
+          borderColor: `${accentColor}30`,
+          backgroundColor: 'rgba(255,255,255,0.03)',
+        },
+      }}
+    >
+      <Typography
+        variant="overline"
+        sx={{
+          fontWeight: 800,
+          letterSpacing: '0.1em',
+          color: accentColor,
+          fontSize: '0.6rem',
+          display: 'block',
+          mb: 1,
+        }}
+      >
+        {title}
+      </Typography>
+      {children}
+    </Box>
+  </motion.div>
+);
 
 interface IndicatorRowProps {
   label: string;
@@ -114,35 +144,22 @@ interface IndicatorRowProps {
   valueColor?: string;
 }
 
-const IndicatorRow: React.FC<IndicatorRowProps> = ({
-  label,
-  value,
-  tooltip,
-  suffix,
-  valueColor,
-}) => {
+const IndicatorRow: React.FC<IndicatorRowProps> = ({ label, value, tooltip, suffix, valueColor }) => {
   const content = (
-    <Box
-      sx={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        py: 0.5,
-      }}
-    >
-      <Typography variant="body2" color="text.secondary">
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.3 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
         {label}
       </Typography>
       <Typography
         variant="body2"
-        fontWeight={600}
+        fontWeight={700}
         color={valueColor ?? 'text.primary'}
-        sx={{ fontFamily: 'monospace' }}
+        sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem' }}
       >
         {value}
         {suffix && (
-          <Typography component="span" variant="caption" color="text.secondary">
-            {' '}{suffix}
+          <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.3 }}>
+            {suffix}
           </Typography>
         )}
       </Typography>
@@ -150,54 +167,28 @@ const IndicatorRow: React.FC<IndicatorRowProps> = ({
   );
 
   if (tooltip && value === '—') {
-    return (
-      <Tooltip title={tooltip} placement="left" arrow>
-        {content}
-      </Tooltip>
-    );
+    return <Tooltip title={tooltip} placement="left" arrow>{content}</Tooltip>;
   }
-
   return content;
 };
-
-interface IndicatorSectionProps {
-  title: string;
-  children: React.ReactNode;
-}
-
-const IndicatorSection: React.FC<IndicatorSectionProps> = ({ title, children }) => (
-  <Box sx={{ mb: 2 }}>
-    <Typography
-      variant="overline"
-      color="text.secondary"
-      sx={{ fontWeight: 600, letterSpacing: 1 }}
-    >
-      {title}
-    </Typography>
-    <Box sx={{ mt: 0.5 }}>{children}</Box>
-  </Box>
-);
 
 // -----------------------------------------------------------------------------
 // Loading skeleton
 // -----------------------------------------------------------------------------
 
 const IndicatorPanelSkeleton: React.FC = () => (
-  <Card sx={{ height: '100%' }}>
-    <CardHeader
-      title={<Skeleton width={180} />}
-      subheader={<Skeleton width={120} />}
-    />
+  <GlowingCard accentColor={ACCENT.blue.start}>
+    <CardHeader title={<Skeleton width={180} />} subheader={<Skeleton width={120} />} />
     <CardContent>
-      {[1, 2, 3, 4].map((i) => (
-        <Box key={i} sx={{ mb: 2 }}>
-          <Skeleton width={80} height={16} sx={{ mb: 1 }} />
-          <Skeleton width="100%" height={24} />
-          <Skeleton width="100%" height={24} />
-        </Box>
-      ))}
+      <Grid container spacing={1.5}>
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <Grid item xs={12} sm={6} md={4} key={i}>
+            <Skeleton variant="rounded" height={120} className="animate-shimmer" sx={{ borderRadius: 2 }} />
+          </Grid>
+        ))}
+      </Grid>
     </CardContent>
-  </Card>
+  </GlowingCard>
 );
 
 // -----------------------------------------------------------------------------
@@ -212,54 +203,31 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
   timeframe = '4h',
   historyDays = 7,
 }) => {
-  // Loading state
-  if (loading && !data) {
-    return <IndicatorPanelSkeleton />;
-  }
+  if (loading && !data) return <IndicatorPanelSkeleton />;
 
-  // Error state
   if (error) {
     return (
-      <Card sx={{ height: '100%' }}>
+      <GlowingCard accentColor={ACCENT.red.start}>
         <CardHeader
-          title="Indicateurs"
-          action={
-            onRefresh && (
-              <IconButton onClick={onRefresh} size="small">
-                <RefreshIcon />
-              </IconButton>
-            )
-          }
+          title="🔬 Indicateurs"
+          action={onRefresh && <IconButton onClick={onRefresh} size="small"><RefreshIcon /></IconButton>}
         />
-        <CardContent>
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        </CardContent>
-      </Card>
+        <CardContent><Alert severity="error" sx={{ mb: 2 }}>{error}</Alert></CardContent>
+      </GlowingCard>
     );
   }
 
-  // No data state
   if (!data || !data.latest) {
     return (
-      <Card sx={{ height: '100%' }}>
+      <GlowingCard accentColor={ACCENT.neutral.start}>
         <CardHeader
-          title="Indicateurs"
-          action={
-            onRefresh && (
-              <IconButton onClick={onRefresh} size="small">
-                <RefreshIcon />
-              </IconButton>
-            )
-          }
+          title="🔬 Indicateurs"
+          action={onRefresh && <IconButton onClick={onRefresh} size="small"><RefreshIcon /></IconButton>}
         />
         <CardContent>
-          <Alert severity="info">
-            Aucune donnée disponible. Lancez une récupération de données.
-          </Alert>
+          <Alert severity="info">Aucune donnée disponible. Lancez une récupération de données.</Alert>
         </CardContent>
-      </Card>
+      </GlowingCard>
     );
   }
 
@@ -269,169 +237,194 @@ export const IndicatorPanel: React.FC<IndicatorPanelProps> = ({
   const nullTooltip = 'Données insuffisantes (période de warmup)';
 
   return (
-    <Card sx={{ height: '100%' }}>
+    <GlowingCard accentColor={ACCENT.blue.start} accentColorEnd={ACCENT.blue.end} delay={0.3}>
       <CardHeader
         title={
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            Indicateurs
-            <Chip
-              label={`${timeframe} / ${historyDays}j`}
-              size="small"
-              variant="outlined"
-            />
+            <Typography variant="h6" fontWeight={800} sx={{ fontSize: '1rem' }}>
+              🔬 Indicateurs
+            </Typography>
+            <Box
+              sx={{
+                px: 0.8,
+                py: 0.2,
+                borderRadius: 1,
+                backgroundColor: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.08)',
+              }}
+            >
+              <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.65rem', color: 'text.secondary' }}>
+                {timeframe} / {historyDays}j
+              </Typography>
+            </Box>
           </Box>
         }
-        subheader={`Dernier point: ${formatDate(meta.max_ts)}`}
+        subheader={
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+            Dernier point: {formatDate(meta.max_ts)}
+          </Typography>
+        }
         action={
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Chip
               label={meta.global_status}
               size="small"
-              color={
-                meta.global_status === 'OK'
-                  ? 'success'
-                  : meta.global_status === 'STALE'
-                  ? 'warning'
-                  : 'error'
-              }
+              color={meta.global_status === 'OK' ? 'success' : meta.global_status === 'STALE' ? 'warning' : 'error'}
+              sx={{ height: 22, fontSize: '0.65rem', fontWeight: 700 }}
             />
             {onRefresh && (
-              <IconButton onClick={onRefresh} size="small" disabled={loading}>
-                <RefreshIcon />
+              <IconButton onClick={onRefresh} size="small" disabled={loading}
+                sx={{ '&:hover': { color: '#F7931A' } }}>
+                <RefreshIcon fontSize="small" />
               </IconButton>
             )}
           </Box>
         }
       />
 
-      <CardContent>
-        <Grid container spacing={2}>
-          {/* Colonne gauche */}
-          <Grid item xs={12} md={6}>
-            {/* Prix */}
-            <IndicatorSection title="Prix">
-              <IndicatorRow
-                label="Close"
-                value={formatPrice(latest.close)}
-              />
-            </IndicatorSection>
-
-            {/* RSI */}
-            <IndicatorSection title="RSI (14)">
-              <IndicatorRow
-                label="Valeur"
-                value={formatValue(latest.rsi_14)}
-                tooltip={nullTooltip}
-              />
-              <Box
+      <CardContent sx={{ pt: 0 }}>
+        <Grid container spacing={1.5}>
+          {/* PRIX */}
+          <Grid item xs={12} sm={6} md={4}>
+            <IndicatorMiniCard title="💰 PRIX" accentColor="#F7931A" delay={0.35}>
+              <Typography
                 sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 0.5,
-                  mt: 0.5,
+                  fontFamily: '"JetBrains Mono", monospace',
+                  fontWeight: 800,
+                  fontSize: '1.4rem',
+                  color: '#F7931A',
+                  textShadow: '0 0 20px rgba(247, 147, 26, 0.2)',
                 }}
               >
-                <Box sx={{ color: rsiInfo.color }}>{rsiInfo.icon}</Box>
-                <Typography variant="body2" color={rsiInfo.color}>
-                  {rsiInfo.label}
-                </Typography>
-              </Box>
-            </IndicatorSection>
+                {formatPrice(latest.close)}
+              </Typography>
+            </IndicatorMiniCard>
+          </Grid>
 
-            {/* MACD */}
-            <IndicatorSection title="MACD (12, 26, 9)">
-              <IndicatorRow
-                label="MACD"
-                value={formatValue(latest.macd)}
-                tooltip={nullTooltip}
-              />
-              <IndicatorRow
-                label="Signal"
-                value={formatValue(latest.macd_signal)}
-                tooltip={nullTooltip}
-              />
+          {/* RSI */}
+          <Grid item xs={12} sm={6} md={4}>
+            <IndicatorMiniCard title="📊 RSI (14)" accentColor={rsiInfo.color} delay={0.4}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography
+                  sx={{
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontWeight: 800,
+                    fontSize: '1.3rem',
+                    color: rsiInfo.color,
+                  }}
+                >
+                  {formatValue(latest.rsi_14)}
+                </Typography>
+                <Chip
+                  icon={rsiInfo.icon}
+                  label={rsiInfo.label}
+                  size="small"
+                  sx={{
+                    backgroundColor: `${rsiInfo.color}15`,
+                    color: rsiInfo.color,
+                    fontWeight: 700,
+                    fontSize: '0.65rem',
+                    height: 22,
+                  }}
+                />
+              </Box>
+              {/* RSI visual bar 0-100 */}
+              {latest.rsi_14 !== null && (
+                <Box sx={{ position: 'relative', mt: 0.5 }}>
+                  <LinearProgress
+                    variant="determinate"
+                    value={latest.rsi_14}
+                    sx={{
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      '& .MuiLinearProgress-bar': {
+                        borderRadius: 3,
+                        background: `linear-gradient(90deg, #00E676, #FFD600 50%, #FF1744)`,
+                        boxShadow: `0 0 8px ${rsiInfo.color}40`,
+                      },
+                    }}
+                  />
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.25 }}>
+                    <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#00E676' }}>0</Typography>
+                    <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6B7280' }}>30</Typography>
+                    <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6B7280' }}>70</Typography>
+                    <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#FF1744' }}>100</Typography>
+                  </Box>
+                </Box>
+              )}
+            </IndicatorMiniCard>
+          </Grid>
+
+          {/* MACD */}
+          <Grid item xs={12} sm={6} md={4}>
+            <IndicatorMiniCard title="📈 MACD (12, 26, 9)" accentColor={macdInfo.color} delay={0.45}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography
+                  sx={{
+                    fontFamily: '"JetBrains Mono", monospace',
+                    fontWeight: 800,
+                    fontSize: '1.1rem',
+                    color: macdInfo.color,
+                  }}
+                >
+                  {formatValue(latest.macd)}
+                </Typography>
+                <Chip
+                  label={macdInfo.label}
+                  size="small"
+                  sx={{
+                    backgroundColor: `${macdInfo.color}15`,
+                    color: macdInfo.color,
+                    fontWeight: 700,
+                    fontSize: '0.65rem',
+                    height: 22,
+                  }}
+                />
+              </Box>
+              <IndicatorRow label="Signal" value={formatValue(latest.macd_signal)} tooltip={nullTooltip} />
               <IndicatorRow
                 label="Histogram"
                 value={formatValue(latest.macd_hist)}
                 tooltip={nullTooltip}
-                valueColor={
-                  latest.macd_hist !== null
-                    ? latest.macd_hist >= 0
-                      ? 'success.main'
-                      : 'error.main'
-                    : undefined
-                }
+                valueColor={latest.macd_hist !== null ? (latest.macd_hist >= 0 ? '#00E676' : '#FF1744') : undefined}
               />
-              <Box sx={{ mt: 0.5 }}>
-                <Typography variant="body2" color={macdInfo.color}>
-                  {macdInfo.label}
-                </Typography>
-              </Box>
-            </IndicatorSection>
+            </IndicatorMiniCard>
           </Grid>
 
-          {/* Colonne droite */}
-          <Grid item xs={12} md={6}>
-            {/* SMA */}
-            <IndicatorSection title="SMA">
-              <IndicatorRow
-                label="SMA 20"
-                value={formatPrice(latest.sma_20)}
-                tooltip={nullTooltip}
-              />
-              <IndicatorRow
-                label="SMA 50"
-                value={formatPrice(latest.sma_50)}
-                tooltip={nullTooltip}
-              />
-              <IndicatorRow
-                label="SMA 200"
-                value={formatPrice(latest.sma_200)}
-                tooltip={nullTooltip}
-              />
-            </IndicatorSection>
+          {/* SMA */}
+          <Grid item xs={12} sm={6} md={4}>
+            <IndicatorMiniCard title="〰️ SMA" accentColor="#7C4DFF" delay={0.5}>
+              <IndicatorRow label="SMA 20" value={formatPrice(latest.sma_20)} tooltip={nullTooltip} />
+              <IndicatorRow label="SMA 50" value={formatPrice(latest.sma_50)} tooltip={nullTooltip} />
+              <IndicatorRow label="SMA 200" value={formatPrice(latest.sma_200)} tooltip={nullTooltip} />
+            </IndicatorMiniCard>
+          </Grid>
 
-            {/* Bollinger */}
-            <IndicatorSection title="Bollinger (20, 2)">
-              <IndicatorRow
-                label="Upper"
-                value={formatPrice(latest.bb_upper)}
-                tooltip={nullTooltip}
-              />
-              <IndicatorRow
-                label="Middle"
-                value={formatPrice(latest.bb_mid)}
-                tooltip={nullTooltip}
-              />
-              <IndicatorRow
-                label="Lower"
-                value={formatPrice(latest.bb_lower)}
-                tooltip={nullTooltip}
-              />
-            </IndicatorSection>
+          {/* Bollinger */}
+          <Grid item xs={12} sm={6} md={4}>
+            <IndicatorMiniCard title="📐 BOLLINGER (20, 2)" accentColor="#FFD600" delay={0.55}>
+              <IndicatorRow label="Upper" value={formatPrice(latest.bb_upper)} tooltip={nullTooltip} valueColor="#FF174490" />
+              <IndicatorRow label="Middle" value={formatPrice(latest.bb_mid)} tooltip={nullTooltip} />
+              <IndicatorRow label="Lower" value={formatPrice(latest.bb_lower)} tooltip={nullTooltip} valueColor="#00E67690" />
+            </IndicatorMiniCard>
+          </Grid>
 
-            {/* Meta / Status */}
-            <Divider sx={{ my: 1 }} />
-            <IndicatorSection title="Qualité données">
-              <IndicatorRow
-                label="Data lag"
-                value={formatValue(meta.data_lag_hours)}
-                suffix="h"
-              />
-              <IndicatorRow
-                label="Points"
-                value={`${meta.count} / ${meta.expected_count}`}
-              />
+          {/* Qualité données */}
+          <Grid item xs={12} sm={6} md={4}>
+            <IndicatorMiniCard title="🔍 QUALITÉ DONNÉES" accentColor="#448AFF" delay={0.6}>
+              <IndicatorRow label="Data lag" value={formatValue(meta.data_lag_hours)} suffix="h" />
+              <IndicatorRow label="Points" value={`${meta.count} / ${meta.expected_count}`} />
               <IndicatorRow
                 label="Manquants"
                 value={String(meta.missing_count)}
-                valueColor={meta.missing_count > 0 ? 'error.main' : 'success.main'}
+                valueColor={meta.missing_count > 0 ? '#FF1744' : '#00E676'}
               />
-            </IndicatorSection>
+            </IndicatorMiniCard>
           </Grid>
         </Grid>
       </CardContent>
-    </Card>
+    </GlowingCard>
   );
 };
 

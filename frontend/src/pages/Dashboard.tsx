@@ -1,5 +1,5 @@
 // =============================================================================
-// Dashboard.tsx - Premium dark trading dashboard
+// Dashboard.tsx — Premium dark trading dashboard with animations
 // =============================================================================
 
 import React, { useState, useMemo } from 'react';
@@ -29,6 +29,7 @@ import {
   Info as InfoIcon,
   CurrencyBitcoin as BitcoinIcon,
 } from '@mui/icons-material';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Composants
 import { StatusRowConnected } from '../components/StatusRow';
@@ -38,6 +39,8 @@ import { AlertPanel } from '../components/AlertPanel';
 import { NewsPanel } from '../components/NewsPanel';
 import CandlestickChart from '../components/CandlestickChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
+import { PriceTicker } from '../components/PriceTicker';
+import { SectionHeader } from '../components/SectionHeader';
 
 // Hooks
 import { useIndicators } from '../hooks/useIndicators';
@@ -61,47 +64,27 @@ interface FetchResult {
   inserted?: number;
   updated?: number;
   duplicates?: number;
-  resample?: {
-    '1d': number;
-    '1h': number;
-  };
+  resample?: { '1d': number; '1h': number };
   duration_seconds?: number;
   error?: string;
 }
 
-// Tous les timeframes sont supportés
 const SUPPORTED_TIMEFRAMES: TimeframeOption[] = ['30m', '1h', '4h', '1d'];
 
 function isTimeframeSupported(tf: TimeframeOption): boolean {
   return SUPPORTED_TIMEFRAMES.includes(tf);
 }
 
-/**
- * Détermine quel endpoint trigger utiliser selon le timeframe demandé.
- * - 30m, 1h => /scheduler/trigger/30m (le job 30m alimente 30m + resample 1h)
- * - 4h, 1d => /scheduler/trigger/4h (le job 4h alimente 4h + resample 1d)
- */
 function getTriggerEndpoint(tf: TimeframeOption): string {
-  if (tf === '30m' || tf === '1h') {
-    return '/scheduler/trigger/30m';
-  }
+  if (tf === '30m' || tf === '1h') return '/scheduler/trigger/30m';
   return '/scheduler/trigger/4h';
 }
 
-/**
- * Calcule l'historique effectif en fonction du timeframe.
- * Pour 30m et 1h, on cap à 1 jour (limite CoinGecko).
- */
 function getEffectiveDays(tf: TimeframeOption, requestedDays: DaysOption): number {
-  if (tf === '30m' || tf === '1h') {
-    return Math.min(requestedDays, 1);
-  }
+  if (tf === '30m' || tf === '1h') return Math.min(requestedDays, 1);
   return requestedDays;
 }
 
-/**
- * Vérifie si l'historique est cappé pour ce timeframe.
- */
 function isHistoryCapped(tf: TimeframeOption, requestedDays: DaysOption): boolean {
   return (tf === '30m' || tf === '1h') && requestedDays > 1;
 }
@@ -111,9 +94,6 @@ function isHistoryCapped(tf: TimeframeOption, requestedDays: DaysOption): boolea
 // -----------------------------------------------------------------------------
 
 const Dashboard: React.FC = () => {
-  // ---------------------------------------------------------------------------
-  // State - User controls
-  // ---------------------------------------------------------------------------
   const [timeframe, setTimeframe] = useState<TimeframeOption>('4h');
   const [days, setDays] = useState<DaysOption>(7);
   const [fetching, setFetching] = useState(false);
@@ -122,53 +102,21 @@ const Dashboard: React.FC = () => {
 
   const symbol = 'BTC/USD';
 
-  // ---------------------------------------------------------------------------
-  // Computed: effectiveDays (cappé pour 30m/1h)
-  // ---------------------------------------------------------------------------
-  const effectiveDays = useMemo(
-      () => getEffectiveDays(timeframe, days),
-      [timeframe, days]
-  );
-
-  const historyCapped = useMemo(
-      () => isHistoryCapped(timeframe, days),
-      [timeframe, days]
-  );
+  const effectiveDays = useMemo(() => getEffectiveDays(timeframe, days), [timeframe, days]);
+  const historyCapped = useMemo(() => isHistoryCapped(timeframe, days), [timeframe, days]);
 
   // ---------------------------------------------------------------------------
-  // Hooks - Data fetching (utilisent effectiveDays)
+  // Hooks
   // ---------------------------------------------------------------------------
-  const indicators = useIndicators({
-    timeframe,
-    historyDays: effectiveDays,
-  });
+  const indicators = useIndicators({ timeframe, historyDays: effectiveDays });
+  const gaps = useMarketGaps({ timeframe, days: effectiveDays });
+  const candles = useCandles({ timeframe, days: effectiveDays });
+  const signals = useSignals({ timeframe, historyDays: effectiveDays });
+  const alertsHook = useAlerts({ timeframe, pollInterval: 60000 });
+  const news = useNews({ limit: 20, pollInterval: 300000 });
 
-  const gaps = useMarketGaps({
-    timeframe,
-    days: effectiveDays,
-  });
-
-  const candles = useCandles({
-    timeframe,
-    days: effectiveDays,
-  });
-
-  const signals = useSignals({
-    timeframe,
-    historyDays: effectiveDays,
-  });
-
-  // Hook alertes avec polling toutes les 60s
-  const alertsHook = useAlerts({
-    timeframe,
-    pollInterval: 60000,
-  });
-
-  // Hook news avec polling toutes les 5 minutes
-  const news = useNews({
-    limit: 20,
-    pollInterval: 300000,
-  });
+  // Get latest price from indicators data
+  const currentPrice = indicators.data?.latest?.close ?? null;
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -206,15 +154,9 @@ const Dashboard: React.FC = () => {
     try {
       setFetching(true);
       const baseUrl =
-          (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(
-              /\/$/,
-              ''
-          ) ?? 'http://localhost:8000';
-
-      // Utiliser le bon endpoint trigger selon le timeframe
+        (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? 'http://localhost:8000';
       const triggerEndpoint = getTriggerEndpoint(timeframe);
       const url = `${baseUrl}${triggerEndpoint}`;
-
       const res = await fetch(url, { method: 'POST' });
 
       if (!res.ok) {
@@ -222,29 +164,21 @@ const Dashboard: React.FC = () => {
         throw new Error(text);
       }
 
-      // Récupérer le status du scheduler pour obtenir last_result
       const statusRes = await fetch(`${baseUrl}/scheduler/status`);
       if (statusRes.ok) {
         const statusData = await statusRes.json();
-
-        // Déterminer quel job a été déclenché
         const jobType = (timeframe === '30m' || timeframe === '1h') ? '30m' : '4h';
         const jobResult = statusData?.jobs?.[jobType]?.last_result;
-
-        if (jobResult) {
-          setFetchResult(jobResult);
-        }
+        if (jobResult) setFetchResult(jobResult);
       }
 
-      // Petit délai pour laisser le job terminer puis refresh UI
       await new Promise(resolve => setTimeout(resolve, 500));
 
       candles.refresh();
       gaps.refresh();
       indicators.refresh();
       signals.refresh();
-      alertsHook.check(); // Vérifie les alertes après un fetch
-
+      alertsHook.check();
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -252,9 +186,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // Render helpers
-  // ---------------------------------------------------------------------------
   const timeframeNotSupported = !isTimeframeSupported(timeframe);
   const noData = !candles.loading && candles.candles.length === 0;
 
@@ -262,68 +193,113 @@ const Dashboard: React.FC = () => {
   // Render
   // ---------------------------------------------------------------------------
   return (
-      <Box
-          sx={{
-            minHeight: '100vh',
-            background: 'linear-gradient(180deg, #0A0E17 0%, #0D1321 50%, #0A0E17 100%)',
-          }}
+    <Box
+      className="grid-bg"
+      sx={{
+        minHeight: '100vh',
+        background: 'linear-gradient(180deg, #0A0E17 0%, #0D1321 40%, #0A0E17 100%)',
+      }}
+    >
+      {/* ================================================================= */}
+      {/* APPBAR PREMIUM — Glassmorphism + gradient accent line              */}
+      {/* ================================================================= */}
+      <AppBar
+        position="sticky"
+        elevation={0}
+        sx={{
+          backgroundColor: 'rgba(10, 14, 23, 0.88)',
+          backdropFilter: 'blur(24px)',
+          borderBottom: '1px solid rgba(255,255,255,0.04)',
+          // Orange gradient accent line at bottom
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '1px',
+            background: 'linear-gradient(90deg, transparent, #F7931A40, transparent)',
+          },
+        }}
       >
-        {/* ================================================================= */}
-        {/* APPBAR PREMIUM */}
-        {/* ================================================================= */}
-        <AppBar
-          position="sticky"
-          elevation={0}
+        <Toolbar
           sx={{
-            backgroundColor: 'rgba(10, 14, 23, 0.85)',
-            backdropFilter: 'blur(20px)',
-            borderBottom: '1px solid rgba(255,255,255,0.04)',
+            gap: { xs: 1, sm: 2 },
+            flexWrap: 'wrap',
+            minHeight: { xs: 56, sm: 64 },
+            py: { xs: 0.5, sm: 0 },
           }}
         >
-          <Toolbar
-            sx={{
-              gap: { xs: 1, sm: 2 },
-              flexWrap: 'wrap',
-              minHeight: { xs: 56, sm: 64 },
-              py: { xs: 0.5, sm: 0 },
-            }}
+          {/* Logo + Title */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5 }}
           >
-            {/* Logo + Title */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <BitcoinIcon sx={{ color: '#F7931A', fontSize: { xs: 26, sm: 32 } }} />
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 36,
+                  height: 36,
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #F7931A20, #E6510020)',
+                  border: '1px solid #F7931A30',
+                }}
+              >
+                <BitcoinIcon sx={{ color: '#F7931A', fontSize: 22 }} />
+              </Box>
               <Box>
                 <Typography
                   variant="h6"
                   fontWeight={800}
                   sx={{
-                    lineHeight: 1,
+                    lineHeight: 1.1,
                     letterSpacing: '-0.02em',
                     fontSize: { xs: '0.9rem', sm: '1rem' },
+                    background: 'linear-gradient(135deg, #F7931A, #FFB74D)',
+                    backgroundClip: 'text',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
                   }}
                 >
                   BTC Insight
                 </Typography>
                 <Typography
                   variant="caption"
-                  color="text.secondary"
-                  sx={{ fontSize: '0.55rem', display: { xs: 'none', sm: 'block' } }}
+                  sx={{
+                    color: 'text.secondary',
+                    fontSize: '0.5rem',
+                    display: { xs: 'none', sm: 'block' },
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                  }}
                 >
                   Trading Assistant v0.9
                 </Typography>
               </Box>
             </Box>
+          </motion.div>
 
-            {/* Spacer */}
-            <Box sx={{ flex: 1 }} />
+          {/* Price Ticker */}
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, ml: 2 }}>
+            <PriceTicker price={currentPrice} loading={indicators.loading} />
+          </Box>
 
-            {/* Controls — responsive */}
-            <FormControl size="small" sx={{ minWidth: { xs: 90, sm: 110 } }}>
+          {/* Spacer */}
+          <Box sx={{ flex: 1 }} />
+
+          {/* Controls */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.5, sm: 1.5 } }}>
+            <FormControl size="small" sx={{ minWidth: { xs: 80, sm: 100 } }}>
               <InputLabel>Timeframe</InputLabel>
               <Select
-                  value={timeframe}
-                  label="Timeframe"
-                  onChange={handleTimeframeChange}
-                  sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}
+                value={timeframe}
+                label="Timeframe"
+                onChange={handleTimeframeChange}
+                sx={{ fontSize: { xs: '0.8rem', sm: '0.85rem' } }}
               >
                 <MenuItem value="30m">30m</MenuItem>
                 <MenuItem value="1h">1h</MenuItem>
@@ -332,13 +308,13 @@ const Dashboard: React.FC = () => {
               </Select>
             </FormControl>
 
-            <FormControl size="small" sx={{ minWidth: { xs: 80, sm: 100 } }}>
+            <FormControl size="small" sx={{ minWidth: { xs: 70, sm: 90 } }}>
               <InputLabel>Jours</InputLabel>
               <Select
-                  value={String(days)}
-                  label="Jours"
-                  onChange={handleDaysChange}
-                  sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}
+                value={String(days)}
+                label="Jours"
+                onChange={handleDaysChange}
+                sx={{ fontSize: { xs: '0.8rem', sm: '0.85rem' } }}
               >
                 <MenuItem value="1">1j</MenuItem>
                 <MenuItem value="2">2j</MenuItem>
@@ -349,24 +325,27 @@ const Dashboard: React.FC = () => {
             </FormControl>
 
             <Button
-                variant="contained"
-                color="primary"
-                size="small"
-                startIcon={<FetchIcon />}
-                onClick={handleFetchCandles}
-                disabled={fetching || timeframeNotSupported}
-                sx={{
-                  background: 'linear-gradient(135deg, #F7931A 0%, #E65100 100%)',
-                  '&:hover': { background: 'linear-gradient(135deg, #FFB74D 0%, #F7931A 100%)' },
-                  fontSize: { xs: '0.7rem', sm: '0.8rem' },
-                  px: { xs: 1.5, sm: 2 },
-                  display: { xs: 'none', sm: 'inline-flex' },
-                }}
+              variant="contained"
+              color="primary"
+              size="small"
+              startIcon={<FetchIcon />}
+              onClick={handleFetchCandles}
+              disabled={fetching || timeframeNotSupported}
+              sx={{
+                background: 'linear-gradient(135deg, #F7931A 0%, #E65100 100%)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #FFB74D 0%, #F7931A 100%)',
+                  boxShadow: '0 0 24px rgba(247, 147, 26, 0.3)',
+                },
+                fontSize: { xs: '0.7rem', sm: '0.78rem' },
+                px: { xs: 1.5, sm: 2 },
+                display: { xs: 'none', sm: 'inline-flex' },
+                fontWeight: 700,
+              }}
             >
               {fetching ? 'Fetch...' : 'Fetch API'}
             </Button>
 
-            {/* Fetch icon-only on mobile */}
             <Tooltip title="Récupérer les données">
               <IconButton
                 onClick={handleFetchCandles}
@@ -383,249 +362,173 @@ const Dashboard: React.FC = () => {
 
             <Tooltip title="Actualiser toutes les données">
               <IconButton
-                  onClick={handleRefreshAll}
-                  disabled={indicators.loading || gaps.loading || candles.loading || signals.loading}
-                  sx={{ color: 'text.secondary', '&:hover': { color: '#F7931A' } }}
-                  size="small"
+                onClick={handleRefreshAll}
+                disabled={indicators.loading || gaps.loading || candles.loading || signals.loading}
+                sx={{
+                  color: 'text.secondary',
+                  transition: 'all 0.3s ease',
+                  '&:hover': { color: '#F7931A', transform: 'rotate(180deg)' },
+                }}
+                size="small"
               >
                 <RefreshIcon />
               </IconButton>
             </Tooltip>
-          </Toolbar>
-        </AppBar>
+          </Box>
+        </Toolbar>
+      </AppBar>
 
-        <Container maxWidth="xl" sx={{ pt: { xs: 1.5, sm: 2.5 }, pb: 4, px: { xs: 1.5, sm: 3 } }}>
+      <Container maxWidth="xl" sx={{ pt: { xs: 1.5, sm: 2.5 }, pb: 4, px: { xs: 1.5, sm: 3 } }}>
+        {/* Mobile Price Ticker */}
+        <Box sx={{ display: { xs: 'block', md: 'none' }, mb: 1.5 }}>
+          <PriceTicker price={currentPrice} loading={indicators.loading} />
+        </Box>
 
-          {/* ================================================================= */}
-          {/* FETCH RESULT INFO (non bloquant) */}
-          {/* ================================================================= */}
+        {/* ================================================================= */}
+        {/* FETCH RESULT INFO */}
+        {/* ================================================================= */}
+        <AnimatePresence>
           {fetchResult && fetchResult.status === 'success' && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3 }}
+            >
               <Alert
-                  severity="success"
-                  icon={<SuccessIcon />}
-                  sx={{ mb: 2 }}
-                  onClose={() => setFetchResult(null)}
+                severity="success"
+                icon={<SuccessIcon />}
+                sx={{ mb: 2 }}
+                onClose={() => setFetchResult(null)}
               >
                 <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
                   <Typography variant="body2" fontWeight={600}>
                     Fetch réussi ({fetchResult.duration_seconds?.toFixed(2)}s)
                   </Typography>
-                  <Chip
-                      label={`Timeframe: ${fetchResult.timeframe}`}
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                  />
-                  <Chip
-                      label={`Fetched: ${fetchResult.fetched ?? 0}`}
-                      size="small"
-                      variant="outlined"
-                  />
-                  <Chip
-                      label={`Inserted: ${fetchResult.inserted ?? 0}`}
-                      size="small"
-                      color="success"
-                      variant="outlined"
-                  />
-                  <Chip
-                      label={`Updated: ${fetchResult.updated ?? 0}`}
-                      size="small"
-                      color="info"
-                      variant="outlined"
-                  />
-                  <Chip
-                      label={`Duplicates: ${fetchResult.duplicates ?? 0}`}
-                      size="small"
-                      variant="outlined"
-                  />
+                  <Chip label={`${fetchResult.timeframe}`} size="small" color="primary" variant="outlined" />
+                  <Chip label={`${fetchResult.fetched ?? 0} fetched`} size="small" variant="outlined" />
+                  <Chip label={`${fetchResult.inserted ?? 0} inserted`} size="small" color="success" variant="outlined" />
+                  <Chip label={`${fetchResult.updated ?? 0} updated`} size="small" color="info" variant="outlined" />
                   {fetchResult.resample && (
-                      <>
-                        {fetchResult.resample['1h'] > 0 && (
-                            <Chip
-                                label={`Resample 1h: ${fetchResult.resample['1h']}`}
-                                size="small"
-                                color="secondary"
-                            />
-                        )}
-                        {fetchResult.resample['1d'] > 0 && (
-                            <Chip
-                                label={`Resample 1d: ${fetchResult.resample['1d']}`}
-                                size="small"
-                                color="secondary"
-                            />
-                        )}
-                      </>
+                    <>
+                      {fetchResult.resample['1h'] > 0 && <Chip label={`1h: ${fetchResult.resample['1h']}`} size="small" color="secondary" />}
+                      {fetchResult.resample['1d'] > 0 && <Chip label={`1d: ${fetchResult.resample['1d']}`} size="small" color="secondary" />}
+                    </>
                   )}
                 </Stack>
               </Alert>
+            </motion.div>
           )}
+        </AnimatePresence>
 
-          {fetchResult && fetchResult.status === 'error' && (
-              <Alert
-                  severity="error"
-                  sx={{ mb: 2 }}
-                  onClose={() => setFetchResult(null)}
-              >
-                Erreur lors du fetch: {fetchResult.error}
-              </Alert>
+        {fetchResult && fetchResult.status === 'error' && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setFetchResult(null)}>
+            Erreur lors du fetch: {fetchResult.error}
+          </Alert>
+        )}
+
+        {/* Warnings */}
+        {timeframeNotSupported && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Le timeframe "{timeframe}" n'est pas supporté.
+          </Alert>
+        )}
+        {fetchError && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setFetchError(null)}>
+            {fetchError}
+          </Alert>
+        )}
+        {historyCapped && (
+          <Alert severity="info" icon={<InfoIcon />} sx={{ mb: 2 }}>
+            <strong>Limite CoinGecko :</strong> 30m/1h limités à 1 jour max.
+            Affichage: {effectiveDays}j (sélection: {days}j). Utilisez 4h/1d pour plus d'historique.
+          </Alert>
+        )}
+
+        {/* ================================================================= */}
+        {/* STATUS ROW */}
+        {/* ================================================================= */}
+        <Box sx={{ mb: 2.5 }}>
+          <StatusRowConnected timeframe={timeframe} days={effectiveDays} />
+        </Box>
+
+        {/* ================================================================= */}
+        {/* ZONE 1 — CHART HERO                                               */}
+        {/* ================================================================= */}
+        <Box sx={{ mb: 3 }}>
+          {candles.error && <Alert severity="error" sx={{ mb: 2 }}>{candles.error}</Alert>}
+          {noData && !candles.error && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Aucune donnée pour {timeframe} / {effectiveDays}j. Cliquez sur "Fetch API".
+            </Alert>
           )}
+          <ChartErrorBoundary fallbackMessage="Le graphique a rencontré une erreur.">
+            <CandlestickChart
+              candles={candles.candles}
+              symbol={symbol}
+              timeframe={timeframe}
+              loading={candles.loading}
+            />
+          </ChartErrorBoundary>
+        </Box>
 
-          {/* ================================================================= */}
-          {/* WARNINGS / ERRORS */}
-          {/* ================================================================= */}
-          {timeframeNotSupported && (
-              <Alert severity="warning" sx={{ mb: 2 }}>
-                Le timeframe "{timeframe}" n'est pas supporté.
-              </Alert>
-          )}
+        {/* ================================================================= */}
+        {/* ZONE 2 — ANALYSE RAPIDE (3 colonnes)                              */}
+        {/* ================================================================= */}
+        <SectionHeader icon="📊" title="Analyse du marché" accentColor="#7C4DFF" delay={0.1} />
 
-          {fetchError && (
-              <Alert
-                  severity="error"
-                  sx={{ mb: 2 }}
-                  onClose={() => setFetchError(null)}
-              >
-                {fetchError}
-              </Alert>
-          )}
-
-          {/* Info: historique cappé pour 30m/1h */}
-          {historyCapped && (
-              <Alert
-                  severity="info"
-                  icon={<InfoIcon />}
-                  sx={{ mb: 2 }}
-              >
-                <strong>Limite CoinGecko :</strong> Les timeframes 30m et 1h sont disponibles sur 1 jour maximum.
-                L'affichage est limité à {effectiveDays} jour (vous avez sélectionné {days} jours).
-                Pour un historique plus long, utilisez 4h ou 1d.
-              </Alert>
-          )}
-
-          {/* ================================================================= */}
-          {/* STATUS ROW */}
-          {/* ================================================================= */}
-          <Box sx={{ mb: 2 }}>
-            <StatusRowConnected timeframe={timeframe} days={effectiveDays} />
-          </Box>
-
-          {/* ================================================================= */}
-          {/* ZONE 1 — CHART HERO (pleine largeur, élément dominant)            */}
-          {/* Le chart est la première chose que le trader regarde               */}
-          {/* ================================================================= */}
-          <Box sx={{ mb: 2.5 }}>
-            {candles.error && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                  {candles.error}
-                </Alert>
-            )}
-
-            {noData && !candles.error && (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  Aucune donnée disponible pour {timeframe} / {effectiveDays} jour(s).
-                  Cliquez sur "Fetch API" pour récupérer les données.
-                </Alert>
-            )}
-
-            <ChartErrorBoundary
-                fallbackMessage="Le graphique a rencontré une erreur inattendue."
-            >
-              <CandlestickChart
-                  candles={candles.candles}
-                  symbol={symbol}
-                  timeframe={timeframe}
-                  loading={candles.loading}
-              />
-            </ChartErrorBoundary>
-          </Box>
-
-          {/* ================================================================= */}
-          {/* ZONE 2 — ANALYSE RAPIDE (3 colonnes : Signaux | Alertes | News)   */}
-          {/* Lecture horizontale : "Qu'est-ce que le marché dit ?" en un coup   */}
-          {/* d'oeil. Mobile : empilé verticalement dans l'ordre de priorité.    */}
-          {/* ================================================================= */}
-          <Typography
-            variant="overline"
-            color="text.secondary"
-            sx={{
-              display: 'block',
-              mb: 1.5,
-              fontSize: '0.65rem',
-              letterSpacing: '0.15em',
-              pl: 0.5,
-            }}
-          >
-            📊 Analyse du marché
-          </Typography>
-
-          <Grid container spacing={2} sx={{ mb: 2.5 }}>
-            {/* Signaux — "Que disent les indicateurs ?" */}
-            <Grid item xs={12} md={6} lg={4}>
-              <SignalPanel
-                  data={signals.data}
-                  loading={signals.loading}
-                  error={signals.error}
-                  onRefresh={signals.refresh}
-                  timeframe={timeframe}
-                  historyDays={effectiveDays}
-              />
-            </Grid>
-
-            {/* Alertes — "Que dois-je surveiller ?" */}
-            <Grid item xs={12} md={6} lg={4}>
-              <AlertPanel
-                  alerts={alertsHook.alerts}
-                  notifications={alertsHook.notifications}
-                  loading={alertsHook.loading}
-                  error={alertsHook.error}
-                  onRefresh={alertsHook.refresh}
-                  onAdd={alertsHook.add}
-                  onDelete={alertsHook.remove}
-                  onCheck={alertsHook.check}
-                  onDismissNotifications={alertsHook.dismissNotifications}
-                  timeframe={timeframe}
-              />
-            </Grid>
-
-            {/* News — "Que dit le monde ?" */}
-            <Grid item xs={12} md={12} lg={4}>
-              <NewsPanel
-                  data={news.data}
-                  loading={news.loading}
-                  error={news.error}
-                  onRefresh={news.refresh}
-              />
-            </Grid>
-          </Grid>
-
-          {/* ================================================================= */}
-          {/* ZONE 3 — DONNÉES TECHNIQUES (pleine largeur, référence)           */}
-          {/* Détails des indicateurs pour les traders avancés                   */}
-          {/* ================================================================= */}
-          <Typography
-            variant="overline"
-            color="text.secondary"
-            sx={{
-              display: 'block',
-              mb: 1.5,
-              fontSize: '0.65rem',
-              letterSpacing: '0.15em',
-              pl: 0.5,
-            }}
-          >
-            🔬 Données techniques détaillées
-          </Typography>
-
-          <IndicatorPanel
-              data={indicators.data}
-              loading={indicators.loading}
-              error={indicators.error}
-              onRefresh={indicators.refresh}
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          <Grid item xs={12} md={6} lg={4}>
+            <SignalPanel
+              data={signals.data}
+              loading={signals.loading}
+              error={signals.error}
+              onRefresh={signals.refresh}
               timeframe={timeframe}
               historyDays={effectiveDays}
-          />
-        </Container>
-      </Box>
+            />
+          </Grid>
+
+          <Grid item xs={12} md={6} lg={4}>
+            <AlertPanel
+              alerts={alertsHook.alerts}
+              notifications={alertsHook.notifications}
+              loading={alertsHook.loading}
+              error={alertsHook.error}
+              onRefresh={alertsHook.refresh}
+              onAdd={alertsHook.add}
+              onDelete={alertsHook.remove}
+              onCheck={alertsHook.check}
+              onDismissNotifications={alertsHook.dismissNotifications}
+              timeframe={timeframe}
+            />
+          </Grid>
+
+          <Grid item xs={12} md={12} lg={4}>
+            <NewsPanel
+              data={news.data}
+              loading={news.loading}
+              error={news.error}
+              onRefresh={news.refresh}
+            />
+          </Grid>
+        </Grid>
+
+        {/* ================================================================= */}
+        {/* ZONE 3 — DONNÉES TECHNIQUES                                       */}
+        {/* ================================================================= */}
+        <SectionHeader icon="🔬" title="Données techniques détaillées" accentColor="#448AFF" delay={0.2} />
+
+        <IndicatorPanel
+          data={indicators.data}
+          loading={indicators.loading}
+          error={indicators.error}
+          onRefresh={indicators.refresh}
+          timeframe={timeframe}
+          historyDays={effectiveDays}
+        />
+      </Container>
+    </Box>
   );
 };
 

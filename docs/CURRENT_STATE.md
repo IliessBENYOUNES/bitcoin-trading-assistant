@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 2 avril 2026
-> **Version :** v0.9.3
+> **Version :** v0.9.4
 > **Branche :** `master`
-> **Dernier commit :** 384463f — feat(news): add NewsPanel frontend + useNews hook + Dashboard integration v0.9
+> **Dernier commit :** feat(ui): premium dashboard overhaul — animations, GlowingCard, PriceTicker, SectionHeaders
 
 ---
 
@@ -15,7 +15,7 @@ Bitcoin Trading Assistant (alias **BTC Insight**) est un outil d'aide à la lect
 |---------|--------|
 | Version courante | **v0.9.0** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
-| Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 |
+| Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
 | Tests backend | **253 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
@@ -83,6 +83,9 @@ bitcoin-trading-assistant/
 │       │   ├── SignalPanel.tsx        # (v0.7) — Jauge score, signaux, consensus
 │       │   ├── AlertPanel.tsx         # (v0.8) — Formulaire + liste alertes
 │       │   ├── NewsPanel.tsx          # ← NOUVEAU (v0.9) — News + sentiment + filtres
+│       │   ├── GlowingCard.tsx        # ← NOUVEAU (v0.9.4) — Card animée premium
+│       │   ├── SectionHeader.tsx      # ← NOUVEAU (v0.9.4) — Titre section avec gradient
+│       │   ├── PriceTicker.tsx        # ← NOUVEAU (v0.9.4) — Prix BTC LIVE animé
 │       │   ├── StatusRow.tsx          # Barre de statut connectée
 │       │   ├── StatusBar.tsx          # Barre de statut UI
 │       │   ├── DataFreshnessChip.tsx  # Chip FRESH/STALE/GAPS

@@ -1,9 +1,10 @@
 // =============================================================================
-// StatusRow - Horizontal row of status badges/chips
+// StatusRow - Premium status bar with pulse animations & glassmorphism
 // =============================================================================
 
 import React from 'react';
 import { Box, Divider } from '@mui/material';
+import { motion } from 'framer-motion';
 import { DataFreshnessChip } from './DataFreshnessChip';
 import { SchedulerChip } from './SchedulerChip';
 import { useMarketGaps } from '../hooks/useMarketGaps';
@@ -43,41 +44,49 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   children,
 }) => {
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: 1.5,
-        p: 1.5,
-        backgroundColor: 'background.paper',
-        borderRadius: 1,
-        border: '1px solid',
-        borderColor: 'divider',
-      }}
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.05 }}
     >
-      {/* Data Freshness Chip */}
-      <DataFreshnessChip
-        data={gapsData}
-        loading={gapsLoading}
-        error={gapsError}
-      />
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 1.5,
+          p: 1.5,
+          backgroundColor: 'rgba(17, 24, 39, 0.6)',
+          backdropFilter: 'blur(12px)',
+          borderRadius: 2,
+          border: '1px solid rgba(255,255,255,0.04)',
+          // Subtle top gradient
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
+        {/* Data Freshness Chip */}
+        <DataFreshnessChip
+          data={gapsData}
+          loading={gapsLoading}
+          error={gapsError}
+        />
 
-      {/* Scheduler Chip */}
-      <SchedulerChip
-        data={schedulerData}
-        loading={schedulerLoading}
-        error={schedulerError}
-      />
+        {/* Scheduler Chip */}
+        <SchedulerChip
+          data={schedulerData}
+          loading={schedulerLoading}
+          error={schedulerError}
+        />
 
-      {/* Optional: existing badges (API, DB) */}
-      {children && (
-        <>
-          <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-          {children}
-        </>
-      )}
-    </Box>
+        {/* Optional: existing badges (API, DB) */}
+        {children && (
+          <>
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5, borderColor: 'rgba(255,255,255,0.06)' }} />
+            {children}
+          </>
+        )}
+      </Box>
+    </motion.div>
   );
 };
 

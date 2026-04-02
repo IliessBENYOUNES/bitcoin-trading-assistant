@@ -85,13 +85,13 @@ const premiumDarkTheme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          backgroundColor: 'rgba(17, 24, 39, 0.8)',
+          backgroundColor: 'rgba(17, 24, 39, 0.7)',
           backdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255, 255, 255, 0.06)',
-          transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+          border: '1px solid rgba(255, 255, 255, 0.05)',
+          transition: 'border-color 0.3s ease, box-shadow 0.3s ease, transform 0.2s ease',
           '&:hover': {
-            borderColor: 'rgba(247, 147, 26, 0.15)',
-            boxShadow: '0 4px 30px rgba(0, 0, 0, 0.3)',
+            borderColor: 'rgba(247, 147, 26, 0.12)',
+            boxShadow: '0 8px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(247, 147, 26, 0.08)',
           },
         },
       },

@@ -4,7 +4,6 @@
 
 import React, { useState } from 'react';
 import {
-  Card,
   CardContent,
   CardHeader,
   Typography,
@@ -51,6 +50,7 @@ import type {
   AlertStatus,
 } from '../types';
 import { AlertPresets } from './AlertPresets';
+import { GlowingCard, ACCENT } from './GlowingCard';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -398,7 +398,7 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
   };
 
   return (
-    <Card sx={{ height: '100%' }}>
+    <GlowingCard accentColor={ACCENT.orange.start} accentColorEnd={ACCENT.orange.end} delay={0.15}>
       <CardHeader
         title={
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -406,6 +406,11 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
               badgeContent={notifications.length}
               color="error"
               invisible={notifications.length === 0}
+              sx={{
+                '& .MuiBadge-badge': {
+                  animation: notifications.length > 0 ? 'pulse-glow 2s ease-in-out infinite' : 'none',
+                },
+              }}
             >
               {notifications.length > 0 ? (
                 <NotificationsActiveIcon color="warning" />
@@ -413,8 +418,8 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
                 <NotificationsIcon />
               )}
             </Badge>
-            <Typography variant="h6" fontWeight={600}>
-              Alertes
+            <Typography variant="h6" fontWeight={800} sx={{ fontSize: '1rem' }}>
+              🔔 Alertes
             </Typography>
             <Chip
               label={`${activeCount} active${activeCount > 1 ? 's' : ''}`}
@@ -573,7 +578,7 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
           </>
         )}
       </CardContent>
-    </Card>
+    </GlowingCard>
   );
 };
 

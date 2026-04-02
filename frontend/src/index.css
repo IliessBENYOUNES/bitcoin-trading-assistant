@@ -22,18 +22,18 @@ html {
 
 /* Custom scrollbar (dark trading style) */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(247, 147, 26, 0.2);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(247, 147, 26, 0.4);
 }
 
 /* Text selection in BTC orange */
@@ -47,3 +47,106 @@ html {
   font-family: 'JetBrains Mono', monospace !important;
 }
 
+/* =============================================================================
+   PREMIUM ANIMATIONS
+   ============================================================================= */
+
+/* Pulse glow — for live indicators */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Pulse dot — status indicators */
+@keyframes pulse-dot {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(0, 230, 118, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(0, 230, 118, 0);
+  }
+}
+
+/* Shimmer — loading placeholders */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Fade in up — entry animation */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Gradient border shift */
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Subtle breathing — for live elements */
+@keyframes breathing {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+/* Glow pulse for active elements */
+@keyframes glow-pulse {
+  0%, 100% { filter: drop-shadow(0 0 4px currentColor); }
+  50% { filter: drop-shadow(0 0 12px currentColor); }
+}
+
+/* Number flash — when values update */
+@keyframes number-flash {
+  0% { background-color: rgba(247, 147, 26, 0.3); }
+  100% { background-color: transparent; }
+}
+
+/* Rotate — for refresh icons */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* =============================================================================
+   PREMIUM UTILITY CLASSES
+   ============================================================================= */
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Grid background pattern (Bloomberg terminal style) */
+.grid-bg {
+  background-image:
+    radial-gradient(circle at 25px 25px, rgba(255, 255, 255, 0.015) 1px, transparent 0),
+    radial-gradient(circle at 75px 75px, rgba(255, 255, 255, 0.01) 1px, transparent 0);
+  background-size: 100px 100px;
+}
