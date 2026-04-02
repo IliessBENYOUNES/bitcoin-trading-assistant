@@ -1,7 +1,7 @@
-# 🤖 Agent Rules — Bitcoin Trading Assistant
+# 🤖 CLAUDE.md — Règles Agent IA (Bitcoin Trading Assistant)
 
-> ⚠️ **Ce fichier est conservé pour compatibilité.** La source de vérité est désormais **[CLAUDE.md](./CLAUDE.md)**.
-> Ce document définit les règles que tout agent IA (Copilot, GPT, Claude, etc.) doit suivre lorsqu'il travaille sur ce projet.
+> Ce fichier est la **source unique de vérité** pour tout agent IA travaillant sur ce projet.
+> Il fusionne et remplace le contenu de AGENT.md (conservé pour compatibilité).
 > **Version :** v0.8.0 — Dernière mise à jour : 2 avril 2026
 
 ---
@@ -15,14 +15,31 @@
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **162 tests** pytest, tous passing |
+| Tests backend | **210 tests** pytest, tous passing |
 | Frontend build | `tsc --noEmit` sans erreur |
-| Phase courante | **v0.7 livré** → prochaine : v0.8 (Alertes) |
+| Phase courante | **v0.8 en cours** (Alertes & Notifications) |
 
 **Documents à lire en premier :**
-1. `docs/CURRENT_STATE.md` — État technique complet
-2. `docs/ROADMAP.md` — Roadmap par phases
-3. Ce fichier (`AGENT.md`) — Règles de l'agent
+1. Ce fichier (`CLAUDE.md`) — Règles de l'agent
+2. `docs/CURRENT_STATE.md` — État technique complet
+3. `docs/ROADMAP.md` — Roadmap par phases
+
+---
+
+## 🔒 Règle de sécurité Git obligatoire
+
+> **C'est la règle la plus importante. Elle prime sur tout le reste.**
+
+1. Travaille uniquement par **blocs fonctionnels cohérents**.
+2. À la fin de chaque gros bloc terminé et stabilisé :
+   - Lance les **tests ciblés pertinents** ;
+   - Corrige les **erreurs bloquantes** éventuelles ;
+   - Fais un **commit avec un message explicite et structuré** ;
+   - **Pousse immédiatement** sur la branche courante.
+3. N'enchaîne **jamais** plusieurs blocs majeurs sans commit/push intermédiaire.
+4. Si un bloc est **risqué**, fais des sous-checkpoints supplémentaires.
+5. Si tu modifies de l'**infra, du tooling, du CI/CD, des seeds, ou des fichiers globaux**, considère cela comme sensible et **isole le bloc**.
+6. En cas de doute, privilégie un **commit checkpoint supplémentaire** plutôt qu'un lot trop gros.
 
 ---
 
@@ -73,7 +90,7 @@ npx tsc --noEmit
 ```
 
 Vérifier :
-- ✅ **162+ tests** backend passent (le nombre ne doit jamais diminuer)
+- ✅ **210+ tests** backend passent (le nombre ne doit jamais diminuer)
 - ✅ Aucun nouveau test en échec
 - ✅ `tsc --noEmit` sans erreur
 - Si des tests échouent → **corriger avant de commit**
@@ -102,9 +119,10 @@ Types autorisés :
 Exemples :
 ```
 feat(signals): add signal engine with composite score v0.7
+feat(alerts): add alert system with CRUD + check engine v0.8
 fix(market): fix get_timeframe_hours function definition lost in merge
-docs: update CURRENT_STATE.md for v0.7.0
-test(signals): add 52 tests for signal interpreters and composite score
+docs: update CURRENT_STATE.md for v0.8.0
+test(alerts): add 48 tests for alert CRUD, check, and endpoints
 ```
 
 ---
@@ -135,15 +153,21 @@ backend/app/
 ├── api/routes/     → Endpoints FastAPI (routing + validation uniquement)
 │   ├── health.py   → GET /health, /health/db
 │   ├── market.py   → GET /market/candles, indicators, signals, gaps, price, info
-│   │                  POST /market/candles/fetch
+│   ├── alerts.py   → GET/POST/PUT/DELETE /alerts, POST /alerts/check
 │   └── scheduler.py → GET /scheduler/status, POST trigger
 ├── services/       → Logique métier (calculs, interprétation, appels externes)
 │   ├── coingecko_service.py  → Client HTTP CoinGecko
 │   ├── indicator_service.py  → RSI, MACD, SMA, Bollinger
 │   ├── signal_service.py     → Interprétation → signaux + score composite
+│   ├── alert_service.py      → CRUD alertes + évaluation conditions
 │   └── resample_service.py   → Agrégation OHLCV
 ├── models/         → Modèles SQLAlchemy (DB) — exposés via __init__.py
+│   ├── candle.py   → Table candles (OHLCV + timeframe)
+│   └── alert.py    → Table alerts (conditions + status)
 ├── schemas/        → Schémas Pydantic (validation/sérialisation) — exposés via __init__.py
+│   ├── candle.py   → Schémas candle
+│   ├── signal.py   → Schémas signal (SignalItem, CompositeScore)
+│   └── alert.py    → Schémas alert (AlertCreate, AlertResponse, AlertCheck)
 ├── tasks/          → Jobs planifiés (APScheduler)
 └── utils/          → Utilitaires réutilisables (time_buckets, db_upsert)
 ```
@@ -152,8 +176,8 @@ backend/app/
 ```
 frontend/src/
 ├── pages/          → Pages (1 par route, ex: Dashboard.tsx)
-├── components/     → Composants réutilisables (IndicatorPanel, SignalPanel, etc.)
-├── hooks/          → Custom hooks React (useIndicators, useSignals, etc.)
+├── components/     → Composants réutilisables (IndicatorPanel, SignalPanel, AlertPanel, etc.)
+├── hooks/          → Custom hooks React (useIndicators, useSignals, useAlerts, etc.)
 ├── api/            → Appels API typés (marketApi.ts avec fonctions async)
 └── types/          → Types TypeScript partagés (api.ts)
 ```
@@ -161,37 +185,41 @@ frontend/src/
 ### Conventions de nommage
 | Couche | Convention | Exemple |
 |--------|-----------|---------|
-| Service Python | `class XxxService` avec `__init__(self, db)` | `SignalService(db).analyze()` |
-| Schema Python | Classes Pydantic dans `schemas/xxx.py` | `SignalItem`, `CompositeScore` |
-| Endpoint Python | Fonction dans `routes/market.py` avec `@router.get` | `def get_signals(...)` |
-| Hook React | `useXxx` retournant `{ data, loading, error, refresh }` | `useSignals({ timeframe, historyDays })` |
-| Composant React | `XxxPanel` ou `XxxChip` avec props typées | `<SignalPanel data={...} />` |
-| API client | `getXxx(params, options)` dans `marketApi.ts` | `getSignals({ timeframe, historyDays })` |
-| Types TS | Interface dans `types/api.ts` | `MarketSignalsResponse` |
+| Service Python | `class XxxService` avec `__init__(self, db)` | `AlertService(db).check_alerts()` |
+| Schema Python | Classes Pydantic dans `schemas/xxx.py` | `AlertCreate`, `AlertResponse` |
+| Endpoint Python | Fonction dans `routes/xxx.py` avec `@router.get` | `def list_alerts(...)` |
+| Hook React | `useXxx` retournant `{ data, loading, error, refresh }` | `useAlerts({ timeframe, pollInterval })` |
+| Composant React | `XxxPanel` ou `XxxChip` avec props typées | `<AlertPanel ... />` |
+| API client | `getXxx(params, options)` dans `marketApi.ts` | `getAlerts()`, `checkAlerts()` |
+| Types TS | Interface dans `types/api.ts` | `AlertItem`, `AlertCheckResponse` |
 
 ### Pattern d'ajout d'une nouvelle feature (checklist)
 
 Pour ajouter une nouvelle feature full-stack (ex: signaux, alertes...) :
 
 **Backend :**
-1. `schemas/xxx.py` — Schémas Pydantic (request/response)
-2. `schemas/__init__.py` — Ajouter les exports
-3. `services/xxx_service.py` — Logique métier
-4. `api/routes/market.py` — Endpoint `@router.get("/xxx")`
-5. `tests/test_xxx.py` — Tests unitaires + intégration + endpoint
+1. `models/xxx.py` — Modèle SQLAlchemy (si nouvelle table)
+2. `models/__init__.py` — Ajouter l'export
+3. `schemas/xxx.py` — Schémas Pydantic (request/response)
+4. `schemas/__init__.py` — Ajouter les exports
+5. `services/xxx_service.py` — Logique métier
+6. `api/routes/xxx.py` — Endpoints FastAPI
+7. `api/routes/__init__.py` — Ajouter le router
+8. `main.py` — Inclure le router
+9. `tests/test_xxx.py` — Tests unitaires + intégration + endpoint
 
 **Frontend :**
-6. `types/api.ts` — Types TypeScript
-7. `api/marketApi.ts` — Fonction `getXxx()`
-8. `hooks/useXxx.ts` — Hook React
-9. `components/XxxPanel.tsx` — Composant UI
-10. `pages/Dashboard.tsx` — Intégration dans le layout
+10. `types/api.ts` — Types TypeScript
+11. `api/marketApi.ts` — Fonctions API
+12. `hooks/useXxx.ts` — Hook React
+13. `components/XxxPanel.tsx` — Composant UI
+14. `pages/Dashboard.tsx` — Intégration dans le layout
 
 **Docs :**
-11. `docs/CURRENT_STATE.md` — Mettre à jour
-12. `CHANGELOG.md` — Nouvelle entrée
-13. `docs/ROADMAP.md` — Marquer comme livré
-14. `docs/requirements_traceability.md` — Nouvelles exigences
+15. `docs/CURRENT_STATE.md` — Mettre à jour
+16. `CHANGELOG.md` — Nouvelle entrée
+17. `docs/ROADMAP.md` — Marquer comme livré
+18. `docs/requirements_traceability.md` — Nouvelles exigences
 
 ---
 
@@ -202,11 +230,6 @@ Si un choix technique non trivial est fait, ajouter un commentaire **pourquoi** 
 ```python
 # On utilise upsert au lieu de insert pour garantir l'idempotence
 # du resample : relancer le job ne crée pas de doublons
-```
-
-```python
-# La force du signal MACD est normalisée par des seuils heuristiques
-# adaptés à BTC (écart de 500+ = fort, car BTC oscille sur des milliers)
 ```
 
 ---
@@ -236,7 +259,7 @@ Avant d'ajouter une feature :
 2. Lire `docs/ROADMAP_INFINI.md` pour la vision long terme
 3. S'assurer que la feature s'inscrit dans la bonne phase
 
-**Phase actuelle : v0.7 livré → v0.8 en cours (Alertes & Notifications)**
+**Phase actuelle : v0.8 en cours (Alertes & Notifications)**
 
 Ne pas implémenter une feature d'une phase future si la phase courante n'est pas terminée.
 
@@ -273,12 +296,9 @@ Après avoir ajouté un endpoint, **toujours vérifier** qu'il est accessible :
 ```bash
 # Lister toutes les routes enregistrées
 python -c "from app.main import app; [print(r.path, r.methods) for r in app.routes if hasattr(r, 'path')]"
-
-# Tester un endpoint spécifique
-python -c "import urllib.request; r = urllib.request.urlopen('http://localhost:8000/market/signals'); print(r.read().decode()[:200])"
 ```
 
-⚠️ Si le serveur tourne avec `--reload`, un changement de fichier **peut ne pas être rechargé** si le module a une erreur de syntaxe silencieuse. En cas de doute, **redémarrer le serveur** (`Ctrl+C` puis relancer uvicorn).
+⚠️ Si le serveur tourne avec `--reload`, un changement de fichier **peut ne pas être rechargé** si le module a une erreur de syntaxe silencieuse. En cas de doute, **redémarrer le serveur**.
 
 ---
 
@@ -286,16 +306,12 @@ python -c "import urllib.request; r = urllib.request.urlopen('http://localhost:8
 
 ### Structure des fichiers de test
 ```python
-# Imports
 import pytest
 from app.services.xxx_service import XxxService
-from app.schemas.xxx import XxxItem
 
-# Classes de test groupées par concept
 class TestInterpreterXxx:
     """Tests pour interpret_xxx."""
     def test_xxx_none_returns_none(self): ...
-    def test_xxx_boundary_case(self): ...
 
 class TestXxxServiceIntegration:
     """Tests d'intégration avec vraie DB."""
@@ -334,15 +350,17 @@ class TestXxxEndpoint:
 ## Checklist pré-commit
 
 ```
-[ ] Tests backend passent (162+ tests, python -m pytest tests/ -v)
+[ ] Tests backend passent (210+ tests, python -m pytest tests/ -v)
 [ ] Frontend compile (npx tsc --noEmit, zéro erreur)
 [ ] docs/CURRENT_STATE.md mis à jour
 [ ] CHANGELOG.md mis à jour (si nouvelle version)
 [ ] docs/ROADMAP.md mis à jour (si phase change)
+[ ] docs/requirements_traceability.md mis à jour (si nouvelles exigences)
 [ ] Message de commit conventionnel
 [ ] Pas de secrets dans le code
 [ ] Pas de fichiers temporaires (.pyc, node_modules, .idea, test.db)
 [ ] Endpoints testés et accessibles (pas de 404 surprise)
+[ ] Commit poussé immédiatement sur la branche courante
 ```
 
 ---
@@ -367,4 +385,8 @@ cd backend && python -c "from app.main import app; [print(r.path, r.methods) for
 
 # Compter les tests
 cd backend && python -m pytest tests/ --co -q | tail -1
+
+# Git — Commit bloc fonctionnel
+git add -A && git commit -m "feat(scope): description" && git push
 ```
+
