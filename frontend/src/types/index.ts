@@ -38,6 +38,13 @@ export type {
   NewsItem,
   NewsSentimentSummary,
   NewsResponse,
+  // Decision Engine
+  ActionType,
+  Scenario,
+  RuleResult,
+  DecisionRecommendation,
+  DecisionMeta,
+  DecisionResponse,
 } from './api';
 
 // Représente un chandelier (bougie) OHLCV

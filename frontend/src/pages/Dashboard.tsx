@@ -37,6 +37,7 @@ import { IndicatorPanel } from '../components/IndicatorPanel';
 import { SignalPanel } from '../components/SignalPanel';
 import { AlertPanel } from '../components/AlertPanel';
 import { NewsPanel } from '../components/NewsPanel';
+import { DecisionPanel } from '../components/DecisionPanel';
 import CandlestickChart from '../components/CandlestickChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
 import { PriceTicker } from '../components/PriceTicker';
@@ -50,6 +51,7 @@ import { useSignals } from '../hooks/useSignals';
 import { useAlerts } from '../hooks/useAlerts';
 import { useNews } from '../hooks/useNews';
 import { useLivePrice } from '../hooks/useLivePrice';
+import { useDecision } from '../hooks/useDecision';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -124,6 +126,7 @@ const Dashboard: React.FC = () => {
   const gaps = useMarketGaps({ timeframe, days: effectiveDays });
   const candles = useCandles({ timeframe, days: effectiveDays });
   const signals = useSignals({ timeframe, historyDays: effectiveDays });
+  const decision = useDecision({ timeframe, historyDays: effectiveDays });
   const alertsHook = useAlerts({ timeframe, pollInterval: 60000 });
   const news = useNews({ limit: 20, pollInterval: 300000 });
 
@@ -153,6 +156,7 @@ const Dashboard: React.FC = () => {
     gaps.refresh();
     candles.refresh();
     signals.refresh();
+    decision.refresh();
     alertsHook.refresh();
     news.refresh();
   };
@@ -201,6 +205,7 @@ const Dashboard: React.FC = () => {
       gaps.refresh();
       indicators.refresh();
       signals.refresh();
+      decision.refresh();
       alertsHook.check();
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : String(e));
@@ -538,6 +543,18 @@ const Dashboard: React.FC = () => {
         <SectionHeader icon="📊" title="Analyse du marché" accentColor="#7C4DFF" delay={0.1} />
 
         <Grid container spacing={2} sx={{ mb: 3 }}>
+          {/* Décision — Panel le plus actionnable, en premier */}
+          <Grid item xs={12} md={6} lg={4}>
+            <DecisionPanel
+              data={decision.data}
+              loading={decision.loading}
+              error={decision.error}
+              onRefresh={decision.refresh}
+              timeframe={timeframe}
+              historyDays={effectiveDays}
+            />
+          </Grid>
+
           <Grid item xs={12} md={6} lg={4}>
             <SignalPanel
               data={signals.data}
@@ -564,7 +581,7 @@ const Dashboard: React.FC = () => {
             />
           </Grid>
 
-          <Grid item xs={12} md={12} lg={4}>
+          <Grid item xs={12} md={6} lg={4}>
             <NewsPanel
               data={news.data}
               loading={news.loading}

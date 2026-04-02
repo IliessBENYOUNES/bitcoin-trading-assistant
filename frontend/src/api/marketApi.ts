@@ -15,6 +15,7 @@ import type {
   AlertCheckResponse,
   NewsResponse,
   NewsSentimentSummary,
+  DecisionResponse,
 } from '../types';
 
 // -----------------------------------------------------------------------------
@@ -239,5 +240,23 @@ export async function getNewsSentiment(
   options: FetchOptions = {}
 ): Promise<NewsSentimentSummary> {
   return apiFetch<NewsSentimentSummary>('/news/sentiment', options);
+}
+
+// -----------------------------------------------------------------------------
+// Decision Engine
+// -----------------------------------------------------------------------------
+
+export interface GetDecisionParams {
+  timeframe: string;
+  historyDays: number;
+}
+
+export async function getDecision(
+  params: GetDecisionParams,
+  options: FetchOptions = {}
+): Promise<DecisionResponse> {
+  const { timeframe, historyDays } = params;
+  const endpoint = `/market/decision?timeframe=${encodeURIComponent(timeframe)}&history_days=${historyDays}`;
+  return apiFetch<DecisionResponse>(endpoint, options);
 }
 

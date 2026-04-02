@@ -243,3 +243,53 @@ export interface NewsResponse {
   meta: Record<string, unknown>;
 }
 
+// -----------------------------------------------------------------------------
+// Decision Engine (/market/decision)
+// -----------------------------------------------------------------------------
+
+export type ActionType = 'acheter' | 'vendre' | 'attendre';
+
+export interface Scenario {
+  label: string;
+  probability: number;
+  direction: SignalDirection;
+  description: string;
+}
+
+export interface RuleResult {
+  rule_name: string;
+  condition: string;
+  satisfied: boolean;
+  weight: number;
+  detail: string;
+  direction: SignalDirection;
+}
+
+export interface DecisionRecommendation {
+  action: ActionType;
+  confidence: ConfidenceLevel;
+  explanation: string;
+  reasons: string[];
+}
+
+export interface DecisionMeta {
+  symbol: string;
+  timeframe: string;
+  history_days: number;
+  timestamp: string;
+  sentiment_available: boolean;
+  technical_weight: number;
+  sentiment_weight: number;
+}
+
+export interface DecisionResponse {
+  meta: DecisionMeta;
+  scenarios: Scenario[];
+  rules_evaluated: RuleResult[];
+  recommendation: DecisionRecommendation;
+  technical_score: number;
+  sentiment_score: number;
+  combined_score: number;
+  summary: string;
+}
+

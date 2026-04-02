@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.0] - 2026-04-02
+
+### Added
+- **Decision Engine v1.0**: Moteur de décision combinant analyse technique (70%) et sentiment des news (30%) en recommandations explicables
+- `decision_service.py` : Moteur de règles avec 8 règles combinées (RSI overbought/oversold, MACD cross, SMA trend, sentiment convergence)
+- `decision.py` schemas : Scenario, RuleResult, Recommendation, DecisionMeta, DecisionResponse, ActionType
+- `GET /market/decision` : Endpoint retournant scénarios multi-outcome + recommandation + règles évaluées
+- **3 scénarios** (Hausse / Stable / Baisse) avec probabilités normalisées (somme = 1.0)
+- **Recommandation explicable** : Acheter / Vendre / Attendre avec confiance (high/medium/low) et raisons en français
+- **Mode dégradé** : Fonctionne sans sentiment (100% technique si RSS échoue), indiqué dans `meta.sentiment_available`
+- `DecisionPanel.tsx` : Composant premium avec jauge score combiné, barres scénarios, card recommandation, règles collapsibles
+- `useDecision.ts` : Hook React avec fetch + refresh automatique
+- Types TypeScript : ActionType, Scenario, RuleResult, DecisionRecommendation, DecisionMeta, DecisionResponse
+- **75 nouveaux tests backend** : règles individuelles (18), scénarios mathématiques (14+9), recommandation (7), intégration DB (5), endpoint HTTP (5), propriétés paramétrées (17)
+
+### Changed
+- Dashboard intègre le DecisionPanel en première position de la grille "Analyse du marché"
+- Bouton "Actualiser" rafraîchit aussi la décision
+- Fetch API déclenche un refresh de la décision après le fetch
+- `marketApi.ts` : ajout de `getDecision()`
+- `schemas/__init__.py` : export des schémas decision
+- `routes/__init__.py` : export du router decision
+- `main.py` : inclusion du router decision
+- `types/api.ts` + `types/index.ts` : barrel exports des types Decision
+
+### Technical
+- 417 tests backend passing (342 → 417, +75)
+- Frontend tsc --noEmit sans erreur
+- Aucune nouvelle dépendance npm/pip
+- Score combiné = technique × 0.70 + sentiment × 0.30 (borné -100/+100)
+- 8 règles évaluées : RSI overbought, RSI oversold, MACD bullish cross, MACD bearish cross, SMA trend up, SMA trend down, sentiment convergence bullish, sentiment convergence bearish
+
 ## [0.9.6] - 2026-04-02
 
 ### Added

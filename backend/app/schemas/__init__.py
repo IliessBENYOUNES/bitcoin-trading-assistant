@@ -35,6 +35,15 @@ from app.schemas.news import (
     NewsResponse,
 )
 
+from app.schemas.decision import (
+    ActionType,
+    Scenario,
+    RuleResult,
+    Recommendation,
+    DecisionMeta,
+    DecisionResponse,
+)
+
 __all__ = [
     "CandleBase",
     "CandleCreate",
@@ -55,4 +64,10 @@ __all__ = [
     "NewsItem",
     "NewsSentimentSummary",
     "NewsResponse",
+    "ActionType",
+    "Scenario",
+    "RuleResult",
+    "Recommendation",
+    "DecisionMeta",
+    "DecisionResponse",
 ]

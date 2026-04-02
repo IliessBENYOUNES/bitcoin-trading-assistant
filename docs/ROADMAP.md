@@ -19,8 +19,8 @@
 │                                                                      │
 │  ÉTAPE 2 — INFINI v1 (v1.0 → v1.5)                                 │
 │  Assistant intelligent, décisionnel                                  │
-│  ├── Moteur de décision / règles        ⬜ Prochaine étape (v1.0)  │
-│  ├── Backtesting engine                 ⬜ Planifié (v1.1)         │
+│  ├── Moteur de décision / règles        ✅ Livré (v1.0)             │
+│  ├── Backtesting engine                 ⬜ Prochaine étape (v1.1)   │
 │  ├── Multi-assets                       ⬜ Planifié (v1.2)         │
 │  ├── Risk management engine             ⬜ Planifié (v1.3)         │
 │  ├── Paper trading                      ⬜ Planifié (v1.4)         │
@@ -37,13 +37,13 @@
 
 ---
 
-## État actuel : v0.9.0 — News & Sentiment (Livré) ✅
+## État actuel : v1.0.0 — Moteur de Décision (Livré) ✅
 
 | Composant | Status |
 |-----------|--------|
 | Backend dual-jobs scheduler | ✅ Complet |
-| 4 timeframes (30m, 1h, 4h, 1d) | ✅ Complet |
-| Resample 30m→1h, 4h→1d | ✅ Complet |
+| 14 timeframes (1m → 1w) | ✅ Complet |
+| Resample multi-timeframe | ✅ Complet |
 | Frontend Dashboard | ✅ Complet |
 | Indicateurs (RSI, MACD, SMA, Bollinger) | ✅ Complet |
 | Chart Lightweight Charts | ✅ Complet |
@@ -51,9 +51,11 @@
 | SignalPanel (jauge + liste + consensus) | ✅ Complet (v0.7) |
 | Alert System (CRUD + check + notifications) | ✅ Complet (v0.8) |
 | AlertPanel (formulaire + liste + polling) | ✅ Complet (v0.8) |
-| **News Service (RSS + sentiment + impact)** | **✅ Complet (v0.9)** |
-| **NewsPanel (jauge + articles + filtres)** | **✅ Complet (v0.9)** |
-| 253 tests backend | ✅ Tous passing |
+| News Service (RSS + sentiment + impact) | ✅ Complet (v0.9) |
+| NewsPanel (jauge + articles + filtres) | ✅ Complet (v0.9) |
+| **Decision Engine (règles + scénarios + recommandation)** | **✅ Complet (v1.0)** |
+| **DecisionPanel (jauge + scénarios + recommandation)** | **✅ Complet (v1.0)** |
+| 417 tests backend | ✅ Tous passing |
 
 ---
 
@@ -114,15 +116,21 @@
 
 ---
 
-## Phase v1.0 — Moteur de Décision (INFINI v1)
+## ✅ LIVRÉ : v1.0 — Moteur de Décision (INFINI v1)
 
-| Tâche | Priorité | Effort | Description |
-|-------|----------|--------|-------------|
-| 10.1 Moteur de règles | 🔴 Haute | 8h | Conditions combinées paramétrables |
-| 10.2 Scénarios multi-outcome | 🔴 Haute | 6h | "Hausse 65% / Stable 25% / Baisse 10%" |
-| 10.3 Recommandations explicables | 🔴 Haute | 4h | Raison en langage naturel |
-| 10.4 API `/market/decision` | 🔴 Haute | 3h | Endpoint structuré |
-| 10.5 UI DecisionPanel | 🟡 Moyenne | 6h | Scénarios visuels + confiance |
+> Le système passe de "informer" à "recommander" avec des scénarios et des explications.
+
+| Tâche | Priorité | Effort | Description | Status |
+|-------|----------|--------|-------------|--------|
+| 10.1 Moteur de règles | 🔴 Haute | 8h | 8 règles combinées (RSI, MACD, SMA, sentiment) | ✅ |
+| 10.2 Scénarios multi-outcome | 🔴 Haute | 6h | Hausse/Stable/Baisse, probabilités normalisées | ✅ |
+| 10.3 Recommandations explicables | 🔴 Haute | 4h | Acheter/Vendre/Attendre + raisons en français | ✅ |
+| 10.4 API `/market/decision` | 🔴 Haute | 3h | Endpoint structuré avec mode dégradé | ✅ |
+| 10.5 UI DecisionPanel | 🟡 Moyenne | 6h | Jauge combinée, barres scénarios, card recommandation | ✅ |
+| 10.6 75 tests backend | 🔴 Haute | 4h | Règles, scénarios, recommandation, intégration, endpoint | ✅ |
+
+**Livrable v1.0 :**
+> ✅ L'utilisateur voit un panel de décision avec : un score combiné (70% technique + 30% sentiment), 3 scénarios avec probabilités, une recommandation explicable (Acheter / Vendre / Attendre) avec raisons, et les règles évaluées en détail.
 
 ---
 
@@ -208,8 +216,8 @@
 │   └── [✅] v0.9.0 — News & Sentiment (LIVRÉ)
 │
 ├── Mai
-│   ├── [🔄] v1.0.0 — Moteur de Décision (INFINI v1 commence)
-│   └── [ ] v1.1.0 — Backtesting
+│   ├── [✅] v1.0.0 — Moteur de Décision (LIVRÉ)
+│   └── [🔄] v1.1.0 — Backtesting (PROCHAINE ÉTAPE)
 │
 ├── Juin
 │   └── [ ] v1.1.0 — Backtesting
