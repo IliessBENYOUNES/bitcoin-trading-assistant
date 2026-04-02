@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.3] - 2026-04-02
+
+### Changed
+- **Layout intelligent responsive**: refonte complète de la disposition du Dashboard
+- Chart en HERO pleine largeur (élément dominant, premier regard du trader)
+- 3 colonnes sous le chart : Signaux | Alertes | News (scan horizontal rapide)
+- Indicateurs détaillés en bas pleine largeur (données de référence)
+- Labels de section avec icônes ("📊 Analyse du marché", "🔬 Données techniques")
+- AppBar responsive : contrôles adaptés mobile (icônes seules), labels courts (30m/1h/4h/1d)
+- Breakpoints MUI : xs=12, md=6, lg=4 pour les panels (empilé mobile → 2 col tablette → 3 col desktop)
+- Bouton Fetch API masqué sur mobile, remplacé par icône
+- Padding et spacing adaptatifs par taille d'écran
+
+### Technical
+- 253 tests backend passing
+- Frontend tsc --noEmit sans erreur
+- Aucune nouvelle dépendance
+
 ## [0.9.2] - 2026-04-02
 
 ### Changed

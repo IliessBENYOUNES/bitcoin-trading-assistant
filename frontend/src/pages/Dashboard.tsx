@@ -280,15 +280,34 @@ const Dashboard: React.FC = () => {
             borderBottom: '1px solid rgba(255,255,255,0.04)',
           }}
         >
-          <Toolbar sx={{ gap: 2 }}>
+          <Toolbar
+            sx={{
+              gap: { xs: 1, sm: 2 },
+              flexWrap: 'wrap',
+              minHeight: { xs: 56, sm: 64 },
+              py: { xs: 0.5, sm: 0 },
+            }}
+          >
             {/* Logo + Title */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
-              <BitcoinIcon sx={{ color: '#F7931A', fontSize: 32 }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <BitcoinIcon sx={{ color: '#F7931A', fontSize: { xs: 26, sm: 32 } }} />
               <Box>
-                <Typography variant="h6" fontWeight={800} sx={{ lineHeight: 1, letterSpacing: '-0.02em' }}>
+                <Typography
+                  variant="h6"
+                  fontWeight={800}
+                  sx={{
+                    lineHeight: 1,
+                    letterSpacing: '-0.02em',
+                    fontSize: { xs: '0.9rem', sm: '1rem' },
+                  }}
+                >
                   BTC Insight
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontSize: '0.55rem', display: { xs: 'none', sm: 'block' } }}
+                >
                   Trading Assistant v0.9
                 </Typography>
               </Box>
@@ -297,33 +316,35 @@ const Dashboard: React.FC = () => {
             {/* Spacer */}
             <Box sx={{ flex: 1 }} />
 
-            {/* Controls */}
-            <FormControl size="small" sx={{ minWidth: 110 }}>
+            {/* Controls — responsive */}
+            <FormControl size="small" sx={{ minWidth: { xs: 90, sm: 110 } }}>
               <InputLabel>Timeframe</InputLabel>
               <Select
                   value={timeframe}
                   label="Timeframe"
                   onChange={handleTimeframeChange}
+                  sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}
               >
-                <MenuItem value="30m">30 min</MenuItem>
-                <MenuItem value="1h">1 heure</MenuItem>
-                <MenuItem value="4h">4 heures</MenuItem>
-                <MenuItem value="1d">1 jour</MenuItem>
+                <MenuItem value="30m">30m</MenuItem>
+                <MenuItem value="1h">1h</MenuItem>
+                <MenuItem value="4h">4h</MenuItem>
+                <MenuItem value="1d">1d</MenuItem>
               </Select>
             </FormControl>
 
-            <FormControl size="small" sx={{ minWidth: 100 }}>
-              <InputLabel>Historique</InputLabel>
+            <FormControl size="small" sx={{ minWidth: { xs: 80, sm: 100 } }}>
+              <InputLabel>Jours</InputLabel>
               <Select
                   value={String(days)}
-                  label="Historique"
+                  label="Jours"
                   onChange={handleDaysChange}
+                  sx={{ fontSize: { xs: '0.8rem', sm: '0.875rem' } }}
               >
-                <MenuItem value="1">1 jour</MenuItem>
-                <MenuItem value="2">2 jours</MenuItem>
-                <MenuItem value="7">7 jours</MenuItem>
-                <MenuItem value="14">14 jours</MenuItem>
-                <MenuItem value="30">30 jours</MenuItem>
+                <MenuItem value="1">1j</MenuItem>
+                <MenuItem value="2">2j</MenuItem>
+                <MenuItem value="7">7j</MenuItem>
+                <MenuItem value="14">14j</MenuItem>
+                <MenuItem value="30">30j</MenuItem>
               </Select>
             </FormControl>
 
@@ -337,16 +358,35 @@ const Dashboard: React.FC = () => {
                 sx={{
                   background: 'linear-gradient(135deg, #F7931A 0%, #E65100 100%)',
                   '&:hover': { background: 'linear-gradient(135deg, #FFB74D 0%, #F7931A 100%)' },
+                  fontSize: { xs: '0.7rem', sm: '0.8rem' },
+                  px: { xs: 1.5, sm: 2 },
+                  display: { xs: 'none', sm: 'inline-flex' },
                 }}
             >
               {fetching ? 'Fetch...' : 'Fetch API'}
             </Button>
+
+            {/* Fetch icon-only on mobile */}
+            <Tooltip title="Récupérer les données">
+              <IconButton
+                onClick={handleFetchCandles}
+                disabled={fetching || timeframeNotSupported}
+                sx={{
+                  color: '#F7931A',
+                  display: { xs: 'inline-flex', sm: 'none' },
+                }}
+                size="small"
+              >
+                <FetchIcon />
+              </IconButton>
+            </Tooltip>
 
             <Tooltip title="Actualiser toutes les données">
               <IconButton
                   onClick={handleRefreshAll}
                   disabled={indicators.loading || gaps.loading || candles.loading || signals.loading}
                   sx={{ color: 'text.secondary', '&:hover': { color: '#F7931A' } }}
+                  size="small"
               >
                 <RefreshIcon />
               </IconButton>
@@ -354,7 +394,7 @@ const Dashboard: React.FC = () => {
           </Toolbar>
         </AppBar>
 
-        <Container maxWidth="xl" sx={{ pt: 2.5, pb: 4 }}>
+        <Container maxWidth="xl" sx={{ pt: { xs: 1.5, sm: 2.5 }, pb: 4, px: { xs: 1.5, sm: 3 } }}>
 
           {/* ================================================================= */}
           {/* FETCH RESULT INFO (non bloquant) */}
@@ -463,84 +503,127 @@ const Dashboard: React.FC = () => {
           )}
 
           {/* ================================================================= */}
-          {/* STATUS ROW (utilise effectiveDays) */}
+          {/* STATUS ROW */}
           {/* ================================================================= */}
-          <Box sx={{ mb: 3 }}>
+          <Box sx={{ mb: 2 }}>
             <StatusRowConnected timeframe={timeframe} days={effectiveDays} />
           </Box>
 
           {/* ================================================================= */}
-          {/* MAIN CONTENT — Grille premium */}
+          {/* ZONE 1 — CHART HERO (pleine largeur, élément dominant)            */}
+          {/* Le chart est la première chose que le trader regarde               */}
           {/* ================================================================= */}
-          <Grid container spacing={2.5}>
-            {/* Colonne gauche: Signaux + Alertes + News + Indicateurs */}
-            <Grid item xs={12} lg={4}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                <SignalPanel
-                    data={signals.data}
-                    loading={signals.loading}
-                    error={signals.error}
-                    onRefresh={signals.refresh}
-                    timeframe={timeframe}
-                    historyDays={effectiveDays}
-                />
-                <AlertPanel
-                    alerts={alertsHook.alerts}
-                    notifications={alertsHook.notifications}
-                    loading={alertsHook.loading}
-                    error={alertsHook.error}
-                    onRefresh={alertsHook.refresh}
-                    onAdd={alertsHook.add}
-                    onDelete={alertsHook.remove}
-                    onCheck={alertsHook.check}
-                    onDismissNotifications={alertsHook.dismissNotifications}
-                    timeframe={timeframe}
-                />
-                <NewsPanel
-                    data={news.data}
-                    loading={news.loading}
-                    error={news.error}
-                    onRefresh={news.refresh}
-                />
-                <IndicatorPanel
-                    data={indicators.data}
-                    loading={indicators.loading}
-                    error={indicators.error}
-                    onRefresh={indicators.refresh}
-                    timeframe={timeframe}
-                    historyDays={effectiveDays}
-                />
-              </Box>
+          <Box sx={{ mb: 2.5 }}>
+            {candles.error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {candles.error}
+                </Alert>
+            )}
+
+            {noData && !candles.error && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Aucune donnée disponible pour {timeframe} / {effectiveDays} jour(s).
+                  Cliquez sur "Fetch API" pour récupérer les données.
+                </Alert>
+            )}
+
+            <ChartErrorBoundary
+                fallbackMessage="Le graphique a rencontré une erreur inattendue."
+            >
+              <CandlestickChart
+                  candles={candles.candles}
+                  symbol={symbol}
+                  timeframe={timeframe}
+                  loading={candles.loading}
+              />
+            </ChartErrorBoundary>
+          </Box>
+
+          {/* ================================================================= */}
+          {/* ZONE 2 — ANALYSE RAPIDE (3 colonnes : Signaux | Alertes | News)   */}
+          {/* Lecture horizontale : "Qu'est-ce que le marché dit ?" en un coup   */}
+          {/* d'oeil. Mobile : empilé verticalement dans l'ordre de priorité.    */}
+          {/* ================================================================= */}
+          <Typography
+            variant="overline"
+            color="text.secondary"
+            sx={{
+              display: 'block',
+              mb: 1.5,
+              fontSize: '0.65rem',
+              letterSpacing: '0.15em',
+              pl: 0.5,
+            }}
+          >
+            📊 Analyse du marché
+          </Typography>
+
+          <Grid container spacing={2} sx={{ mb: 2.5 }}>
+            {/* Signaux — "Que disent les indicateurs ?" */}
+            <Grid item xs={12} md={6} lg={4}>
+              <SignalPanel
+                  data={signals.data}
+                  loading={signals.loading}
+                  error={signals.error}
+                  onRefresh={signals.refresh}
+                  timeframe={timeframe}
+                  historyDays={effectiveDays}
+              />
             </Grid>
 
-            {/* Colonne droite: Chart */}
-            <Grid item xs={12} lg={8}>
-              {candles.error && (
-                  <Alert severity="error" sx={{ mb: 2 }}>
-                    {candles.error}
-                  </Alert>
-              )}
+            {/* Alertes — "Que dois-je surveiller ?" */}
+            <Grid item xs={12} md={6} lg={4}>
+              <AlertPanel
+                  alerts={alertsHook.alerts}
+                  notifications={alertsHook.notifications}
+                  loading={alertsHook.loading}
+                  error={alertsHook.error}
+                  onRefresh={alertsHook.refresh}
+                  onAdd={alertsHook.add}
+                  onDelete={alertsHook.remove}
+                  onCheck={alertsHook.check}
+                  onDismissNotifications={alertsHook.dismissNotifications}
+                  timeframe={timeframe}
+              />
+            </Grid>
 
-              {/* Message si aucune donnée */}
-              {noData && !candles.error && (
-                  <Alert severity="info" sx={{ mb: 2 }}>
-                    Aucune donnée disponible pour {timeframe} / {effectiveDays} jour(s).
-                    Cliquez sur "Fetch API" pour récupérer les données.
-                  </Alert>
-              )}
-
-              <ChartErrorBoundary
-                  fallbackMessage="Le graphique a rencontré une erreur inattendue."
-              >
-                <CandlestickChart
-                    candles={candles.candles}
-                    symbol={symbol}
-                    timeframe={timeframe}
-                    loading={candles.loading}
-                />
-              </ChartErrorBoundary>
+            {/* News — "Que dit le monde ?" */}
+            <Grid item xs={12} md={12} lg={4}>
+              <NewsPanel
+                  data={news.data}
+                  loading={news.loading}
+                  error={news.error}
+                  onRefresh={news.refresh}
+              />
             </Grid>
           </Grid>
+
+          {/* ================================================================= */}
+          {/* ZONE 3 — DONNÉES TECHNIQUES (pleine largeur, référence)           */}
+          {/* Détails des indicateurs pour les traders avancés                   */}
+          {/* ================================================================= */}
+          <Typography
+            variant="overline"
+            color="text.secondary"
+            sx={{
+              display: 'block',
+              mb: 1.5,
+              fontSize: '0.65rem',
+              letterSpacing: '0.15em',
+              pl: 0.5,
+            }}
+          >
+            🔬 Données techniques détaillées
+          </Typography>
+
+          <IndicatorPanel
+              data={indicators.data}
+              loading={indicators.loading}
+              error={indicators.error}
+              onRefresh={indicators.refresh}
+              timeframe={timeframe}
+              historyDays={effectiveDays}
+          />
         </Container>
       </Box>
   );

@@ -1,7 +1,7 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 2 avril 2026
-> **Version :** v0.9.2
+> **Version :** v0.9.3
 > **Branche :** `master`
 > **Dernier commit :** 384463f — feat(news): add NewsPanel frontend + useNews hook + Dashboard integration v0.9
 
