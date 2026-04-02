@@ -24,7 +24,7 @@ import {
   TrendingFlat as TrendingFlatIcon,
   Speed as SpeedIcon,
 } from '@mui/icons-material';
-import type { MarketSignalsResponse, SignalItem, SignalDirection, ConfidenceLevel } from '../types/api';
+import type { MarketSignalsResponse, SignalItem, SignalDirection, ConfidenceLevel } from '../types';
 
 // -----------------------------------------------------------------------------
 // Types

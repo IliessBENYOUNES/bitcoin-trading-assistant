@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { MarketSignalsResponse, FetchState } from '../types/api';
+import type { MarketSignalsResponse, FetchState } from '../types';
 import { getSignals } from '../api/marketApi';
 
 export interface UseSignalsParams {

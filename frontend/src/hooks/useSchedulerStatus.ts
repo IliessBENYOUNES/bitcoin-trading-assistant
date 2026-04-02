@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { useState, useEffect, useCallback } from 'react';
-import type { SchedulerStatus, FetchState } from '../types/api';
+import type { SchedulerStatus, FetchState } from '../types';
 import { getSchedulerStatus } from '../api/marketApi';
 
 // Polling interval en ms (15s par défaut, configurable)

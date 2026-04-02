@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { MarketIndicatorsResponse, FetchState } from '../types/api';
+import type { MarketIndicatorsResponse, FetchState } from '../types';
 import { getIndicators } from '../api/marketApi';
 
 export interface UseIndicatorsParams {

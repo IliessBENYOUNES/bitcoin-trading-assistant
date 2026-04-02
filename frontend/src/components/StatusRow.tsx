@@ -8,7 +8,7 @@ import { DataFreshnessChip } from './DataFreshnessChip';
 import { SchedulerChip } from './SchedulerChip';
 import { useMarketGaps } from '../hooks/useMarketGaps';
 import { useSchedulerStatus } from '../hooks/useSchedulerStatus';
-import type { MarketGapsResponse, SchedulerStatus } from '../types/api';
+import type { MarketGapsResponse, SchedulerStatus } from '../types';
 
 // -----------------------------------------------------------------------------
 // Types

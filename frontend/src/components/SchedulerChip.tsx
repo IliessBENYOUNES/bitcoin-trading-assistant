@@ -10,7 +10,7 @@ import {
   Error as ErrorIcon,
   PauseCircle as PauseCircleIcon,
 } from '@mui/icons-material';
-import type { SchedulerStatus } from '../types/api';
+import type { SchedulerStatus } from '../types';
 
 // -----------------------------------------------------------------------------
 // Types

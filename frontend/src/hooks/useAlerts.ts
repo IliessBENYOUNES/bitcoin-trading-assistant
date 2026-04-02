@@ -1,7 +1,7 @@
+// Hook useAlerts — gestion des alertes (CRUD + check + polling)
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { AlertItem, AlertCheckResponse, AlertNotification } from '../types/api';
+import type { AlertItem, AlertCheckResponse, AlertNotification, AlertCreate } from '../types';
 import { getAlerts, createAlert, deleteAlert, checkAlerts } from '../api/marketApi';
-import type { AlertCreate } from '../types/api';
 
 interface UseAlertsParams {
   timeframe: string;
@@ -34,8 +34,8 @@ export function useAlerts({ timeframe, pollInterval = 0 }: UseAlertsParams): Use
     try {
       const data = await getAlerts();
       setAlerts(data);
-    } catch (err: any) {
-      setError(err.message ?? 'Erreur');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erreur');
     } finally {
       setLoading(false);
     }
@@ -71,14 +71,14 @@ export function useAlerts({ timeframe, pollInterval = 0 }: UseAlertsParams): Use
 
   // Initial fetch
   useEffect(() => {
-    fetchAlerts();
+    void fetchAlerts();
   }, [fetchAlerts]);
 
   // Polling
   useEffect(() => {
     if (pollInterval > 0) {
       intervalRef.current = setInterval(() => {
-        check();
+        void check();
       }, pollInterval);
       return () => {
         if (intervalRef.current) clearInterval(intervalRef.current);

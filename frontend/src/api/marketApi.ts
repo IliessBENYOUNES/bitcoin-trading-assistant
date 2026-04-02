@@ -1,5 +1,7 @@
 // =============================================================================
 // Market API Client - Bitcoin Trading Assistant
+// Exports: getSchedulerStatus, getMarketGaps, getIndicators, getSignals,
+//          getAlerts, createAlert, deleteAlert, checkAlerts
 // =============================================================================
 
 import type {
@@ -10,7 +12,7 @@ import type {
   AlertItem,
   AlertCreate,
   AlertCheckResponse,
-} from '../types/api';
+} from '../types';
 
 // -----------------------------------------------------------------------------
 // Configuration

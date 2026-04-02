@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 2 avril 2026
 > **Version :** v0.8.0
 > **Branche :** `master`
-> **Dernier commit :** 34ce0b1 — feat(signals+alerts): add signal engine v0.7 + alert system v0.8 + CLAUDE.md
+> **Dernier commit :** 2c64636 — feat(alerts): complete v0.8 AlertPanel UI + docs update + all 210 tests passing
 
 ---
 

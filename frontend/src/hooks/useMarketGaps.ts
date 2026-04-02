@@ -3,7 +3,7 @@
 // =============================================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { MarketGapsResponse, FetchState } from '../types/api';
+import type { MarketGapsResponse, FetchState } from '../types';
 import { getMarketGaps } from '../api/marketApi';
 
 export interface UseMarketGapsParams {

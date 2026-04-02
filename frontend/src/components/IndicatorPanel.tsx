@@ -23,7 +23,7 @@ import {
   TrendingDown as TrendingDownIcon,
   TrendingFlat as TrendingFlatIcon,
 } from '@mui/icons-material';
-import type { MarketIndicatorsResponse } from '../types/api';
+import type { MarketIndicatorsResponse } from '../types';
 
 // -----------------------------------------------------------------------------
 // Types

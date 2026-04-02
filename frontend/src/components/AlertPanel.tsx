@@ -49,7 +49,7 @@ import type {
   ConditionType,
   AlertOperator,
   AlertStatus,
-} from '../types/api';
+} from '../types';
 
 // -----------------------------------------------------------------------------
 // Types

@@ -2,6 +2,38 @@
  * Types TypeScript pour l'application.
  */
 
+// Re-export explicite des types API (scheduler, gaps, indicators, signals, alerts)
+export type {
+  // Scheduler
+  SchedulerLastResult,
+  SchedulerStatus,
+  // Gaps
+  GapsFreshness,
+  GapsCompleteness,
+  GapsStats,
+  MarketGapsResponse,
+  // Indicators
+  IndicatorPoint,
+  IndicatorsMeta,
+  MarketIndicatorsResponse,
+  // Generic
+  FetchState,
+  // Signals
+  SignalDirection,
+  ConfidenceLevel,
+  SignalItem,
+  CompositeScore,
+  MarketSignalsResponse,
+  // Alerts
+  ConditionType,
+  AlertOperator,
+  AlertStatus,
+  AlertItem,
+  AlertCreate,
+  AlertNotification,
+  AlertCheckResponse,
+} from './api';
+
 // Représente un chandelier (bougie) OHLCV
 export interface Candle {
   id: number;

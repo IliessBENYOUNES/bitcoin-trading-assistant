@@ -10,7 +10,7 @@ import {
   Error as ErrorIcon,
   HelpOutline as HelpIcon,
 } from '@mui/icons-material';
-import type { MarketGapsResponse } from '../types/api';
+import type { MarketGapsResponse } from '../types';
 
 // -----------------------------------------------------------------------------
 // Types
