@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import engine, Base
-from app.api.routes import health_router, market_router, alerts_router
+from app.api.routes import health_router, market_router, alerts_router, news_router
 from app.api.routes.scheduler import router as scheduler_router
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 
@@ -101,6 +101,7 @@ app.add_middleware(
 app.include_router(health_router)      # /health, /health/db
 app.include_router(market_router)      # /market/candles, /market/indicators, /market/signals
 app.include_router(alerts_router)      # /alerts CRUD + /alerts/check
+app.include_router(news_router)        # /news, /news/sentiment
 app.include_router(scheduler_router)   # /scheduler/status
 
 

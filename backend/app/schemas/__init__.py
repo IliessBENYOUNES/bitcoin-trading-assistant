@@ -27,6 +27,14 @@ from app.schemas.alert import (
     AlertCheckResponse,
 )
 
+from app.schemas.news import (
+    SentimentType,
+    ImpactLevel,
+    NewsItem,
+    NewsSentimentSummary,
+    NewsResponse,
+)
+
 __all__ = [
     "CandleBase",
     "CandleCreate",
@@ -42,4 +50,9 @@ __all__ = [
     "AlertResponse",
     "AlertNotification",
     "AlertCheckResponse",
+    "SentimentType",
+    "ImpactLevel",
+    "NewsItem",
+    "NewsSentimentSummary",
+    "NewsResponse",
 ]
