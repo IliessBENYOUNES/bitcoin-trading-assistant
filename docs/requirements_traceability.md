@@ -115,4 +115,5 @@
 | test_scheduler_resample_1h.py | 6 | ✅ |
 | **test_signals.py** | **52** | **✅** |
 | **test_alerts.py** | **48** | **✅** |
-| **Total** | **210** | ✅ |
+| **test_news.py** | **43** | **✅** |
+| **Total** | **253** | ✅ |

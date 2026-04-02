@@ -9,17 +9,17 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  ÉTAPE 1 — BTC Insight (v0.2 → v0.9)                               │
+│  ÉTAPE 1 — BTC Insight (v0.2 → v0.9) ✅ COMPLET                    │
 │  Assistant visuel, modulaire, pédagogique                           │
 │  ├── Données marché temps réel          ✅ Livré (v0.2-v0.6)       │
 │  ├── Indicateurs techniques             ✅ Livré (v0.3)            │
 │  ├── Signaux & scoring                  ✅ Livré (v0.7)            │
 │  ├── Alertes visuelles                  ✅ Livré (v0.8)            │
-│  └── News & sentiment                   ⬜ Prochaine étape (v0.9)  │
+│  └── News & sentiment                   ✅ Livré (v0.9)            │
 │                                                                      │
 │  ÉTAPE 2 — INFINI v1 (v1.0 → v1.5)                                 │
 │  Assistant intelligent, décisionnel                                  │
-│  ├── Moteur de décision / règles        ⬜ Planifié (v1.0)         │
+│  ├── Moteur de décision / règles        ⬜ Prochaine étape (v1.0)  │
 │  ├── Backtesting engine                 ⬜ Planifié (v1.1)         │
 │  ├── Multi-assets                       ⬜ Planifié (v1.2)         │
 │  ├── Risk management engine             ⬜ Planifié (v1.3)         │
@@ -37,7 +37,7 @@
 
 ---
 
-## État actuel : v0.8.0 — Alertes & Notifications (Livré)
+## État actuel : v0.9.0 — News & Sentiment (Livré) ✅
 
 | Composant | Status |
 |-----------|--------|
@@ -49,9 +49,11 @@
 | Chart Lightweight Charts | ✅ Complet |
 | Signal Engine (interprétation + score) | ✅ Complet (v0.7) |
 | SignalPanel (jauge + liste + consensus) | ✅ Complet (v0.7) |
-| **Alert System (CRUD + check + notifications)** | **✅ Complet (v0.8)** |
-| **AlertPanel (formulaire + liste + polling)** | **✅ Complet (v0.8)** |
-| 210 tests backend | ✅ Tous passing |
+| Alert System (CRUD + check + notifications) | ✅ Complet (v0.8) |
+| AlertPanel (formulaire + liste + polling) | ✅ Complet (v0.8) |
+| **News Service (RSS + sentiment + impact)** | **✅ Complet (v0.9)** |
+| **NewsPanel (jauge + articles + filtres)** | **✅ Complet (v0.9)** |
+| 253 tests backend | ✅ Tous passing |
 
 ---
 
@@ -74,18 +76,6 @@
 
 ---
 
-## PROCHAINE ÉTAPE : v0.9 — News & Sentiment
-
-| Tâche | Priorité | Effort | Description |
-|-------|----------|--------|-------------|
-| 9.1 Collecteur de news | 🔴 Haute | 4h | RSS, CryptoCompare, ou API news |
-| 9.2 Classification sentiment | 🔴 Haute | 6h | Positif / neutre / négatif par article |
-| 9.3 Score d'impact | 🟡 Moyenne | 3h | Fort / moyen / faible |
-| 9.4 Intégration au scoring | 🟡 Moyenne | 4h | Pondérer le score composite avec le sentiment |
-| 9.5 UI NewsPanel | 🟡 Moyenne | 4h | Fil d'actus classé avec filtres |
-
----
-
 ## ✅ LIVRÉ : v0.8 — Alertes & Notifications
 
 > Le système passe de "interpréter" à "alerter proactivement".
@@ -101,6 +91,26 @@
 
 **Livrable v0.8 :**
 > ✅ L'utilisateur configure *"M'alerter si RSI > 75"* ou *"Prix > 70000$"* et reçoit une notification quand la condition est remplie. Les alertes peuvent être one-shot ou récurrentes.
+
+---
+
+## ✅ LIVRÉ : v0.9 — News & Sentiment
+
+> Le système passe de "alerter" à "comprendre le contexte".
+
+| Tâche | Priorité | Effort | Description | Status |
+|-------|----------|--------|-------------|--------|
+| 9.1 Collecteur RSS | 🔴 Haute | 4h | CoinTelegraph, CoinDesk, Bitcoin Magazine | ✅ |
+| 9.2 Classification sentiment | 🔴 Haute | 4h | Keyword-based (bullish/bearish/neutral) | ✅ |
+| 9.3 Score d'impact | 🟡 Moyenne | 2h | HIGH/MEDIUM/LOW basé sur mots-clés | ✅ |
+| 9.4 Score global sentiment | 🟡 Moyenne | 2h | Agrégation pondérée -100/+100 | ✅ |
+| 9.5 API /news endpoints | 🔴 Haute | 2h | GET /news + GET /news/sentiment | ✅ |
+| 9.6 43 tests backend | 🔴 Haute | 3h | Sentiment, impact, RSS, résilience, endpoints | ✅ |
+| 9.7 NewsPanel UI | 🟡 Moyenne | 4h | Jauge sentiment, articles, filtres, liens | ✅ |
+| 9.8 Cache + résilience | 🟡 Moyenne | 1h | TTL 5min, timeout 10s, fallback | ✅ |
+
+**Livrable v0.9 :**
+> ✅ L'utilisateur voit les news crypto récentes avec un score de sentiment global, des articles classés positif/neutre/négatif, des niveaux d'impact, et peut filtrer par sentiment.
 
 ---
 
@@ -194,24 +204,22 @@
 ├── Avril
 │   ├── [✅] v0.6.0 — Socle marché complet (4 timeframes, dual-jobs)
 │   ├── [✅] v0.7.0 — Moteur de signaux (LIVRÉ)
-│   └── [✅] v0.8.0 — Alertes & Notifications (LIVRÉ)
+│   ├── [✅] v0.8.0 — Alertes & Notifications (LIVRÉ)
+│   └── [✅] v0.9.0 — News & Sentiment (LIVRÉ)
 │
 ├── Mai
-│   ├── [🔄] v0.9.0 — News & Sentiment (PROCHAINE ÉTAPE)
-│   └── [ ] v1.0.0 — Moteur de Décision (INFINI v1 commence)
+│   ├── [🔄] v1.0.0 — Moteur de Décision (INFINI v1 commence)
+│   └── [ ] v1.1.0 — Backtesting
 │
 ├── Juin
-│   └── [ ] v1.0.0 — Moteur de Décision (INFINI v1 commence)
+│   └── [ ] v1.1.0 — Backtesting
 │
 ├── Juillet
-│   ├── [ ] v1.1.0 — Backtesting
-│   └── [ ] v1.2.0 — Multi-Assets
+│   ├── [ ] v1.2.0 — Multi-Assets
+│   └── [ ] v1.3.0 — Risk Management
 │
 ├── Août
-│   ├── [ ] v1.3.0 — Risk Management
-│   └── [ ] v1.4.0 — Paper Trading
-│
-├── Septembre
+│   ├── [ ] v1.4.0 — Paper Trading
 │   └── [ ] v1.5.0 — Production Ready
 │
 └── Q4 2026+

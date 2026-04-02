@@ -1,23 +1,23 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 2 avril 2026
-> **Version :** v0.8.0
+> **Version :** v0.9.0
 > **Branche :** `master`
-> **Dernier commit :** 2c64636 — feat(alerts): complete v0.8 AlertPanel UI + docs update + all 210 tests passing
+> **Dernier commit :** 384463f — feat(news): add NewsPanel frontend + useNews hook + Dashboard integration v0.9
 
 ---
 
 ## 1. Vue d'ensemble
 
-Bitcoin Trading Assistant (alias **BTC Insight**) est un outil d'aide à la lecture du marché Bitcoin. Il collecte des données OHLCV depuis CoinGecko, les stocke en base, les agrège sur 4 timeframes, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, et affiche tout dans un dashboard interactif.
+Bitcoin Trading Assistant (alias **BTC Insight**) est un outil d'aide à la lecture du marché Bitcoin. Il collecte des données OHLCV depuis CoinGecko, les stocke en base, les agrège sur 4 timeframes, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, et affiche tout dans un dashboard interactif.
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v0.8.0** |
+| Version courante | **v0.9.0** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **210 tests**, tous passing ✅ |
+| Tests backend | **253 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -26,7 +26,7 @@ Bitcoin Trading Assistant (alias **BTC Insight**) est un outil d'aide à la lect
 
 ```
 bitcoin-trading-assistant/
-├── CLAUDE.md                   # ← NOUVEAU (v0.8) — Source unique de vérité agent IA
+├── CLAUDE.md                   # Source unique de vérité agent IA
 ├── AGENT.md                    # Conservé pour compatibilité (pointe vers CLAUDE.md)
 ├── backend/                    # API FastAPI
 │   ├── app/
@@ -36,27 +36,30 @@ bitcoin-trading-assistant/
 │   │   ├── api/routes/
 │   │   │   ├── health.py       # GET /health, /health/db
 │   │   │   ├── market.py       # GET /market/candles, indicators, gaps, price, signals
-│   │   │   ├── alerts.py       # ← NOUVEAU (v0.8) — CRUD /alerts + POST /alerts/check
+│   │   │   ├── alerts.py       # CRUD /alerts + POST /alerts/check
+│   │   │   ├── news.py         # ← NOUVEAU (v0.9) — GET /news, GET /news/sentiment
 │   │   │   └── scheduler.py    # GET /scheduler/status, POST trigger
 │   │   ├── models/
 │   │   │   ├── candle.py       # Modèle Candle (OHLCV + timeframe)
-│   │   │   └── alert.py        # ← NOUVEAU (v0.8) — Modèle Alert (conditions + status)
+│   │   │   └── alert.py        # Modèle Alert (conditions + status)
 │   │   ├── schemas/
 │   │   │   ├── candle.py       # Schémas Pydantic candle
 │   │   │   ├── signal.py       # Schémas SignalItem, CompositeScore, SignalResponse
-│   │   │   └── alert.py        # ← NOUVEAU (v0.8) — AlertCreate, AlertResponse, AlertCheck
+│   │   │   ├── alert.py        # AlertCreate, AlertResponse, AlertCheck
+│   │   │   └── news.py         # ← NOUVEAU (v0.9) — NewsItem, NewsSentimentSummary, NewsResponse
 │   │   ├── services/
 │   │   │   ├── coingecko_service.py  # Client HTTP CoinGecko
 │   │   │   ├── indicator_service.py  # RSI, MACD, SMA, Bollinger
 │   │   │   ├── signal_service.py     # Interprétation → signaux + score composite
-│   │   │   ├── alert_service.py      # ← NOUVEAU (v0.8) — CRUD + évaluation conditions
+│   │   │   ├── alert_service.py      # CRUD alertes + évaluation conditions
+│   │   │   ├── news_service.py       # ← NOUVEAU (v0.9) — RSS + sentiment + impact
 │   │   │   └── resample_service.py   # Agrégation 30m→1h, 4h→1d
 │   │   ├── tasks/
 │   │   │   └── scheduler.py    # APScheduler dual-jobs (4h + 30m)
 │   │   └── utils/
 │   │       ├── time_buckets.py # Alignement UTC, fenêtres glissantes
 │   │       └── db_upsert.py    # Upsert dialect-aware
-│   └── tests/                  # 210 tests pytest
+│   └── tests/                  # 253 tests pytest
 │       ├── test_health.py
 │       ├── test_indicators.py
 │       ├── test_market.py
@@ -65,19 +68,21 @@ bitcoin-trading-assistant/
 │       ├── test_scheduler_resample_1d.py
 │       ├── test_scheduler_resample_1h.py
 │       ├── test_signals.py          # (v0.7)
-│       ├── test_alerts.py           # ← NOUVEAU (v0.8) — 48 tests alertes
+│       ├── test_alerts.py           # (v0.8) — 48 tests alertes
+│       ├── test_news.py             # ← NOUVEAU (v0.9) — 43 tests news
 │       └── test_time_buckets.py
 │
 ├── frontend/                   # React SPA
 │   └── src/
 │       ├── App.tsx
 │       ├── pages/
-│       │   └── Dashboard.tsx   # Page principale (+ SignalPanel + AlertPanel)
+│       │   └── Dashboard.tsx   # Page principale (+ SignalPanel + AlertPanel + NewsPanel)
 │       ├── components/
 │       │   ├── CandlestickChart.tsx   # Graphique Lightweight Charts
 │       │   ├── IndicatorPanel.tsx     # Panel RSI/MACD/SMA/Bollinger
 │       │   ├── SignalPanel.tsx        # (v0.7) — Jauge score, signaux, consensus
-│       │   ├── AlertPanel.tsx         # ← NOUVEAU (v0.8) — Formulaire + liste alertes
+│       │   ├── AlertPanel.tsx         # (v0.8) — Formulaire + liste alertes
+│       │   ├── NewsPanel.tsx          # ← NOUVEAU (v0.9) — News + sentiment + filtres
 │       │   ├── StatusRow.tsx          # Barre de statut connectée
 │       │   ├── StatusBar.tsx          # Barre de statut UI
 │       │   ├── DataFreshnessChip.tsx  # Chip FRESH/STALE/GAPS
@@ -90,12 +95,14 @@ bitcoin-trading-assistant/
 │       │   ├── useMarketGaps.ts       # Fetch gaps API
 │       │   ├── useSchedulerStatus.ts  # Fetch scheduler status
 │       │   ├── useSignals.ts          # (v0.7) — Fetch signaux API
-│       │   └── useAlerts.ts           # ← NOUVEAU (v0.8) — CRUD + check alertes
+│       │   ├── useAlerts.ts           # (v0.8) — CRUD + check alertes
+│       │   └── useNews.ts            # ← NOUVEAU (v0.9) — Fetch news + polling
 │       ├── api/
 │       │   ├── client.ts             # Axios instance
-│       │   └── marketApi.ts          # API calls typées (+ alerts CRUD)
+│       │   └── marketApi.ts          # API calls typées (+ news)
 │       └── types/
-│           └── api.ts               # Types TypeScript (+ Alert types)
+│           ├── api.ts               # Types TypeScript (+ News types)
+│           └── index.ts             # Barrel exports
 │
 └── docs/
     ├── CURRENT_STATE.md        # ← CE FICHIER
@@ -122,13 +129,15 @@ bitcoin-trading-assistant/
 | GET | `/market/signals` | Signaux de trading + score composite | ✅ (v0.7) |
 | GET | `/market/price` | Prix courant | ✅ |
 | GET | `/market/info` | Info marché | ✅ |
-| GET | `/alerts` | **Lister les alertes** | ✅ **NOUVEAU v0.8** |
-| POST | `/alerts` | **Créer une alerte** | ✅ **NOUVEAU v0.8** |
-| GET | `/alerts/{id}` | **Récupérer une alerte** | ✅ **NOUVEAU v0.8** |
-| PUT | `/alerts/{id}` | **Modifier une alerte** | ✅ **NOUVEAU v0.8** |
-| DELETE | `/alerts/{id}` | **Supprimer une alerte** | ✅ **NOUVEAU v0.8** |
-| POST | `/alerts/check` | **Évaluer les alertes actives** | ✅ **NOUVEAU v0.8** |
-| GET | `/alerts/notifications` | **Alertes récemment déclenchées** | ✅ **NOUVEAU v0.8** |
+| GET | `/alerts` | Lister les alertes | ✅ (v0.8) |
+| POST | `/alerts` | Créer une alerte | ✅ (v0.8) |
+| GET | `/alerts/{id}` | Récupérer une alerte | ✅ (v0.8) |
+| PUT | `/alerts/{id}` | Modifier une alerte | ✅ (v0.8) |
+| DELETE | `/alerts/{id}` | Supprimer une alerte | ✅ (v0.8) |
+| POST | `/alerts/check` | Évaluer les alertes actives | ✅ (v0.8) |
+| GET | `/alerts/notifications` | Alertes récemment déclenchées | ✅ (v0.8) |
+| GET | `/news` | **Liste des news crypto avec sentiment** | ✅ **NOUVEAU v0.9** |
+| GET | `/news/sentiment` | **Résumé du sentiment global** | ✅ **NOUVEAU v0.9** |
 | GET | `/scheduler/status` | État scheduler + dernier résultat par job | ✅ |
 | POST | `/scheduler/trigger/4h` | Trigger manuel job 4h | ✅ |
 | POST | `/scheduler/trigger/30m` | Trigger manuel job 30m | ✅ |
@@ -140,7 +149,8 @@ bitcoin-trading-assistant/
 | **CoinGecko Service** | Client HTTP async, mapping symboles, gestion timeouts | ✅ |
 | **Indicator Service** | RSI(14), MACD(12,26,9), SMA(20,50,200), Bollinger(20,2) | ✅ |
 | **Signal Service** | Interprétation indicateurs → signaux + score composite -100/+100 | ✅ (v0.7) |
-| **Alert Service** | **CRUD alertes + évaluation conditions (prix, RSI, MACD, score)** | ✅ **NOUVEAU v0.8** |
+| **Alert Service** | CRUD alertes + évaluation conditions (prix, RSI, MACD, score) | ✅ (v0.8) |
+| **News Service** | **Collecte RSS + classification sentiment + score d'impact** | ✅ **NOUVEAU v0.9** |
 | **Resample Service** | Agrégation OHLCV 30m→1h et 4h→1d, idempotent via upsert | ✅ |
 | **Scheduler Dual-Jobs** | Job 4h (fetch 7j → 4h → resample 1d) + Job 30m (fetch 1j → 30m → resample 1h) | ✅ |
 
@@ -165,9 +175,20 @@ bitcoin-trading-assistant/
 | **Conditions** | above (≥) et below (≤) | ✅ |
 | **Récurrence** | Alertes one-shot ou récurrentes | ✅ |
 | **Notifications** | Génération de messages de notification structurés | ✅ |
-| **Filtrage** | Par symbole, timeframe, status | ✅ |
 
-### 3.5 Backend — Timeframes supportés
+### 3.5 Backend — News & Sentiment (v0.9)
+
+| Fonctionnalité | Description | Status |
+|----------------|-------------|--------|
+| **Collecte RSS** | 3 sources (CoinTelegraph, CoinDesk, Bitcoin Magazine) | ✅ |
+| **Classifieur sentiment** | Keyword-based (bullish/bearish/neutral) | ✅ |
+| **Score d'impact** | Détection mots-clés (HIGH/MEDIUM/LOW) | ✅ |
+| **Cache mémoire** | TTL 5 minutes pour éviter de surcharger les sources | ✅ |
+| **Résilience** | Timeout 10s, fallback liste vide si source échoue | ✅ |
+| **Score global** | Agrégation pondérée -100/+100 avec impact | ✅ |
+| **Filtre sentiment** | Filtrer par positive/negative/neutral | ✅ |
+
+### 3.6 Backend — Timeframes supportés
 
 | Timeframe | Source | Méthode |
 |-----------|--------|---------|
@@ -176,7 +197,7 @@ bitcoin-trading-assistant/
 | **4h** | CoinGecko direct | Job 4h fetch 7 jours |
 | **1d** | Resample 4h→1d | Agrégation automatique |
 
-### 3.6 Frontend — Composants
+### 3.7 Frontend — Composants
 
 | Composant | Description | Status |
 |-----------|-------------|--------|
@@ -184,22 +205,24 @@ bitcoin-trading-assistant/
 | **CandlestickChart** | Graphique chandeliers (Lightweight Charts) | ✅ |
 | **IndicatorPanel** | Affichage RSI, MACD, SMA, Bollinger avec couleurs | ✅ |
 | **SignalPanel** | Jauge score composite, liste signaux, consensus | ✅ (v0.7) |
-| **AlertPanel** | **Formulaire création + liste alertes + notifications** | ✅ **NOUVEAU v0.8** |
+| **AlertPanel** | Formulaire création + liste alertes + notifications | ✅ (v0.8) |
+| **NewsPanel** | **News crypto + sentiment + filtres + jauge** | ✅ **NOUVEAU v0.9** |
 | **StatusRow** | Barre de statut (fraîcheur + scheduler) | ✅ |
 | **DataFreshnessChip** | Chip FRESH / STALE / GAPS | ✅ |
 | **SchedulerChip** | Chip scheduler ON / OFF | ✅ |
 | **ErrorBoundary** | Protection crash graphique | ✅ |
 
-### 3.7 Frontend — Contrôles utilisateur
+### 3.8 Frontend — Contrôles utilisateur
 
 - Sélecteur timeframe : 30m, 1h, 4h, 1d
 - Sélecteur historique : 1, 2, 7, 14, 30 jours
 - Cap automatique à 1 jour pour 30m/1h (limite CoinGecko)
 - Bouton "Fetch API" avec routing intelligent (trigger 30m ou 4h selon timeframe)
-- Bouton "Actualiser" pour refresh local (inclut signaux + alertes)
+- Bouton "Actualiser" pour refresh local (inclut signaux + alertes + news)
 - Affichage résultat fetch (inserted, updated, duplicates, resample)
 - Panel signaux avec jauge, liste, confiance et consensus (v0.7)
-- **Panel alertes avec formulaire, liste, notifications polling** (v0.8)
+- Panel alertes avec formulaire, liste, notifications polling (v0.8)
+- **Panel news avec jauge sentiment, liste articles, filtres, liens cliquables** (v0.9)
 
 ---
 
@@ -215,9 +238,10 @@ bitcoin-trading-assistant/
 | test_scheduler_resample_1d.py | 7 | Resample 4h→1d, OHLCV, idempotent |
 | test_scheduler_resample_1h.py | 6 | Resample 30m→1h, OHLCV, idempotent |
 | test_signals.py | 52 | RSI/MACD/SMA/Bollinger interpréteurs, composite, résumé, intégration, endpoint |
-| **test_alerts.py** | **48** | **CRUD, évaluation, récurrence, endpoints** |
+| test_alerts.py | 48 | CRUD, évaluation, récurrence, endpoints |
+| **test_news.py** | **43** | **Sentiment, impact, RSS, résumé, résilience, endpoints** |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **210** | **Tous passing ✅** |
+| **TOTAL** | **253** | **Tous passing ✅** |
 
 ---
 
@@ -229,7 +253,7 @@ bitcoin-trading-assistant/
 - Uvicorn 0.27.1
 - SQLAlchemy 2.0.25
 - Pydantic 2.6.1 + pydantic-settings 2.1.0
-- httpx 0.26.0 (client HTTP async)
+- httpx 0.26.0 (client HTTP async + sync pour RSS)
 - pandas 2.1.4 + pandas-ta-classic 0.3.14b0
 - APScheduler ≥3.10.0
 - pytest 7.4.4 + pytest-asyncio 0.23.4
@@ -279,28 +303,28 @@ Le projet suit une trajectoire en 3 étapes (détails : [ROADMAP_INFINI.md](./RO
 
 | Étape | Nom | Versions | Description | Status |
 |-------|-----|----------|-------------|--------|
-| **1** | BTC Insight | v0.2 → v0.9 | Assistant visuel, pédagogique | 🔄 En cours |
+| **1** | BTC Insight | v0.2 → v0.9 | Assistant visuel, pédagogique | ✅ **Complet** |
 | **2** | INFINI v1 | v1.0 → v1.5 | Assistant intelligent, décisionnel | ⬜ Non commencé |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Niveau 2** (Intelligence analytique) — Signaux + Alertes livrés ✅
+**Position actuelle :** **Fin Étape 1** — BTC Insight complet (données + indicateurs + signaux + alertes + news)
 
 ---
 
-## 8. Prochaine étape : v0.9 — News & Sentiment
+## 8. Prochaine étape : v1.0 — Moteur de Décision (INFINI v1)
 
-Le système passe de "alerter" à "comprendre le contexte" :
+Le système passe de "informer" à "recommander" :
 
 | Fichier à créer | Description |
 |-----------------|-------------|
-| `backend/app/services/news_service.py` | Collecteur de news (RSS, API) |
-| `backend/app/schemas/news.py` | Schémas NewsItem, SentimentResponse |
-| `backend/app/api/routes/news.py` | GET /news, GET /news/sentiment |
-| `backend/tests/test_news.py` | Tests unitaires news |
-| `frontend/src/components/NewsPanel.tsx` | Fil d'actus avec sentiment |
-| `frontend/src/hooks/useNews.ts` | Hook React |
+| `backend/app/services/decision_service.py` | Moteur de règles combinées |
+| `backend/app/schemas/decision.py` | Schémas Scenario, Recommendation |
+| `backend/app/api/routes/decision.py` | GET /market/decision |
+| `backend/tests/test_decision.py` | Tests unitaires décision |
+| `frontend/src/components/DecisionPanel.tsx` | Scénarios visuels + confiance |
+| `frontend/src/hooks/useDecision.ts` | Hook React |
 
-**Résultat attendu :** L'utilisateur voit les news crypto récentes classées par sentiment (positif/neutre/négatif) avec un score d'impact sur le marché.
+**Résultat attendu :** L'utilisateur voit des scénarios (Hausse 65% / Stable 25% / Baisse 10%) avec des recommandations explicables.
 
 ---
 
@@ -310,12 +334,13 @@ Le système passe de "alerter" à "comprendre le contexte" :
 |---------|-------|--------|
 | ~~Moteur de signaux~~ | ~~v0.7~~ | ✅ **Livré** |
 | ~~Alertes & Notifications~~ | ~~v0.8~~ | ✅ **Livré** |
-| Dark/Light mode | v0.9 | ❌ Non commencé |
-| Responsive mobile | v0.9 | ❌ Non commencé |
-| Persistance localStorage | v0.9 | ❌ Non commencé |
-| News & Sentiment | v0.9 | ❌ Non commencé |
-| Multi-Assets (ETH, SOL...) | v1.2 | ❌ Non commencé |
+| ~~News & Sentiment~~ | ~~v0.9~~ | ✅ **Livré** |
+| Dark/Light mode | v1.x | ❌ Non commencé |
+| Responsive mobile | v1.x | ❌ Non commencé |
+| Persistance localStorage | v1.x | ❌ Non commencé |
+| Moteur de Décision | v1.0 | ❌ Non commencé |
 | Backtesting engine | v1.1 | ❌ Non commencé |
+| Multi-Assets (ETH, SOL...) | v1.2 | ❌ Non commencé |
 | Paper trading | v1.4 | ❌ Non commencé |
 | Docker Compose | v1.5 | ❌ Non commencé |
 | CI/CD GitHub Actions | v1.5 | ❌ Non commencé |
@@ -329,4 +354,4 @@ Le système passe de "alerter" à "comprendre le contexte" :
 |---|----------|----------|-------|
 | 1 | Warnings pytest : coroutine `_fetch_and_store` non attendue dans certains tests mockés | ⚠️ Low | Ne bloque pas les tests, cosmétique |
 | 2 | Vite build warning : chunk > 500 kB | ⚠️ Low | Suggestion de code-splitting |
-
+| 3 | News RSS peuvent être indisponibles (timeout) | ⚠️ Low | Géré par fallback + cache TTL 5min |

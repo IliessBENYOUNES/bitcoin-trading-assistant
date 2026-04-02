@@ -2,7 +2,7 @@
 
 > Ce fichier est la **source unique de vérité** pour tout agent IA travaillant sur ce projet.
 > Il fusionne et remplace le contenu de AGENT.md (conservé pour compatibilité).
-> **Version :** v0.8.0 — Dernière mise à jour : 2 avril 2026
+> **Version :** v0.9.0 — Dernière mise à jour : 2 avril 2026
 
 ---
 
@@ -15,9 +15,9 @@
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **210 tests** pytest, tous passing |
+| Tests backend | **253 tests** pytest, tous passing |
 | Frontend build | `tsc --noEmit` sans erreur |
-| Phase courante | **v0.8 en cours** (Alertes & Notifications) |
+| Phase courante | **v0.9 livré** — Étape 1 BTC Insight complète, prochaine étape v1.0 |
 
 **Documents à lire en premier :**
 1. Ce fichier (`CLAUDE.md`) — Règles de l'agent
@@ -90,7 +90,7 @@ npx tsc --noEmit
 ```
 
 Vérifier :
-- ✅ **210+ tests** backend passent (le nombre ne doit jamais diminuer)
+- ✅ **253+ tests** backend passent (le nombre ne doit jamais diminuer)
 - ✅ Aucun nouveau test en échec
 - ✅ `tsc --noEmit` sans erreur
 - Si des tests échouent → **corriger avant de commit**
@@ -154,12 +154,14 @@ backend/app/
 │   ├── health.py   → GET /health, /health/db
 │   ├── market.py   → GET /market/candles, indicators, signals, gaps, price, info
 │   ├── alerts.py   → GET/POST/PUT/DELETE /alerts, POST /alerts/check
+│   ├── news.py     → GET /news, GET /news/sentiment
 │   └── scheduler.py → GET /scheduler/status, POST trigger
 ├── services/       → Logique métier (calculs, interprétation, appels externes)
 │   ├── coingecko_service.py  → Client HTTP CoinGecko
 │   ├── indicator_service.py  → RSI, MACD, SMA, Bollinger
 │   ├── signal_service.py     → Interprétation → signaux + score composite
 │   ├── alert_service.py      → CRUD alertes + évaluation conditions
+│   ├── news_service.py       → Collecte RSS + sentiment + impact
 │   └── resample_service.py   → Agrégation OHLCV
 ├── models/         → Modèles SQLAlchemy (DB) — exposés via __init__.py
 │   ├── candle.py   → Table candles (OHLCV + timeframe)
@@ -167,7 +169,8 @@ backend/app/
 ├── schemas/        → Schémas Pydantic (validation/sérialisation) — exposés via __init__.py
 │   ├── candle.py   → Schémas candle
 │   ├── signal.py   → Schémas signal (SignalItem, CompositeScore)
-│   └── alert.py    → Schémas alert (AlertCreate, AlertResponse, AlertCheck)
+│   ├── alert.py    → Schémas alert (AlertCreate, AlertResponse, AlertCheck)
+│   └── news.py     → Schémas news (NewsItem, NewsSentimentSummary, NewsResponse)
 ├── tasks/          → Jobs planifiés (APScheduler)
 └── utils/          → Utilitaires réutilisables (time_buckets, db_upsert)
 ```
@@ -176,10 +179,10 @@ backend/app/
 ```
 frontend/src/
 ├── pages/          → Pages (1 par route, ex: Dashboard.tsx)
-├── components/     → Composants réutilisables (IndicatorPanel, SignalPanel, AlertPanel, etc.)
-├── hooks/          → Custom hooks React (useIndicators, useSignals, useAlerts, etc.)
+├── components/     → Composants réutilisables (IndicatorPanel, SignalPanel, AlertPanel, NewsPanel, etc.)
+├── hooks/          → Custom hooks React (useIndicators, useSignals, useAlerts, useNews, etc.)
 ├── api/            → Appels API typés (marketApi.ts avec fonctions async)
-└── types/          → Types TypeScript partagés (api.ts)
+└── types/          → Types TypeScript partagés (api.ts + index.ts barrel)
 ```
 
 ### Conventions de nommage
@@ -259,7 +262,7 @@ Avant d'ajouter une feature :
 2. Lire `docs/ROADMAP_INFINI.md` pour la vision long terme
 3. S'assurer que la feature s'inscrit dans la bonne phase
 
-**Phase actuelle : v0.8 en cours (Alertes & Notifications)**
+**Phase actuelle : v0.9 livré — Prochaine étape v1.0 Moteur de Décision**
 
 Ne pas implémenter une feature d'une phase future si la phase courante n'est pas terminée.
 
@@ -350,7 +353,7 @@ class TestXxxEndpoint:
 ## Checklist pré-commit
 
 ```
-[ ] Tests backend passent (210+ tests, python -m pytest tests/ -v)
+[ ] Tests backend passent (253+ tests, python -m pytest tests/ -v)
 [ ] Frontend compile (npx tsc --noEmit, zéro erreur)
 [ ] docs/CURRENT_STATE.md mis à jour
 [ ] CHANGELOG.md mis à jour (si nouvelle version)

@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.0] - 2026-04-02
+
+### Added
+- **News & Sentiment System**: Collecte de news crypto avec analyse de sentiment et score d'impact
+- `news_service.py` : collecteur RSS (CoinTelegraph, CoinDesk, Bitcoin Magazine) avec cache mémoire TTL 5min
+- Classifieur de sentiment keyword-based (30+ mots bullish, 30+ mots bearish)
+- Score d'impact (HIGH/MEDIUM/LOW) basé sur détection de mots-clés institutionnels/réglementaires
+- Score de sentiment global -100/+100 pondéré par l'impact
+- `news.py` schemas : NewsItem, NewsSentimentSummary, NewsResponse, SentimentType, ImpactLevel
+- `GET /news` : liste des articles récents avec sentiment, impact et mots-clés (filtrable par sentiment)
+- `GET /news/sentiment` : résumé du sentiment global uniquement
+- `NewsPanel.tsx` : jauge de sentiment, liste d'articles avec liens, filtres, compteurs
+- `useNews.ts` : hook React avec fetch + polling automatique (5min)
+- Types TypeScript : NewsItem, NewsSentimentSummary, NewsResponse, SentimentType, ImpactLevel
+- 43 nouveaux tests backend (sentiment, impact, RSS parsing, résilience, endpoints)
+- Parser RSS intégré (pas de dépendance externe feedparser)
+
+### Changed
+- Dashboard intègre le NewsPanel sous AlertPanel
+- Bouton "Actualiser" rafraîchit aussi les news
+- `marketApi.ts` : ajout de `getNews()` et `getNewsSentiment()`
+- `schemas/__init__.py` : export des schémas news
+- `routes/__init__.py` : export du router news
+- `main.py` : inclusion du router news
+- `types/api.ts` + `types/index.ts` : barrel exports des types News
+
+### Technical
+- 253 tests backend passing (210 existants + 43 nouveaux)
+- Frontend tsc --noEmit sans erreur
+- Aucune dépendance ajoutée (utilise httpx existant pour RSS)
+- Cache mémoire évite de surcharger les sources RSS
+- Résilience : timeout 10s, fallback liste vide si source échoue
+
 ## [0.8.0] - 2026-04-02
 
 ### Added
