@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.9.2] - 2026-04-02
+
+### Changed
+- **Premium Dark Trading UI**: Refonte visuelle complète sans changement d'architecture
+- Thème MUI riche avec couleurs crypto (BTC Orange #F7931A, vert/rouge trading)
+- Glassmorphism sur toutes les Cards (backdrop-filter: blur + rgba borders)
+- AppBar sticky premium avec logo Bitcoin, contrôles intégrés, gradient
+- Background gradient sombre style Bloomberg/TradingView
+- Jauges demi-cercle SVG pour le score composite (SignalPanel) et le sentiment (NewsPanel)
+- Polices premium : Inter (UI) + JetBrains Mono (chiffres/scores)
+- Custom scrollbar dark, font-smoothing, text selection BTC orange
+- Hover glow sur les boutons et Cards
+- Tooltips glassmorphism, Alert arrondies, Chips premium
+
+### Technical
+- Aucune nouvelle dépendance (pur CSS + MUI overrides)
+- 253 tests backend passing
+- Frontend tsc --noEmit sans erreur
+
 ## [0.9.1] - 2026-04-02
 
 ### Added

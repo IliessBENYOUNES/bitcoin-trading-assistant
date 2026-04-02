@@ -1,4 +1,7 @@
-/* Styles globaux */
+/* =============================================================================
+   BTC Insight — Global Styles (Premium Dark Trading UI)
+   ============================================================================= */
+
 * {
   box-sizing: border-box;
 }
@@ -7,4 +10,40 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar (dark trading style) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Text selection in BTC orange */
+::selection {
+  background: rgba(247, 147, 26, 0.35);
+  color: #fff;
+}
+
+/* Monospace pour les nombres (prix, scores, indicateurs) */
+.mono {
+  font-family: 'JetBrains Mono', monospace !important;
+}
+

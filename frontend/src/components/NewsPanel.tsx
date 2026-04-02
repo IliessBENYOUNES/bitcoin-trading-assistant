@@ -130,45 +130,43 @@ function formatRelativeDate(dateStr: string | null): string {
 // Sub-components
 // -----------------------------------------------------------------------------
 
-/** Jauge de sentiment visuelle */
+/** Jauge de sentiment visuelle — Demi-cercle SVG premium */
 const SentimentGauge: React.FC<{ score: number; sentiment: SentimentType }> = ({
   score,
   sentiment,
 }) => {
-  // Normaliser le score de -100/+100 vers 0/100 pour la barre
-  const normalizedValue = (score + 100) / 2;
   const color = getScoreColor(score);
+  const angle = (score / 100) * 90;
+  const radians = ((angle - 90) * Math.PI) / 180;
+  const radius = 55;
+  const cx = 65;
+  const cy = 62;
+  const x = cx + radius * Math.cos(radians);
+  const y = cy + radius * Math.sin(radians);
+  const bgPath = `M ${cx - radius} ${cy} A ${radius} ${radius} 0 0 1 ${cx + radius} ${cy}`;
+  const startX = cx - radius;
+  const largeArc = angle > 0 ? 1 : 0;
+  const fgPath = `M ${startX} ${cy} A ${radius} ${radius} 0 ${largeArc} 1 ${x} ${y}`;
+
+  const sentimentLabel = sentiment === 'positive' ? 'BULLISH' : sentiment === 'negative' ? 'BEARISH' : 'NEUTRE';
 
   return (
-    <Box sx={{ mb: 1.5 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          {getSentimentIcon(sentiment)}
-          <Typography variant="body2" fontWeight={600}>
-            Sentiment global
-          </Typography>
-        </Box>
-        <Typography variant="h6" fontWeight={700} sx={{ color }}>
+    <Box sx={{ textAlign: 'center', mb: 1 }}>
+      <svg width="130" height="75" viewBox="0 0 130 75" style={{ display: 'block', margin: '0 auto' }}>
+        <path d={bgPath} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" strokeLinecap="round" />
+        <path d={fgPath} fill="none" stroke={color} strokeWidth="10" strokeLinecap="round"
+          style={{ filter: `drop-shadow(0 0 6px ${color}60)` }} />
+        <text x={cx} y={cy - 10} textAnchor="middle" fill={color}
+          style={{ fontSize: '22px', fontWeight: 800, fontFamily: '"JetBrains Mono", monospace' }}>
           {score > 0 ? '+' : ''}{score}
-        </Typography>
-      </Box>
-      <LinearProgress
-        variant="determinate"
-        value={normalizedValue}
-        sx={{
-          height: 8,
-          borderRadius: 4,
-          backgroundColor: '#f4433620',
-          '& .MuiLinearProgress-bar': {
-            backgroundColor: color,
-            borderRadius: 4,
-          },
-        }}
-      />
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.25 }}>
-        <Typography variant="caption" color="text.secondary">Bearish</Typography>
-        <Typography variant="caption" color="text.secondary">Bullish</Typography>
-      </Box>
+        </text>
+        <text x={cx} y={cy + 4} textAnchor="middle" fill="#9AA0A6"
+          style={{ fontSize: '8px', fontWeight: 600, fontFamily: '"Inter", sans-serif', letterSpacing: '0.1em' }}>
+          {sentimentLabel}
+        </text>
+        <text x="4" y={cy + 12} fill="#FF1744" style={{ fontSize: '7px', fontFamily: '"JetBrains Mono", monospace' }}>-100</text>
+        <text x="108" y={cy + 12} fill="#00E676" style={{ fontSize: '7px', fontFamily: '"JetBrains Mono", monospace' }}>+100</text>
+      </svg>
     </Box>
   );
 };

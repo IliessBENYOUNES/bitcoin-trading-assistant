@@ -22,7 +22,6 @@ import {
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
   TrendingFlat as TrendingFlatIcon,
-  Speed as SpeedIcon,
 } from '@mui/icons-material';
 import type { MarketSignalsResponse, SignalItem, SignalDirection, ConfidenceLevel } from '../types';
 
@@ -120,47 +119,48 @@ function getIndicatorLabel(indicator: string): string {
 // Sub-components
 // -----------------------------------------------------------------------------
 
-/** Jauge de score composite */
+/** Jauge de score composite — Demi-cercle SVG premium */
 const ScoreGauge: React.FC<{ score: number; direction: SignalDirection }> = ({ score, direction }) => {
-  // Normaliser le score de [-100, 100] à [0, 100] pour la progress bar
-  const normalized = (score + 100) / 2;
   const color = getScoreColor(score);
+  // Arc SVG : angle de -90° (gauche) à +90° (droite)
+  // score -100 → angle -90°, score +100 → angle +90°
+  const angle = (score / 100) * 90;
+  const radians = ((angle - 90) * Math.PI) / 180;
+  const radius = 70;
+  const cx = 80;
+  const cy = 80;
+  // Point sur l'arc
+  const x = cx + radius * Math.cos(radians);
+  const y = cy + radius * Math.sin(radians);
+  // Arc background (demi-cercle complet)
+  const bgPath = `M ${cx - radius} ${cy} A ${radius} ${radius} 0 0 1 ${cx + radius} ${cy}`;
+  // Arc foreground (du début au score)
+  const startX = cx - radius;
+  const largeArc = angle > 0 ? 1 : 0;
+  const fgPath = `M ${startX} ${cy} A ${radius} ${radius} 0 ${largeArc} 1 ${x} ${y}`;
 
   return (
-    <Box sx={{ textAlign: 'center', py: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 1 }}>
-        <SpeedIcon sx={{ fontSize: 32, color }} />
-        <Typography
-          variant="h3"
-          fontWeight={700}
-          sx={{ fontFamily: 'monospace', color }}
-        >
+    <Box sx={{ textAlign: 'center', py: 1.5 }}>
+      <svg width="160" height="95" viewBox="0 0 160 95" style={{ display: 'block', margin: '0 auto' }}>
+        {/* Background arc */}
+        <path d={bgPath} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="12" strokeLinecap="round" />
+        {/* Foreground arc */}
+        <path d={fgPath} fill="none" stroke={color} strokeWidth="12" strokeLinecap="round"
+          style={{ filter: `drop-shadow(0 0 8px ${color}60)` }} />
+        {/* Score text */}
+        <text x={cx} y={cy - 12} textAnchor="middle" fill={color}
+          style={{ fontSize: '28px', fontWeight: 800, fontFamily: '"JetBrains Mono", monospace' }}>
           {score > 0 ? '+' : ''}{score}
-        </Typography>
-      </Box>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-        {getDirectionLabel(direction)}
-      </Typography>
-      <Box sx={{ px: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-          <Typography variant="caption" color="error.main">-100</Typography>
-          <Typography variant="caption" color="text.secondary">0</Typography>
-          <Typography variant="caption" color="success.main">+100</Typography>
-        </Box>
-        <LinearProgress
-          variant="determinate"
-          value={normalized}
-          sx={{
-            height: 8,
-            borderRadius: 4,
-            backgroundColor: '#e0e0e0',
-            '& .MuiLinearProgress-bar': {
-              backgroundColor: color,
-              borderRadius: 4,
-            },
-          }}
-        />
-      </Box>
+        </text>
+        {/* Label */}
+        <text x={cx} y={cy + 4} textAnchor="middle" fill="#9AA0A6"
+          style={{ fontSize: '10px', fontWeight: 500, fontFamily: '"Inter", sans-serif' }}>
+          {getDirectionLabel(direction).toUpperCase()}
+        </text>
+        {/* Min/Max labels */}
+        <text x="4" y={cy + 14} fill="#FF1744" style={{ fontSize: '9px', fontFamily: '"JetBrains Mono", monospace' }}>-100</text>
+        <text x="134" y={cy + 14} fill="#00E676" style={{ fontSize: '9px', fontFamily: '"JetBrains Mono", monospace' }}>+100</text>
+      </svg>
     </Box>
   );
 };

@@ -1,5 +1,5 @@
 // =============================================================================
-// Dashboard.tsx - Main dashboard with indicators, status, and chart
+// Dashboard.tsx - Premium dark trading dashboard
 // =============================================================================
 
 import React, { useState, useMemo } from 'react';
@@ -17,12 +17,17 @@ import {
   Alert,
   Chip,
   Stack,
+  AppBar,
+  Toolbar,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
   CloudDownload as FetchIcon,
   CheckCircle as SuccessIcon,
   Info as InfoIcon,
+  CurrencyBitcoin as BitcoinIcon,
 } from '@mui/icons-material';
 
 // Composants
@@ -260,84 +265,96 @@ const Dashboard: React.FC = () => {
       <Box
           sx={{
             minHeight: '100vh',
-            backgroundColor: 'background.default',
-            py: 3,
+            background: 'linear-gradient(180deg, #0A0E17 0%, #0D1321 50%, #0A0E17 100%)',
           }}
       >
-        <Container maxWidth="xl">
-          {/* ================================================================= */}
-          {/* HEADER: Title + Controls */}
-          {/* ================================================================= */}
-          <Box
-              sx={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 2,
-                mb: 3,
-              }}
-          >
-            <Typography variant="h4" fontWeight={700}>
-              Bitcoin Trading Assistant
-            </Typography>
-
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-              {/* Timeframe selector */}
-              <FormControl size="small" sx={{ minWidth: 120 }}>
-                <InputLabel>Timeframe</InputLabel>
-                <Select
-                    value={timeframe}
-                    label="Timeframe"
-                    onChange={handleTimeframeChange}
-                >
-                  <MenuItem value="30m">30 min</MenuItem>
-                  <MenuItem value="1h">1 heure</MenuItem>
-                  <MenuItem value="4h">4 heures</MenuItem>
-                  <MenuItem value="1d">1 jour</MenuItem>
-                </Select>
-              </FormControl>
-
-              {/* Days selector */}
-              <FormControl size="small" sx={{ minWidth: 100 }}>
-                <InputLabel>Historique</InputLabel>
-                <Select
-                    value={String(days)}
-                    label="Historique"
-                    onChange={handleDaysChange}
-                >
-                  <MenuItem value="1">1 jour</MenuItem>
-                  <MenuItem value="2">2 jours</MenuItem>
-                  <MenuItem value="7">7 jours</MenuItem>
-                  <MenuItem value="14">14 jours</MenuItem>
-                  <MenuItem value="30">30 jours</MenuItem>
-                </Select>
-              </FormControl>
-
-              {/* Fetch candles button */}
-              <Button
-                  variant="contained"
-                  color="secondary"
-                  startIcon={<FetchIcon />}
-                  onClick={handleFetchCandles}
-                  disabled={fetching || timeframeNotSupported}
-              >
-                {fetching ? 'Récupération...' : 'Fetch API'}
-              </Button>
-
-              {/* Refresh button */}
-              <Button
-                  variant="contained"
-                  startIcon={<RefreshIcon />}
-                  onClick={handleRefreshAll}
-                  disabled={
-                      indicators.loading || gaps.loading || candles.loading || signals.loading
-                  }
-              >
-                Actualiser
-              </Button>
+        {/* ================================================================= */}
+        {/* APPBAR PREMIUM */}
+        {/* ================================================================= */}
+        <AppBar
+          position="sticky"
+          elevation={0}
+          sx={{
+            backgroundColor: 'rgba(10, 14, 23, 0.85)',
+            backdropFilter: 'blur(20px)',
+            borderBottom: '1px solid rgba(255,255,255,0.04)',
+          }}
+        >
+          <Toolbar sx={{ gap: 2 }}>
+            {/* Logo + Title */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
+              <BitcoinIcon sx={{ color: '#F7931A', fontSize: 32 }} />
+              <Box>
+                <Typography variant="h6" fontWeight={800} sx={{ lineHeight: 1, letterSpacing: '-0.02em' }}>
+                  BTC Insight
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
+                  Trading Assistant v0.9
+                </Typography>
+              </Box>
             </Box>
-          </Box>
+
+            {/* Spacer */}
+            <Box sx={{ flex: 1 }} />
+
+            {/* Controls */}
+            <FormControl size="small" sx={{ minWidth: 110 }}>
+              <InputLabel>Timeframe</InputLabel>
+              <Select
+                  value={timeframe}
+                  label="Timeframe"
+                  onChange={handleTimeframeChange}
+              >
+                <MenuItem value="30m">30 min</MenuItem>
+                <MenuItem value="1h">1 heure</MenuItem>
+                <MenuItem value="4h">4 heures</MenuItem>
+                <MenuItem value="1d">1 jour</MenuItem>
+              </Select>
+            </FormControl>
+
+            <FormControl size="small" sx={{ minWidth: 100 }}>
+              <InputLabel>Historique</InputLabel>
+              <Select
+                  value={String(days)}
+                  label="Historique"
+                  onChange={handleDaysChange}
+              >
+                <MenuItem value="1">1 jour</MenuItem>
+                <MenuItem value="2">2 jours</MenuItem>
+                <MenuItem value="7">7 jours</MenuItem>
+                <MenuItem value="14">14 jours</MenuItem>
+                <MenuItem value="30">30 jours</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Button
+                variant="contained"
+                color="primary"
+                size="small"
+                startIcon={<FetchIcon />}
+                onClick={handleFetchCandles}
+                disabled={fetching || timeframeNotSupported}
+                sx={{
+                  background: 'linear-gradient(135deg, #F7931A 0%, #E65100 100%)',
+                  '&:hover': { background: 'linear-gradient(135deg, #FFB74D 0%, #F7931A 100%)' },
+                }}
+            >
+              {fetching ? 'Fetch...' : 'Fetch API'}
+            </Button>
+
+            <Tooltip title="Actualiser toutes les données">
+              <IconButton
+                  onClick={handleRefreshAll}
+                  disabled={indicators.loading || gaps.loading || candles.loading || signals.loading}
+                  sx={{ color: 'text.secondary', '&:hover': { color: '#F7931A' } }}
+              >
+                <RefreshIcon />
+              </IconButton>
+            </Tooltip>
+          </Toolbar>
+        </AppBar>
+
+        <Container maxWidth="xl" sx={{ pt: 2.5, pb: 4 }}>
 
           {/* ================================================================= */}
           {/* FETCH RESULT INFO (non bloquant) */}
@@ -453,12 +470,12 @@ const Dashboard: React.FC = () => {
           </Box>
 
           {/* ================================================================= */}
-          {/* MAIN CONTENT */}
+          {/* MAIN CONTENT — Grille premium */}
           {/* ================================================================= */}
-          <Grid container spacing={3}>
-            {/* Left column: Indicators */}
+          <Grid container spacing={2.5}>
+            {/* Colonne gauche: Signaux + Alertes + News + Indicateurs */}
             <Grid item xs={12} lg={4}>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
                 <SignalPanel
                     data={signals.data}
                     loading={signals.loading}
@@ -496,7 +513,7 @@ const Dashboard: React.FC = () => {
               </Box>
             </Grid>
 
-            {/* Right column: Chart */}
+            {/* Colonne droite: Chart */}
             <Grid item xs={12} lg={8}>
               {candles.error && (
                   <Alert severity="error" sx={{ mb: 2 }}>
