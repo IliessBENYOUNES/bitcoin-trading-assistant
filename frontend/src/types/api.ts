@@ -293,3 +293,167 @@ export interface DecisionResponse {
   summary: string;
 }
 
+// -----------------------------------------------------------------------------
+// Backtesting (/backtest)
+// -----------------------------------------------------------------------------
+
+export type TradeDirection = 'buy' | 'sell';
+
+export interface BacktestConfig {
+  symbol?: string;
+  timeframe?: string;
+  start_days_ago?: number;
+  initial_capital?: number;
+}
+
+export interface BacktestTradeItem {
+  entry_ts: string;
+  exit_ts: string | null;
+  direction: TradeDirection;
+  entry_price: number;
+  exit_price: number | null;
+  pnl: number;
+  pnl_pct: number;
+  reason_entry: string;
+  reason_exit: string;
+  duration_hours: number;
+}
+
+export interface BacktestMetrics {
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  net_pnl: number;
+  net_pnl_pct: number;
+  profit_factor: number;
+  max_drawdown_pct: number;
+  avg_trade_pnl: number;
+  avg_trade_duration_hours: number;
+  sharpe_ratio: number;
+  buy_and_hold_pnl_pct: number;
+  overfitting_warning: boolean;
+}
+
+export interface EquityPoint {
+  ts: string;
+  capital: number;
+  drawdown_pct: number;
+}
+
+export interface BacktestMeta {
+  symbol: string;
+  timeframe: string;
+  start_ts: string;
+  end_ts: string;
+  initial_capital: number;
+  candles_analyzed: number;
+  decisions_made: number;
+  duration_seconds: number;
+}
+
+export interface BacktestResponse {
+  meta: BacktestMeta;
+  metrics: BacktestMetrics;
+  trades: BacktestTradeItem[];
+  equity_curve: EquityPoint[];
+  summary: string;
+}
+
+// -----------------------------------------------------------------------------
+// Verification Historique (/backtest/verify, /backtest/walk-forward)
+// -----------------------------------------------------------------------------
+
+export interface HistoryLoadConfig {
+  symbol?: string;
+  timeframe?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface HistoryLoadResponse {
+  fetched: number;
+  inserted: number;
+  symbol: string;
+  timeframe: string;
+  start_ts: string;
+  end_ts: string;
+  duration_seconds: number;
+}
+
+export interface HistoryRangeResponse {
+  symbol: string;
+  timeframe: string;
+  min_date: string | null;
+  max_date: string | null;
+  total_candles: number;
+  has_data: boolean;
+}
+
+export interface HorizonOutcome {
+  horizon_days: number;
+  end_date: string;
+  end_price: number;
+  actual_change_pct: number;
+  actual_direction: string;
+  predicted_action: string;
+  predicted_score: number;
+  correct: boolean;
+  detail: string;
+}
+
+export interface VerificationRequest {
+  target_date: string;
+  symbol?: string;
+  timeframe?: string;
+  history_days?: number;
+  horizons?: number[];
+}
+
+export interface VerificationResult {
+  target_date: string;
+  price_at_date: number;
+  predicted_action: string;
+  predicted_confidence: string;
+  predicted_score: number;
+  predicted_summary: string;
+  dominant_scenario: string;
+  dominant_probability: number;
+  outcomes: HorizonOutcome[];
+  meta: Record<string, unknown>;
+}
+
+export interface WalkForwardConfig {
+  start_date: string;
+  end_date: string;
+  step_days?: number;
+  symbol?: string;
+  timeframe?: string;
+  history_days?: number;
+  horizons?: number[];
+}
+
+export interface HorizonAccuracy {
+  horizon_days: number;
+  total_points: number;
+  correct: number;
+  incorrect: number;
+  accuracy_pct: number;
+  avg_predicted_score: number;
+  avg_actual_change_pct: number;
+  buy_signals: number;
+  sell_signals: number;
+  hold_signals: number;
+}
+
+export interface WalkForwardResult {
+  total_points: number;
+  start_date: string;
+  end_date: string;
+  step_days: number;
+  accuracy_by_horizon: HorizonAccuracy[];
+  points: VerificationResult[];
+  summary: string;
+  duration_seconds: number;
+}
+

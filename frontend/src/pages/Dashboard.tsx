@@ -37,6 +37,8 @@ import { SignalPanel } from '../components/SignalPanel';
 import { AlertPanel } from '../components/AlertPanel';
 import { NewsPanel } from '../components/NewsPanel';
 import { DecisionPanel } from '../components/DecisionPanel';
+import { BacktestPanel } from '../components/BacktestPanel';
+import { VerificationPanel } from '../components/VerificationPanel';
 import CandlestickChart from '../components/CandlestickChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
 import { PriceTicker } from '../components/PriceTicker';
@@ -51,6 +53,7 @@ import { useAlerts } from '../hooks/useAlerts';
 import { useNews } from '../hooks/useNews';
 import { useLivePrice } from '../hooks/useLivePrice';
 import { useDecision } from '../hooks/useDecision';
+import { useBacktest } from '../hooks/useBacktest';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -121,6 +124,7 @@ const Dashboard: React.FC = () => {
   const decision = useDecision({ timeframe, historyDays: effectiveDays });
   const alertsHook = useAlerts({ timeframe, pollInterval: 60000 });
   const news = useNews({ limit: 20, pollInterval: 300000 });
+  const backtest = useBacktest();
 
   // Prix BTC temps réel via WebSocket Binance (~1 update/seconde)
   const livePrice = useLivePrice();
@@ -575,6 +579,30 @@ const Dashboard: React.FC = () => {
               error={news.error}
               onRefresh={news.refresh}
             />
+          </Grid>
+
+          <Grid item xs={12} md={6} lg={4}>
+            <BacktestPanel
+              data={backtest.data}
+              loading={backtest.loading}
+              error={backtest.error}
+              onLaunch={(config) => backtest.launch({
+                ...config,
+                symbol: symbol,
+              })}
+              timeframe={timeframe}
+            />
+          </Grid>
+        </Grid>
+
+        {/* ================================================================= */}
+        {/* ZONE 2.5 — VÉRIFICATION HISTORIQUE (TIME-TRAVEL BACKTEST)          */}
+        {/* ================================================================= */}
+        <SectionHeader icon="🕰️" title="Vérification Historique" accentColor="#B388FF" delay={0.15} />
+
+        <Grid container>
+          <Grid item xs={12}>
+            <VerificationPanel />
           </Grid>
         </Grid>
 

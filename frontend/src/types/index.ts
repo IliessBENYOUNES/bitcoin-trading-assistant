@@ -45,6 +45,24 @@ export type {
   DecisionRecommendation,
   DecisionMeta,
   DecisionResponse,
+  // Backtesting
+  TradeDirection,
+  BacktestConfig,
+  BacktestTradeItem,
+  BacktestMetrics,
+  EquityPoint,
+  BacktestMeta,
+  BacktestResponse,
+  // Verification Historique
+  HistoryLoadConfig,
+  HistoryLoadResponse,
+  HistoryRangeResponse,
+  HorizonOutcome,
+  VerificationRequest,
+  VerificationResult,
+  WalkForwardConfig,
+  WalkForwardResult,
+  HorizonAccuracy,
 } from './api';
 
 // Représente un chandelier (bougie) OHLCV

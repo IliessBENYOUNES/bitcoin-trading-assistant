@@ -16,6 +16,15 @@ import type {
   NewsResponse,
   NewsSentimentSummary,
   DecisionResponse,
+  BacktestConfig,
+  BacktestResponse,
+  HistoryLoadConfig,
+  HistoryLoadResponse,
+  HistoryRangeResponse,
+  VerificationRequest,
+  VerificationResult,
+  WalkForwardConfig,
+  WalkForwardResult,
 } from '../types';
 
 // -----------------------------------------------------------------------------
@@ -258,5 +267,95 @@ export async function getDecision(
   const { timeframe, historyDays } = params;
   const endpoint = `/market/decision?timeframe=${encodeURIComponent(timeframe)}&history_days=${historyDays}`;
   return apiFetch<DecisionResponse>(endpoint, options);
+}
+
+// -----------------------------------------------------------------------------
+// Backtesting
+// -----------------------------------------------------------------------------
+
+export async function runBacktest(
+  config: BacktestConfig,
+  options: FetchOptions = {}
+): Promise<BacktestResponse> {
+  const url = `${BASE_URL}/backtest/run`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(config),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<BacktestResponse>;
+}
+
+// -----------------------------------------------------------------------------
+// Verification Historique (Time-Travel Backtest)
+// -----------------------------------------------------------------------------
+
+export async function loadHistory(
+  config: HistoryLoadConfig,
+  options: FetchOptions = {}
+): Promise<HistoryLoadResponse> {
+  const url = `${BASE_URL}/backtest/history/load`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(config),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<HistoryLoadResponse>;
+}
+
+export async function getHistoryRange(
+  params: { symbol?: string; timeframe?: string } = {},
+  options: FetchOptions = {}
+): Promise<HistoryRangeResponse> {
+  const symbol = params.symbol || 'BTC/USD';
+  const timeframe = params.timeframe || '1d';
+  const endpoint = `/backtest/history/range?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`;
+  return apiFetch<HistoryRangeResponse>(endpoint, options);
+}
+
+export async function verifyAtDate(
+  request: VerificationRequest,
+  options: FetchOptions = {}
+): Promise<VerificationResult> {
+  const url = `${BASE_URL}/backtest/verify`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(request),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<VerificationResult>;
+}
+
+export async function runWalkForward(
+  config: WalkForwardConfig,
+  options: FetchOptions = {}
+): Promise<WalkForwardResult> {
+  const url = `${BASE_URL}/backtest/walk-forward`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(config),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<WalkForwardResult>;
 }
 

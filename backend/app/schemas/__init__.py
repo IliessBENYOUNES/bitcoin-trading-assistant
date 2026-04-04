@@ -44,6 +44,28 @@ from app.schemas.decision import (
     DecisionResponse,
 )
 
+from app.schemas.backtest import (
+    TradeDirection,
+    BacktestConfig,
+    BacktestTradeItem,
+    BacktestMetrics,
+    EquityPoint,
+    BacktestMeta,
+    BacktestResponse,
+)
+
+from app.schemas.verification import (
+    HistoryLoadConfig,
+    HistoryLoadResponse,
+    HistoryRangeResponse,
+    HorizonOutcome,
+    VerificationRequest,
+    VerificationResult,
+    WalkForwardConfig,
+    WalkForwardResult,
+    HorizonAccuracy,
+)
+
 __all__ = [
     "CandleBase",
     "CandleCreate",
@@ -70,4 +92,20 @@ __all__ = [
     "Recommendation",
     "DecisionMeta",
     "DecisionResponse",
+    "TradeDirection",
+    "BacktestConfig",
+    "BacktestTradeItem",
+    "BacktestMetrics",
+    "EquityPoint",
+    "BacktestMeta",
+    "BacktestResponse",
+    "HistoryLoadConfig",
+    "HistoryLoadResponse",
+    "HistoryRangeResponse",
+    "HorizonOutcome",
+    "VerificationRequest",
+    "VerificationResult",
+    "WalkForwardConfig",
+    "WalkForwardResult",
+    "HorizonAccuracy",
 ]

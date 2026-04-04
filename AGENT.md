@@ -232,9 +232,8 @@ Variables d'environnement utilisées :
 ## Règle n°8 — Consulter la roadmap avant d'implémenter
 
 Avant d'ajouter une feature :
-1. Lire `docs/ROADMAP.md` pour la phase courante
-2. Lire `docs/ROADMAP_INFINI.md` pour la vision long terme
-3. S'assurer que la feature s'inscrit dans la bonne phase
+1. Lire `docs/ROADMAP.md` pour la roadmap complète (phases + vision long terme)
+2. S'assurer que la feature s'inscrit dans la bonne phase
 
 **Phase actuelle : v0.7 livré → v0.8 en cours (Alertes & Notifications)**
 
