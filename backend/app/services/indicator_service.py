@@ -160,6 +160,29 @@ class IndicatorService:
             df["bb_mid"] = None
             df["bb_upper"] = None
 
+        # ADX(14) — Average Directional Index : mesure la FORCE de la tendance
+        # ADX > 25 = tendance forte, ADX < 20 = pas de tendance (range)
+        # Essentiel pour filtrer les faux signaux en marche lateraux
+        ADX_LEN = 14
+        adx_result = ta.adx(df["high"], df["low"], df["close"], length=ADX_LEN)
+        if adx_result is not None and not adx_result.empty:
+            # pandas_ta adx() retourne : ADX, DMP (+DI), DMN (-DI)
+            df["adx_14"] = adx_result.iloc[:, 0] if adx_result.shape[1] > 0 else None
+            df["plus_di"] = adx_result.iloc[:, 1] if adx_result.shape[1] > 1 else None
+            df["minus_di"] = adx_result.iloc[:, 2] if adx_result.shape[1] > 2 else None
+        else:
+            df["adx_14"] = None
+            df["plus_di"] = None
+            df["minus_di"] = None
+
+        # Volume SMA(20) — pour confirmer les mouvements par le volume
+        # Un signal technique sans confirmation volume est moins fiable
+        if "volume" in df.columns:
+            vol_sma = ta.sma(df["volume"], length=20)
+            df["volume_sma_20"] = vol_sma if vol_sma is not None else None
+        else:
+            df["volume_sma_20"] = None
+
         return df
 
     def _check_completeness(
@@ -192,7 +215,9 @@ class IndicatorService:
         indicator_cols = [
             "rsi_14", "macd", "macd_signal", "macd_hist",
             "sma_20", "sma_50", "sma_200",
-            "bb_mid", "bb_upper", "bb_lower"
+            "bb_mid", "bb_upper", "bb_lower",
+            "adx_14", "plus_di", "minus_di",
+            "volume_sma_20",
         ]
 
         for _, row in df.iterrows():

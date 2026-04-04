@@ -20,6 +20,8 @@ from app.services.signal_service import (
     interpret_macd,
     interpret_sma,
     interpret_bollinger,
+    interpret_adx,
+    interpret_volume_trend,
     compute_composite_score,
     generate_summary,
     SignalService,
@@ -272,6 +274,132 @@ class TestInterpretBollinger:
 
 
 # ============================================================
+# TESTS INTERPRÉTEUR ADX (v1.2)
+# ============================================================
+
+class TestInterpretAdx:
+    """Tests pour interpret_adx — filtre de tendance."""
+
+    def test_adx_none_returns_none(self):
+        """ADX None → pas de signal."""
+        assert interpret_adx(None) is None
+
+    def test_adx_very_strong_trend_bullish(self):
+        """ADX >= 40 + DI+ > DI- → tendance haussière très forte."""
+        signal = interpret_adx(45.0, plus_di=30.0, minus_di=15.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BULLISH
+        assert signal.strength >= 0.7
+        assert "très" in signal.message.lower()
+
+    def test_adx_very_strong_trend_bearish(self):
+        """ADX >= 40 + DI- > DI+ → tendance baissière très forte."""
+        signal = interpret_adx(42.0, plus_di=12.0, minus_di=28.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BEARISH
+        assert signal.strength >= 0.7
+
+    def test_adx_strong_trend(self):
+        """ADX 25-40 → tendance confirmée."""
+        signal = interpret_adx(30.0, plus_di=25.0, minus_di=15.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BULLISH
+        assert 0.3 <= signal.strength <= 0.7
+
+    def test_adx_weak_trend(self):
+        """ADX 20-25 → tendance faible émergente."""
+        signal = interpret_adx(22.0, plus_di=18.0, minus_di=16.0)
+        assert signal is not None
+        assert signal.strength <= 0.3
+
+    def test_adx_no_trend(self):
+        """ADX < 20 → pas de tendance, signal neutre."""
+        signal = interpret_adx(15.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.NEUTRAL
+        assert "sans tendance" in signal.message
+
+    def test_adx_no_di_defaults(self):
+        """Sans DI, le signal utilise le défaut bullish."""
+        signal = interpret_adx(35.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BULLISH
+
+
+# ============================================================
+# TESTS INTERPRÉTEUR VOLUME (v1.2)
+# ============================================================
+
+class TestInterpretVolumeTrend:
+    """Tests pour interpret_volume_trend — confirmation par volume."""
+
+    def test_volume_none_returns_none(self):
+        """Volume None → pas de signal."""
+        assert interpret_volume_trend(None, 1000.0) is None
+        assert interpret_volume_trend(1000.0, None) is None
+
+    def test_volume_very_high(self):
+        """Volume > 2x SMA → signal de confirmation."""
+        signal = interpret_volume_trend(2500.0, 1000.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.NEUTRAL  # Volume n'a pas de direction
+        assert "très élevé" in signal.message
+
+    def test_volume_above_average(self):
+        """Volume 1.5-2x SMA → confirmation modérée."""
+        signal = interpret_volume_trend(1700.0, 1000.0)
+        assert signal is not None
+        assert "supérieur" in signal.message
+
+    def test_volume_very_low(self):
+        """Volume < 0.5x SMA → méfiance."""
+        signal = interpret_volume_trend(300.0, 1000.0)
+        assert signal is not None
+        assert "faible" in signal.message
+
+    def test_volume_normal_returns_none(self):
+        """Volume normal (0.5-1.5x) → pas de signal particulier."""
+        assert interpret_volume_trend(1000.0, 1000.0) is None
+        assert interpret_volume_trend(800.0, 1000.0) is None
+
+    def test_volume_sma_zero_returns_none(self):
+        """Volume SMA = 0 → pas de signal."""
+        assert interpret_volume_trend(1000.0, 0.0) is None
+
+
+# ============================================================
+# TESTS MACD RELATIF AU PRIX (v1.2)
+# ============================================================
+
+class TestMacdRelativeThresholds:
+    """Tests pour le MACD avec seuils en % du prix."""
+
+    def test_macd_at_low_price_moderate_diff(self):
+        """A $3000, un MACD diff de 50 = 1.67% → force élevée."""
+        signal = interpret_macd(150.0, 100.0, 50.0, close=3000.0)
+        assert signal is not None
+        assert signal.strength >= 0.7  # 50/3000 = 1.67% > 1.5% threshold
+
+    def test_macd_at_high_price_same_diff(self):
+        """A $100000, un MACD diff de 50 = 0.05% → force très faible."""
+        signal = interpret_macd(150.0, 100.0, 50.0, close=100000.0)
+        assert signal is not None
+        assert signal.strength <= 0.3  # 50/100000 = 0.05% < 0.1% threshold
+
+    def test_macd_at_high_price_strong_diff(self):
+        """A $100000, un MACD diff de 2000 = 2% → force élevée."""
+        signal = interpret_macd(3000.0, 1000.0, 2000.0, close=100000.0)
+        assert signal is not None
+        assert signal.strength >= 0.9  # 2000/100000 = 2% > 1.5%
+
+    def test_macd_without_close_uses_absolute(self):
+        """Sans close, les seuils absolus sont utilisés (compatibilité)."""
+        signal = interpret_macd(600.0, 0.0, 600.0)
+        assert signal is not None
+        assert signal.strength >= 0.8  # 600 > 500 threshold absolute
+
+
+# ============================================================
 # TESTS SCORE COMPOSITE
 # ============================================================
 
@@ -286,7 +414,8 @@ class TestCompositeScore:
         assert result.consensus == "no_data"
 
     def test_all_bullish(self):
-        """Tous signaux bullish → score positif, consensus unanime."""
+        """Tous signaux bullish → score positif, consensus unanime.
+        Note v1.2 : Sans ADX >= 25, la confiance plafonne a MEDIUM (plus conservateur)."""
         signals = [
             SignalItem(indicator="rsi", direction=SignalDirection.BULLISH, strength=0.7, value=25.0, message="RSI oversold"),
             SignalItem(indicator="macd", direction=SignalDirection.BULLISH, strength=0.6, value=100.0, message="MACD bullish"),
@@ -297,9 +426,23 @@ class TestCompositeScore:
         assert result.score > 0
         assert result.direction == SignalDirection.BULLISH
         assert result.consensus == "unanimous"
-        assert result.confidence == ConfidenceLevel.HIGH
+        assert result.confidence == ConfidenceLevel.MEDIUM  # v1.2: MEDIUM sans ADX
         assert result.bullish_count == 4
         assert result.bearish_count == 0
+
+    def test_all_bullish_with_adx_confirmation(self):
+        """Tous signaux bullish + ADX fort → confiance HIGH (v1.2)."""
+        signals = [
+            SignalItem(indicator="rsi", direction=SignalDirection.BULLISH, strength=0.7, value=25.0, message="RSI oversold"),
+            SignalItem(indicator="macd", direction=SignalDirection.BULLISH, strength=0.6, value=100.0, message="MACD bullish"),
+            SignalItem(indicator="sma", direction=SignalDirection.BULLISH, strength=0.8, value=100000.0, message="Above SMA"),
+            SignalItem(indicator="bollinger", direction=SignalDirection.BULLISH, strength=0.5, value=93000.0, message="Below lower"),
+            SignalItem(indicator="adx", direction=SignalDirection.BULLISH, strength=0.8, value=35.0, message="ADX confirme"),
+        ]
+        result = compute_composite_score(signals)
+        assert result.score > 0
+        assert result.direction == SignalDirection.BULLISH
+        assert result.confidence == ConfidenceLevel.HIGH  # ADX confirme → HIGH
 
     def test_all_bearish(self):
         """Tous signaux bearish → score négatif."""
@@ -493,7 +636,7 @@ class TestSignalServiceIntegration:
             assert "direction" in signal
             assert "strength" in signal
             assert "message" in signal
-            assert signal["indicator"] in ("rsi", "macd", "sma", "bollinger")
+            assert signal["indicator"] in ("rsi", "macd", "sma", "bollinger", "adx", "volume")
             assert signal["direction"] in ("bullish", "bearish", "neutral")
             assert 0 <= signal["strength"] <= 1
 

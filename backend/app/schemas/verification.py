@@ -57,6 +57,15 @@ class HorizonOutcome(BaseModel):
     predicted_action: str = Field(..., description="Action predite (acheter/vendre/attendre)")
     predicted_score: int = Field(default=0, description="Score combine predit")
     correct: bool = Field(..., description="Prediction correcte (direction concordante)")
+    quality_score: float = Field(
+        default=0.0,
+        ge=0.0, le=100.0,
+        description="Score de qualite de la prediction (0=terrible, 100=parfait)"
+    )
+    directional_match: bool = Field(
+        default=False,
+        description="Le signe du score predit correspond a la direction reelle du marche"
+    )
     detail: str = Field(default="", description="Explication du verdict")
 
 
@@ -120,6 +129,27 @@ class HorizonAccuracy(BaseModel):
     buy_signals: int = 0
     sell_signals: int = 0
     hold_signals: int = 0
+    # Metriques avancees v1.2
+    directional_accuracy_pct: float = Field(
+        default=0.0,
+        description="% ou le signe du score predit correspond a la direction reelle"
+    )
+    avg_quality_score: float = Field(
+        default=0.0,
+        description="Score qualite moyen (0-100) sur tous les points"
+    )
+    high_confidence_accuracy_pct: float = Field(
+        default=0.0,
+        description="Precision uniquement sur les predictions a forte confiance (|score| > 25)"
+    )
+    high_confidence_count: int = Field(
+        default=0,
+        description="Nombre de predictions a forte confiance"
+    )
+    profitable_direction_pct: float = Field(
+        default=0.0,
+        description="% de predictions ou suivre le signal aurait ete profitable"
+    )
 
 
 class WalkForwardResult(BaseModel):
@@ -132,4 +162,8 @@ class WalkForwardResult(BaseModel):
     points: list[VerificationResult] = Field(default_factory=list)
     summary: str = Field(default="", description="Resume lisible de l'analyse")
     duration_seconds: float = 0.0
+    overall_quality_score: float = Field(
+        default=0.0,
+        description="Score qualite global moyen (0-100) sur tous les horizons"
+    )
 

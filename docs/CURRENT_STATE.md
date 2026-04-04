@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 5 avril 2026
-> **Version :** v1.1.2
+> **Version :** v1.2.0
 > **Branche :** `master`
-> **Dernier commit :** style(ui): move AlertPanel to right-side Drawer, remove from grid layout
+> **Dernier commit :** feat(signals+verification): ADX, Volume, MACD relatif, seuils adaptatifs, quality score
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.1.2** |
+| Version courante | **v1.2.0** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **495 tests**, tous passing ✅ |
+| Tests backend | **523 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -206,7 +206,7 @@ bitcoin-trading-assistant/
 | **Clôture automatique** | Position ouverte en fin de backtest fermée automatiquement | ✅ |
 | **Résumé lisible** | Synthèse texte des résultats | ✅ |
 
-### 3.3b Backend — Vérification Historique / Time-Travel (v1.1.1)
+### 3.3b Backend — Vérification Historique / Time-Travel (v1.2 — amélioré)
 
 | Fonctionnalité | Description | Status |
 |----------------|-------------|--------|
@@ -214,9 +214,13 @@ bitcoin-trading-assistant/
 | **Time-travel verify** | Se positionner à n'importe quelle date, exécuter le moteur avec seulement les données antérieures | ✅ |
 | **Comparaison prédiction/réalité** | Compare la recommandation du modèle avec la variation réelle à 7j, 30j, 90j | ✅ |
 | **Walk-forward analysis** | Test automatique sur des dizaines/centaines de dates espacées régulièrement | ✅ |
-| **Précision par horizon** | Taux de prédictions correctes par horizon (7j, 30j, 90j) | ✅ |
+| **Seuils adaptatifs** | **Seuils hausse/baisse/stable calculés à partir de la volatilité récente** | **✅ NOUVEAU v1.2** |
+| **Score de qualité** | **Score 0-100 par prédiction (au lieu de binaire correct/incorrect)** | **✅ NOUVEAU v1.2** |
+| **Directional accuracy** | **Le signe du score correspond-il à la direction réelle du marché ?** | **✅ NOUVEAU v1.2** |
+| **Métriques haute confiance** | **Précision séparée pour les signaux forts (|score|>25)** | **✅ NOUVEAU v1.2** |
+| **Profitabilité** | **% de prédictions où suivre le signal aurait été profitable** | **✅ NOUVEAU v1.2** |
+| **Qualité globale** | **Score qualité moyen pondéré sur tous les horizons** | **✅ NOUVEAU v1.2** |
 | **Mode 100% technique** | En historique, sentiment non dispo → mode dégradé documenté | ✅ |
-| **Résumé global** | Synthèse texte avec accuracy et nombre de points testés | ✅ |
 
 ### 3.4 Backend — Moteur de Décision (v1.0)
 
@@ -250,15 +254,17 @@ bitcoin-trading-assistant/
 
 > **v0.9.6 : 14 timeframes × 15 durées = toutes les combinaisons possibles**
 
-### 3.6 Backend — Moteur de Signaux (v0.7)
+### 3.6 Backend — Moteur de Signaux (v1.2 — amélioré)
 
 | Interpréteur | Logique | Status |
 |--------------|---------|--------|
 | **RSI** | Surachat (>70), survente (<30), zones intermédiaires | ✅ |
-| **MACD** | Croisement haussier/baissier, force basée sur écart | ✅ |
+| **MACD** | Croisement haussier/baissier, **seuils en % du prix** (corrige biais $3k→$100k) | ✅ **MAJ v1.2** |
 | **SMA** | Position prix vs SMA20/50/200, comptage au-dessus/dessous | ✅ |
 | **Bollinger** | Position dans les bandes, surachat/survente aux extrêmes | ✅ |
-| **Score composite** | Agrégation pondérée -100/+100, confiance, consensus | ✅ |
+| **ADX(14)** | **Force de la tendance : ADX≥25=tendance forte, ADX<20=range (filtre faux signaux)** | **✅ NOUVEAU v1.2** |
+| **Volume** | **Confirmation par volume vs SMA(20) : volume élevé=confirmation, faible=méfiance** | **✅ NOUVEAU v1.2** |
+| **Score composite** | Agrégation pondérée -100/+100, **ADX module la confiance, Volume module le score** | ✅ **MAJ v1.2** |
 | **Résumé lisible** | Génération automatique d'un résumé en français | ✅ |
 
 ### 3.7 Backend — Système d'Alertes (v0.8)
@@ -332,15 +338,15 @@ bitcoin-trading-assistant/
 | test_scheduler_dual_jobs.py | 13 | Dual config, jobs 4h/30m, erreurs |
 | test_scheduler_resample_1d.py | 7 | Resample 4h→1d, OHLCV, idempotent |
 | test_scheduler_resample_1h.py | 6 | Resample 30m→1h, OHLCV, idempotent |
-| test_signals.py | 52 | RSI/MACD/SMA/Bollinger interpréteurs, composite, résumé |
+| test_signals.py | **71** | **RSI/MACD/SMA/Bollinger/ADX/Volume interpréteurs, MACD relatif, composite v1.2, résumé** |
 | test_alerts.py | 48 | CRUD, évaluation, récurrence, endpoints |
 | test_news.py | 43 | Sentiment, impact, RSS, résumé, résilience, endpoints |
 | test_decision.py | 75 | Règles, scénarios, recommandation, intégration, endpoint |
-| **test_backtest.py** | **31** | **Schémas, métriques, intégration DB, endpoints, edge cases** |
-| **test_verification.py** | **47** | **Range, verify, walk-forward, correctness (21 cas), endpoints, mock loader** |
+| test_backtest.py | 31 | Schémas, métriques, intégration DB, endpoints, edge cases |
+| **test_verification.py** | **60** | **Range, verify, walk-forward, correctness v1.2, directional match, quality score, seuils adapatifs, endpoints** |
 | test_binance_and_router.py | 89 | Binance 14 intervalles, DataSourceRouter, combinaisons |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **495** | **Tous passing ✅** |
+| **TOTAL** | **523** | **Tous passing ✅** |
 
 ---
 
@@ -450,4 +456,4 @@ Le système passe de "BTC uniquement" à "multi-cryptos" :
 | 2 | Vite build warning : chunk > 500 kB | ⚠️ Low | Suggestion de code-splitting |
 | 3 | News RSS peuvent être indisponibles (timeout) | ⚠️ Low | Géré par fallback + cache TTL 5min |
 | 4 | Backtest sans frais/slippage | ⚠️ Low | Résultats optimistes, documenté dans le code |
-| ~~5~~ | ~~Vérification marquait toutes les prédictions INCORRECT~~ | ~~🔴 High~~ | ~~✅ Corrigé v1.1.2 — logique score-aware + horizon-scaled~~ |
+| ~~5~~ | ~~Vérification marquait toutes les prédictions INCORRECT~~ | ~~🔴 High~~ | ~~✅ Corrigé v1.1.2 + v1.2.0 — seuils adapatifs + ADX + quality score~~ |

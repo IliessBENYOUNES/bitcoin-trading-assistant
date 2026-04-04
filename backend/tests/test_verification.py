@@ -184,7 +184,7 @@ class TestVerifyAtDate:
         assert result.outcomes[2].horizon_days == 90
 
     def test_outcomes_have_actual_data(self, db_session):
-        """Chaque outcome contient le prix reel et la variation."""
+        """Chaque outcome contient le prix reel, la variation et les metriques v1.2."""
         _seed_candles(db_session, days=400)
         service = VerificationService(db_session)
 
@@ -198,6 +198,9 @@ class TestVerifyAtDate:
         assert outcome.actual_direction in ["hausse", "baisse", "stable", "inconnu"]
         assert isinstance(outcome.correct, bool)
         assert len(outcome.detail) > 0
+        # Metriques v1.2
+        assert 0 <= outcome.quality_score <= 100
+        assert isinstance(outcome.directional_match, bool)
 
     def test_prediction_score_is_bounded(self, db_session):
         """Le score predit est toujours entre -100 et +100."""
@@ -212,7 +215,7 @@ class TestVerifyAtDate:
         assert -100 <= result.predicted_score <= 100
 
     def test_meta_contains_technical_info(self, db_session):
-        """Les metadonnees contiennent les infos techniques."""
+        """Les metadonnees contiennent les infos techniques et la volatilite."""
         _seed_candles(db_session, days=400)
         service = VerificationService(db_session)
 
@@ -223,6 +226,7 @@ class TestVerifyAtDate:
 
         assert "technical_score" in result.meta
         assert "sentiment_available" in result.meta
+        assert "recent_volatility" in result.meta
 
 
 # =============================================================================
@@ -230,7 +234,7 @@ class TestVerifyAtDate:
 # =============================================================================
 
 class TestPredictionCorrectness:
-    """Tests pour la logique de verification des predictions (v1.1.2 amelioree)."""
+    """Tests pour la logique de verification des predictions (v1.2 amelioree avec volatilite adaptative)."""
 
     # --- Acheter ---
 
@@ -271,48 +275,53 @@ class TestPredictionCorrectness:
         service = VerificationService(db_session)
         assert service._is_prediction_correct("vendre", "stable", -0.5) is True
 
-    # --- Attendre : score neutre (entre -5 et +5) ---
+    # --- Attendre : score neutre (entre -5 et +5) avec volatilite ---
 
     def test_hold_stable_is_correct(self, db_session):
         """Attendre (score neutre) + stable = CORRECT."""
         service = VerificationService(db_session)
         assert service._is_prediction_correct(
-            "attendre", "stable", 1.5, predicted_score=0, horizon_days=7
+            "attendre", "stable", 1.5, predicted_score=0, horizon_days=7, volatility=3.0,
         ) is True
 
     def test_hold_neutral_moderate_move_7d_is_correct(self, db_session):
-        """Attendre (score neutre) + 15% en 7j = CORRECT (BTC est volatil)."""
+        """Attendre (score neutre) + mouvement modere 7j = CORRECT (dans la norme de volatilite)."""
         service = VerificationService(db_session)
+        # Avec vol=3%, seuil neutre 7j = max(8, 3*sqrt(7)*1.8) ≈ 14.3%
         assert service._is_prediction_correct(
-            "attendre", "hausse", 15.0, predicted_score=0, horizon_days=7
+            "attendre", "hausse", 12.0, predicted_score=0, horizon_days=7, volatility=3.0,
         ) is True
 
     def test_hold_neutral_extreme_move_7d_is_incorrect(self, db_session):
-        """Attendre (score neutre) + 25% en 7j = INCORRECT (mouvement extreme)."""
+        """Attendre (score neutre) + mouvement extreme 7j = INCORRECT."""
         service = VerificationService(db_session)
+        # Avec vol=3%, seuil neutre 7j ≈ 14.3% → 20% depasse
         assert service._is_prediction_correct(
-            "attendre", "hausse", 25.0, predicted_score=0, horizon_days=7
+            "attendre", "hausse", 20.0, predicted_score=0, horizon_days=7, volatility=3.0,
         ) is False
 
     def test_hold_neutral_30d_normal_move_is_correct(self, db_session):
-        """Attendre (score neutre) + 30% en 30j = CORRECT (normal pour BTC)."""
+        """Attendre (score neutre) + mouvement normal 30j = CORRECT."""
         service = VerificationService(db_session)
+        # Avec vol=3%, seuil neutre 30j = max(8, 3*sqrt(30)*1.8) ≈ 29.6%
         assert service._is_prediction_correct(
-            "attendre", "hausse", 30.0, predicted_score=-2, horizon_days=30
+            "attendre", "hausse", 25.0, predicted_score=-2, horizon_days=30, volatility=3.0,
         ) is True
 
     def test_hold_neutral_90d_normal_move_is_correct(self, db_session):
-        """Attendre (score neutre) + 40% en 90j = CORRECT (volatilite BTC)."""
+        """Attendre (score neutre) + mouvement normal 90j = CORRECT."""
         service = VerificationService(db_session)
+        # Avec vol=3%, seuil neutre 90j = max(8, 3*sqrt(90)*1.8) ≈ 51.2%
         assert service._is_prediction_correct(
-            "attendre", "hausse", 40.0, predicted_score=0, horizon_days=90
+            "attendre", "hausse", 40.0, predicted_score=0, horizon_days=90, volatility=3.0,
         ) is True
 
     def test_hold_neutral_90d_extreme_is_incorrect(self, db_session):
-        """Attendre (score neutre) + 55% en 90j = INCORRECT (devrait avoir detecte)."""
+        """Attendre (score neutre) + mouvement extreme 90j = INCORRECT."""
         service = VerificationService(db_session)
+        # Avec vol=3%, seuil neutre 90j ≈ 51.2% → 55% depasse
         assert service._is_prediction_correct(
-            "attendre", "hausse", 55.0, predicted_score=0, horizon_days=90
+            "attendre", "hausse", 55.0, predicted_score=0, horizon_days=90, volatility=3.0,
         ) is False
 
     # --- Attendre : score avec penchant directionnel ---
@@ -321,59 +330,129 @@ class TestPredictionCorrectness:
         """Attendre (score -10, penchant baissier) + baisse = CORRECT."""
         service = VerificationService(db_session)
         assert service._is_prediction_correct(
-            "attendre", "baisse", -11.0, predicted_score=-10, horizon_days=90
+            "attendre", "baisse", -11.0, predicted_score=-10, horizon_days=90, volatility=3.0,
         ) is True
 
     def test_hold_bearish_lean_with_small_hausse_is_correct(self, db_session):
         """Attendre (score -10) + petite hausse 5% en 30j = CORRECT (tolerant)."""
         service = VerificationService(db_session)
         assert service._is_prediction_correct(
-            "attendre", "hausse", 5.0, predicted_score=-10, horizon_days=30
+            "attendre", "hausse", 5.0, predicted_score=-10, horizon_days=30, volatility=3.0,
         ) is True
 
     def test_hold_bearish_lean_with_big_hausse_is_incorrect(self, db_session):
-        """Attendre (score -10) + forte hausse 25% en 30j = INCORRECT."""
+        """Attendre (score -10) + forte hausse 25% en 30j = INCORRECT (depasse tolerance)."""
         service = VerificationService(db_session)
+        # Avec vol=3%, tolerance 30j = max(5, 3*sqrt(30)*1.0) ≈ 16.4%
         assert service._is_prediction_correct(
-            "attendre", "hausse", 25.0, predicted_score=-10, horizon_days=30
+            "attendre", "hausse", 25.0, predicted_score=-10, horizon_days=30, volatility=3.0,
         ) is False
 
     def test_hold_bullish_lean_with_hausse_is_correct(self, db_session):
         """Attendre (score +15) + hausse = CORRECT (penchant confirme)."""
         service = VerificationService(db_session)
         assert service._is_prediction_correct(
-            "attendre", "hausse", 12.0, predicted_score=15, horizon_days=30
+            "attendre", "hausse", 12.0, predicted_score=15, horizon_days=30, volatility=3.0,
         ) is True
 
     def test_hold_bullish_lean_with_big_baisse_is_incorrect(self, db_session):
-        """Attendre (score +15) + forte baisse 15% en 30j = INCORRECT."""
+        """Attendre (score +15) + forte baisse en 30j = INCORRECT."""
         service = VerificationService(db_session)
+        # Avec vol=3%, tolerance 30j ≈ 16.4% → 20% depasse
         assert service._is_prediction_correct(
-            "attendre", "hausse", -20.0, predicted_score=15, horizon_days=30
+            "attendre", "hausse", -20.0, predicted_score=15, horizon_days=30, volatility=3.0,
         ) is False
 
-    # --- Cas reel du screenshot : 2020-01-01, score -4, attendre ---
+    # --- Cas reel : score neutre, volatilite adaptative ---
 
     def test_real_case_2020_hold_7d_hausse_12pct(self, db_session):
-        """Cas reel: attendre (score -4) + hausse 12% en 7j = CORRECT (score neutre, mouvement normal)."""
+        """Cas reel: attendre (score -4) + hausse 12% en 7j = CORRECT (dans la norme)."""
         service = VerificationService(db_session)
         assert service._is_prediction_correct(
-            "attendre", "hausse", 11.9, predicted_score=-4, horizon_days=7
+            "attendre", "hausse", 11.9, predicted_score=-4, horizon_days=7, volatility=3.0,
         ) is True
 
-    def test_real_case_2020_hold_30d_hausse_30pct(self, db_session):
-        """Cas reel: attendre (score -4) + hausse 30% en 30j = CORRECT (score neutre, mouvement fort mais normal BTC)."""
+    def test_real_case_2020_hold_30d_hausse_30pct_high_vol(self, db_session):
+        """Cas reel: attendre (score -4) + hausse 30% en 30j, volatilite elevee = CORRECT."""
         service = VerificationService(db_session)
+        # Avec vol=5% (haute volatilite), seuil neutre 30j = max(8, 5*sqrt(30)*1.8) ≈ 49.3%
         assert service._is_prediction_correct(
-            "attendre", "hausse", 29.9, predicted_score=-4, horizon_days=30
+            "attendre", "hausse", 29.9, predicted_score=-4, horizon_days=30, volatility=5.0,
         ) is True
 
     def test_real_case_2020_hold_90d_baisse_11pct(self, db_session):
-        """Cas reel: attendre (score -4) + baisse 11% en 90j = CORRECT (score neutre, mouvement modere)."""
+        """Cas reel: attendre (score -4) + baisse 11% en 90j = CORRECT."""
         service = VerificationService(db_session)
         assert service._is_prediction_correct(
-            "attendre", "baisse", -11.0, predicted_score=-4, horizon_days=90
+            "attendre", "baisse", -11.0, predicted_score=-4, horizon_days=90, volatility=3.0,
         ) is True
+
+    # --- Directional match ---
+
+    def test_directional_match_positive(self, db_session):
+        """Score positif + hausse = directional match."""
+        service = VerificationService(db_session)
+        assert service._check_directional_match(20, 5.0) is True
+
+    def test_directional_match_negative(self, db_session):
+        """Score negatif + baisse = directional match."""
+        service = VerificationService(db_session)
+        assert service._check_directional_match(-15, -8.0) is True
+
+    def test_directional_match_neutral_small_move(self, db_session):
+        """Score neutre + petit mouvement = match."""
+        service = VerificationService(db_session)
+        assert service._check_directional_match(2, 3.0) is True
+
+    def test_directional_no_match(self, db_session):
+        """Score positif + baisse = pas de match."""
+        service = VerificationService(db_session)
+        assert service._check_directional_match(20, -10.0) is False
+
+    # --- Quality score ---
+
+    def test_quality_score_buy_with_hausse_is_high(self, db_session):
+        """Acheter + forte hausse → qualite elevee."""
+        quality = VerificationService._compute_prediction_quality(
+            "acheter", 50, 15.0, horizon_days=7, volatility=3.0,
+        )
+        assert quality >= 60
+
+    def test_quality_score_buy_with_baisse_is_low(self, db_session):
+        """Acheter + forte baisse → qualite basse."""
+        quality = VerificationService._compute_prediction_quality(
+            "acheter", 50, -15.0, horizon_days=7, volatility=3.0,
+        )
+        assert quality <= 40
+
+    def test_quality_score_hold_stable_is_moderate(self, db_session):
+        """Attendre + marche stable → qualite moderee a bonne."""
+        quality = VerificationService._compute_prediction_quality(
+            "attendre", 0, 2.0, horizon_days=7, volatility=3.0,
+        )
+        assert 40 <= quality <= 85
+
+    # --- Volatilite adaptative ---
+
+    def test_adaptive_thresholds_high_volatility(self, db_session):
+        """Haute volatilite → seuils plus larges."""
+        service = VerificationService(db_session)
+        dir_thresh, neutral_thresh = service._get_adaptive_thresholds(30, 5.0)
+        assert dir_thresh > 5.0  # Plus large qu'avec vol=3%
+        assert neutral_thresh > 20.0
+
+    def test_adaptive_thresholds_low_volatility(self, db_session):
+        """Basse volatilite → seuils plus serres."""
+        service = VerificationService(db_session)
+        dir_thresh, neutral_thresh = service._get_adaptive_thresholds(30, 1.0)
+        assert dir_thresh < 5.0  # Plus serre qu'avec vol=3%
+
+    def test_adaptive_thresholds_none_uses_default(self, db_session):
+        """Pas de volatilite → utilise le defaut (3%)."""
+        service = VerificationService(db_session)
+        dir_thresh, neutral_thresh = service._get_adaptive_thresholds(30, None)
+        assert dir_thresh > 0
+        assert neutral_thresh > 0
 
 
 # =============================================================================
@@ -410,7 +489,7 @@ class TestWalkForward:
         assert result.duration_seconds >= 0
 
     def test_walk_forward_accuracy_structure(self, db_session):
-        """Les metriques d'accuracy sont bien structurees."""
+        """Les metriques d'accuracy sont bien structurees (v1.2 avec metriques avancees)."""
         _seed_candles(db_session, days=400)
         service = VerificationService(db_session)
 
@@ -427,6 +506,11 @@ class TestWalkForward:
             assert 0 <= acc.accuracy_pct <= 100
             assert acc.total_points >= 0
             assert acc.correct + acc.incorrect == acc.total_points
+            # Metriques v1.2
+            assert 0 <= acc.directional_accuracy_pct <= 100
+            assert 0 <= acc.avg_quality_score <= 100
+            assert 0 <= acc.profitable_direction_pct <= 100
+            assert acc.high_confidence_count >= 0
 
     def test_walk_forward_has_summary(self, db_session):
         """Le walk-forward genere un resume."""
@@ -496,9 +580,13 @@ class TestSchemas:
             predicted_action="acheter",
             predicted_score=42,
             correct=True,
+            quality_score=75.0,
+            directional_match=True,
             detail="Test",
         )
         assert outcome.correct is True
+        assert outcome.quality_score == 75.0
+        assert outcome.directional_match is True
 
     def test_horizon_accuracy_model(self):
         acc = HorizonAccuracy(
@@ -507,8 +595,15 @@ class TestSchemas:
             correct=7,
             incorrect=3,
             accuracy_pct=70.0,
+            directional_accuracy_pct=75.0,
+            avg_quality_score=62.5,
+            high_confidence_accuracy_pct=80.0,
+            high_confidence_count=5,
+            profitable_direction_pct=72.0,
         )
         assert acc.accuracy_pct == 70.0
+        assert acc.directional_accuracy_pct == 75.0
+        assert acc.avg_quality_score == 62.5
 
     def test_history_range_response_model(self):
         resp = HistoryRangeResponse(
@@ -568,7 +663,7 @@ class TestEndpoints:
         assert len(data["outcomes"]) == 2
 
     def test_walk_forward_endpoint(self, client, db_session):
-        """POST /backtest/walk-forward retourne des resultats."""
+        """POST /backtest/walk-forward retourne des resultats avec metriques v1.2."""
         _seed_candles(db_session, days=400)
         response = client.post("/backtest/walk-forward", json={
             "start_date": "2019-08-01",
@@ -581,6 +676,7 @@ class TestEndpoints:
         assert data["total_points"] >= 0
         assert "accuracy_by_horizon" in data
         assert "summary" in data
+        assert "overall_quality_score" in data
 
 
 # =============================================================================

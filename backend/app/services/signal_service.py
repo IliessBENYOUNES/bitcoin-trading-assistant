@@ -115,6 +115,7 @@ def interpret_macd(
     macd: Optional[float],
     macd_signal: Optional[float],
     macd_hist: Optional[float],
+    close: Optional[float] = None,
 ) -> Optional[SignalItem]:
     """
     Interprète le MACD(12,26,9) en signal.
@@ -123,7 +124,12 @@ def interpret_macd(
     - MACD > Signal ET hist > 0 : Bullish (croisé haussier confirmé)
     - MACD < Signal ET hist < 0 : Bearish (croisé baissier confirmé)
     - Sinon : Neutre
-    - La force dépend de l'amplitude de l'histogramme
+    - La force dépend de l'amplitude RELATIVE de l'histogramme (% du prix)
+
+    NOTE v1.2 : On utilise des seuils en % du prix au lieu de seuils absolus.
+    Cela corrige un biais majeur : a $3000 un MACD diff de 50 = 1.67%,
+    a $100000 un MACD diff de 50 = 0.05%. Les seuils absolus rendaient
+    le MACD toujours "fort" aux prix eleves et toujours "faible" aux prix bas.
     """
     if macd is None or macd_signal is None:
         return None
@@ -131,19 +137,34 @@ def interpret_macd(
     hist = macd_hist if macd_hist is not None else (macd - macd_signal)
     diff = macd - macd_signal
 
-    # Calculer la force basée sur l'écart relatif
-    # On normalise par une heuristique : un écart de 500+ est fort pour BTC
-    abs_diff = abs(diff)
-    if abs_diff > 500:
-        strength = 0.9
-    elif abs_diff > 200:
-        strength = 0.7
-    elif abs_diff > 50:
-        strength = 0.5
-    elif abs_diff > 10:
-        strength = 0.3
+    # Normaliser par le prix pour des seuils adaptatifs
+    # Si pas de close disponible, fallback sur seuils absolus classiques
+    if close and close > 0:
+        pct_diff = abs(diff) / close * 100  # en % du prix
+        # Seuils en % du prix (calibres sur BTC historique)
+        if pct_diff > 1.5:
+            strength = 0.9
+        elif pct_diff > 0.8:
+            strength = 0.7
+        elif pct_diff > 0.3:
+            strength = 0.5
+        elif pct_diff > 0.1:
+            strength = 0.3
+        else:
+            strength = 0.1
     else:
-        strength = 0.1
+        # Fallback seuils absolus (compatibilite)
+        abs_diff = abs(diff)
+        if abs_diff > 500:
+            strength = 0.9
+        elif abs_diff > 200:
+            strength = 0.7
+        elif abs_diff > 50:
+            strength = 0.5
+        elif abs_diff > 10:
+            strength = 0.3
+        else:
+            strength = 0.1
 
     if diff > 0 and hist > 0:
         return SignalItem(
@@ -356,19 +377,146 @@ def interpret_bollinger(
         )
 
 
+def interpret_adx(
+    adx: Optional[float],
+    plus_di: Optional[float] = None,
+    minus_di: Optional[float] = None,
+) -> Optional[SignalItem]:
+    """
+    Interprète l'ADX(14) — Average Directional Index.
+
+    L'ADX mesure la FORCE de la tendance, pas sa direction.
+    Le croisement DI+/DI- indique la direction.
+
+    Logique :
+    - ADX >= 40 : Tendance très forte → confirme la direction DI
+    - ADX >= 25 : Tendance forte → signal modéré dans la direction DI
+    - ADX 20-25 : Tendance faible émergente
+    - ADX < 20  : Pas de tendance (range) → réduit la fiabilité des autres signaux
+
+    L'ADX est crucial pour filtrer les faux signaux :
+    quand ADX < 20, RSI et MACD donnent beaucoup de faux positifs.
+    """
+    if adx is None:
+        return None
+
+    # Déterminer la direction via DI+/DI-
+    if plus_di is not None and minus_di is not None:
+        di_bullish = plus_di > minus_di
+    else:
+        di_bullish = True  # Défaut neutre si pas de DI
+
+    if adx >= 40:
+        direction = SignalDirection.BULLISH if di_bullish else SignalDirection.BEARISH
+        return SignalItem(
+            indicator="adx",
+            direction=direction,
+            strength=0.8,
+            value=round(adx, 2),
+            message=f"ADX très élevé ({adx:.0f}) — tendance {'haussière' if di_bullish else 'baissière'} très forte",
+        )
+    elif adx >= 25:
+        direction = SignalDirection.BULLISH if di_bullish else SignalDirection.BEARISH
+        return SignalItem(
+            indicator="adx",
+            direction=direction,
+            strength=0.5,
+            value=round(adx, 2),
+            message=f"ADX ({adx:.0f}) indique une tendance {'haussière' if di_bullish else 'baissière'} confirmée",
+        )
+    elif adx >= 20:
+        direction = SignalDirection.BULLISH if di_bullish else SignalDirection.BEARISH
+        return SignalItem(
+            indicator="adx",
+            direction=direction,
+            strength=0.2,
+            value=round(adx, 2),
+            message=f"ADX ({adx:.0f}) — tendance faible émergente",
+        )
+    else:
+        # ADX < 20 : pas de tendance → neutre
+        # Ce signal neutre est important : il réduit la confiance du composite
+        return SignalItem(
+            indicator="adx",
+            direction=SignalDirection.NEUTRAL,
+            strength=0.1,
+            value=round(adx, 2),
+            message=f"ADX bas ({adx:.0f}) — marché sans tendance, signaux peu fiables",
+        )
+
+
+def interpret_volume_trend(
+    volume: Optional[float],
+    volume_sma: Optional[float],
+) -> Optional[SignalItem]:
+    """
+    Interprète le rapport volume/volume_SMA(20).
+
+    Un mouvement de prix confirmé par le volume est plus fiable.
+    Un mouvement sans volume est suspect.
+
+    Logique :
+    - Volume > 1.5x SMA → forte confirmation (ne donne pas de direction seul)
+    - Volume > 1.2x SMA → confirmation modérée
+    - Volume < 0.5x SMA → volume anormalement bas → signal neutre/méfiance
+    - Sinon → volume normal, pas de signal additionnel
+
+    NOTE : L'interpréteur volume retourne toujours NEUTRAL car il ne
+    donne pas de direction. Il agit comme un modificateur de confiance
+    pour les autres signaux via le score composite.
+    """
+    if volume is None or volume_sma is None or volume_sma <= 0:
+        return None
+
+    ratio = volume / volume_sma
+
+    if ratio > 2.0:
+        return SignalItem(
+            indicator="volume",
+            direction=SignalDirection.NEUTRAL,
+            strength=0.05,  # Faible poids direct, mais la meta sera utilisée
+            value=round(ratio, 2),
+            message=f"Volume très élevé ({ratio:.1f}x SMA20) — mouvement significatif confirmé",
+        )
+    elif ratio > 1.5:
+        return SignalItem(
+            indicator="volume",
+            direction=SignalDirection.NEUTRAL,
+            strength=0.05,
+            value=round(ratio, 2),
+            message=f"Volume supérieur à la moyenne ({ratio:.1f}x SMA20) — confirmation",
+        )
+    elif ratio < 0.5:
+        return SignalItem(
+            indicator="volume",
+            direction=SignalDirection.NEUTRAL,
+            strength=0.05,
+            value=round(ratio, 2),
+            message=f"Volume très faible ({ratio:.1f}x SMA20) — méfiance sur le mouvement",
+        )
+    else:
+        # Volume normal → pas de signal particulier
+        return None
+
+
 # ============================================================
-# AGRÉGATION : SCORE COMPOSITE
+# AGRÉGATION : SCORE COMPOSITE (v1.2 — amélioré avec ADX + Volume)
 # ============================================================
 
 def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
     """
     Agrège les signaux individuels en un score composite.
 
-    Algorithme :
+    Algorithme v1.2 (amélioré ADX + Volume) :
     1. Chaque signal bullish contribue +strength, bearish -strength
-    2. Score brut = somme pondérée / nombre de signaux
-    3. Normalisé sur -100/+100
-    4. Confiance basée sur la convergence
+    2. L'ADX module la confiance globale :
+       - ADX >= 25 : signaux tendanciels (MACD, SMA) sont boostés
+       - ADX < 20 : tous les signaux sont atténués (marché sans tendance)
+    3. Le volume module aussi la confiance :
+       - Volume élevé : boost de +10% du score
+       - Volume faible : atténuation de -10% du score
+    4. Score normalisé sur -100/+100
+    5. Confiance basée sur la convergence ET la force de la tendance
     """
     if not signals:
         return CompositeScore(
@@ -381,28 +529,79 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
             neutral_count=0,
         )
 
-    bullish_count = sum(1 for s in signals if s.direction == SignalDirection.BULLISH)
-    bearish_count = sum(1 for s in signals if s.direction == SignalDirection.BEARISH)
-    neutral_count = sum(1 for s in signals if s.direction == SignalDirection.NEUTRAL)
+    # Séparer l'ADX et le volume des signaux directionnels
+    adx_signal = None
+    volume_signal = None
+    directional_signals: list[SignalItem] = []
+
+    for s in signals:
+        if s.indicator == "adx":
+            adx_signal = s
+        elif s.indicator == "volume":
+            volume_signal = s
+        else:
+            directional_signals.append(s)
+
+    # Compter sur les signaux directionnels uniquement
+    bullish_count = sum(1 for s in directional_signals if s.direction == SignalDirection.BULLISH)
+    bearish_count = sum(1 for s in directional_signals if s.direction == SignalDirection.BEARISH)
+    neutral_count = sum(1 for s in directional_signals if s.direction == SignalDirection.NEUTRAL)
+
+    # Déterminer le régime de marché via ADX
+    # adx_multiplier : 1.0 = normal, > 1.0 = tendance forte, < 1.0 = range
+    adx_value = adx_signal.value if adx_signal else None
+    if adx_value is not None:
+        if adx_value >= 40:
+            adx_multiplier = 1.3  # Tendance très forte : boost les signaux
+        elif adx_value >= 25:
+            adx_multiplier = 1.1  # Tendance confirmée : léger boost
+        elif adx_value >= 20:
+            adx_multiplier = 1.0  # Normal
+        else:
+            adx_multiplier = 0.7  # Pas de tendance : atténue les signaux
+    else:
+        adx_multiplier = 1.0  # Pas d'ADX disponible, pas de modification
 
     # Score brut pondéré par la force
     weighted_sum = 0.0
     total_weight = 0.0
 
-    for s in signals:
+    for s in directional_signals:
         weight = s.strength
         if s.direction == SignalDirection.BULLISH:
             weighted_sum += weight
         elif s.direction == SignalDirection.BEARISH:
             weighted_sum -= weight
-        # Les neutres ne contribuent pas au score mais au poids
+        # Les neutres ne contribuent pas au score mais au poids total
         total_weight += weight
+
+    # Ajouter la contribution de l'ADX (il confirme la direction)
+    if adx_signal and adx_signal.direction != SignalDirection.NEUTRAL:
+        adx_weight = adx_signal.strength * 0.5  # Poids modéré
+        if adx_signal.direction == SignalDirection.BULLISH:
+            weighted_sum += adx_weight
+        else:
+            weighted_sum -= adx_weight
+        total_weight += adx_weight
 
     # Normaliser sur -100/+100
     if total_weight > 0:
         raw_score = weighted_sum / total_weight  # -1 à +1
     else:
         raw_score = 0.0
+
+    # Appliquer le multiplicateur ADX
+    raw_score *= adx_multiplier
+
+    # Appliquer le modificateur volume
+    if volume_signal and volume_signal.value is not None:
+        vol_ratio = volume_signal.value
+        if vol_ratio > 1.5:
+            # Fort volume confirme le mouvement : boost de 10%
+            raw_score *= 1.1
+        elif vol_ratio < 0.5:
+            # Faible volume : atténue le signal de 15%
+            raw_score *= 0.85
 
     score = int(round(raw_score * 100))
     score = max(-100, min(100, score))
@@ -415,23 +614,28 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
     else:
         direction = SignalDirection.NEUTRAL
 
-    # Consensus
-    total = len(signals)
-    dominant = max(bullish_count, bearish_count, neutral_count)
-
-    if dominant == total:
-        consensus = "unanimous"
-    elif dominant >= total * 0.75:
-        consensus = "strong_majority"
-    elif dominant >= total * 0.5:
-        consensus = "majority"
+    # Consensus (basé sur les signaux directionnels uniquement)
+    total_dir = len(directional_signals)
+    if total_dir == 0:
+        consensus = "no_data"
     else:
-        consensus = "divided"
+        dominant = max(bullish_count, bearish_count, neutral_count)
+        if dominant == total_dir:
+            consensus = "unanimous"
+        elif dominant >= total_dir * 0.75:
+            consensus = "strong_majority"
+        elif dominant >= total_dir * 0.5:
+            consensus = "majority"
+        else:
+            consensus = "divided"
 
-    # Confiance : basée sur convergence + nombre de signaux
-    if consensus in ("unanimous", "strong_majority") and total >= 3:
-        confidence = ConfidenceLevel.HIGH
-    elif consensus in ("unanimous", "strong_majority", "majority") and total >= 2:
+    # Confiance v1.2 : basée sur convergence + ADX + nombre de signaux
+    if consensus in ("unanimous", "strong_majority") and total_dir >= 3:
+        if adx_value is not None and adx_value >= 25:
+            confidence = ConfidenceLevel.HIGH  # Convergence + tendance confirmée
+        else:
+            confidence = ConfidenceLevel.MEDIUM  # Convergence mais pas de tendance ADX
+    elif consensus in ("unanimous", "strong_majority", "majority") and total_dir >= 2:
         confidence = ConfidenceLevel.MEDIUM
     else:
         confidence = ConfidenceLevel.LOW
@@ -556,10 +760,12 @@ class SignalService:
         if rsi_signal:
             signals.append(rsi_signal)
 
+        # MACD v1.2 : on passe le close pour des seuils en % du prix
         macd_signal = interpret_macd(
             latest.get("macd"),
             latest.get("macd_signal"),
             latest.get("macd_hist"),
+            close=latest.get("close"),
         )
         if macd_signal:
             signals.append(macd_signal)
@@ -581,6 +787,23 @@ class SignalService:
         )
         if bollinger_signal:
             signals.append(bollinger_signal)
+
+        # ADX v1.2 : filtre de tendance (essentiel pour réduire les faux signaux)
+        adx_signal = interpret_adx(
+            latest.get("adx_14"),
+            latest.get("plus_di"),
+            latest.get("minus_di"),
+        )
+        if adx_signal:
+            signals.append(adx_signal)
+
+        # Volume v1.2 : confirmation par le volume
+        volume_signal = interpret_volume_trend(
+            latest.get("volume"),
+            latest.get("volume_sma_20"),
+        )
+        if volume_signal:
+            signals.append(volume_signal)
 
         # Calculer le score composite
         composite = compute_composite_score(signals)

@@ -2,6 +2,47 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-04-05
+
+### Added
+- **ADX(14) — Average Directional Index** : Nouveau filtre de tendance dans le moteur de signaux
+  - ADX ≥ 25 = tendance forte (confirme les signaux), ADX < 20 = range (atténue les signaux)
+  - DI+/DI- pour la direction de la tendance
+  - Réduit les faux signaux dans les marchés latéraux (cause majeure des "incorrect")
+- **Volume SMA(20)** : Confirmation des mouvements par le volume
+  - Volume > 1.5x SMA → boost de confiance, Volume < 0.5x SMA → méfiance
+  - Le volume ne donne pas de direction mais module le score composite
+- **`interpret_adx()`** : Interpréteur ADX avec 4 niveaux (très fort, fort, faible, neutre)
+- **`interpret_volume_trend()`** : Interpréteur volume avec ratio vs SMA
+- **Seuils adaptatifs de volatilité** : Les seuils hausse/baisse/stable sont calculés à partir de la volatilité récente (écart-type des rendements quotidiens) au lieu de seuils fixes
+  - `_compute_recent_volatility()` : Calcule la volatilité sur 30 jours glissants
+  - `_get_adaptive_thresholds()` : Seuils = volatilité × √(horizon) × facteur
+- **Score de qualité 0-100** : Chaque prédiction reçoit un score de qualité proportionnel
+  - Alignement directionnel (0-50 pts), proportionnalité score/mouvement (0-30 pts), confiance (0-20 pts)
+  - Remplace l'évaluation binaire correct/incorrect par une mesure continue
+- **Directional accuracy** : Métrique "le signe du score correspond-il à la direction réelle ?"
+- **Métriques walk-forward avancées** :
+  - `directional_accuracy_pct` : % de match directionnel
+  - `avg_quality_score` : Score qualité moyen par horizon
+  - `high_confidence_accuracy_pct` : Précision des signaux forts (|score| > 25)
+  - `profitable_direction_pct` : % de signaux profitables si suivis
+  - `overall_quality_score` : Score qualité global du walk-forward
+- **28 nouveaux tests** : ADX (7), Volume (6), MACD relatif (4), directional match (4), quality score (3), seuils adaptatifs (3), composite v1.2 (1)
+
+### Changed
+- **MACD — Seuils en % du prix** : Corrige un biais majeur où le MACD était toujours "fort" aux prix élevés ($100k) et "faible" aux prix bas ($3k). Les seuils sont maintenant 0.1%, 0.3%, 0.8%, 1.5% du prix au lieu de 10, 50, 200, 500 absolus
+- **Score composite v1.2** : L'ADX module la confiance globale (×1.3 si ADX≥40, ×0.7 si ADX<20), le volume module le score (±10-15%)
+- **Confiance HIGH** requiert désormais ADX ≥ 25 en plus du consensus unanime — plus conservateur mais plus fiable
+- **`indicator_service.py`** : Calcule ADX(14), DI+, DI-, Volume SMA(20) en plus des indicateurs existants
+- **`HorizonOutcome`** : Nouveaux champs `quality_score` (0-100), `directional_match` (bool)
+- **`HorizonAccuracy`** : 5 nouvelles métriques avancées
+- **`WalkForwardResult`** : Nouveau champ `overall_quality_score`
+
+### Technical
+- 523 tests backend passing (495 → 523, +28 tests)
+- Frontend tsc --noEmit sans erreur
+- Aucune régression sur les 495 tests existants
+
 ## [1.1.2] - 2026-04-05
 
 ### Fixed
