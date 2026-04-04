@@ -2,7 +2,7 @@
 // Dashboard.tsx — Premium dark trading dashboard with animations
 // =============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Container,
@@ -23,6 +23,9 @@ import {
   Tooltip,
   Drawer,
   Badge,
+  Fab,
+  Snackbar,
+  Divider,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -32,6 +35,8 @@ import {
   NotificationsNone as NotificationsNoneIcon,
   NotificationsActive as NotificationsActiveIcon,
   Close as CloseIcon,
+  KeyboardArrowUp as ScrollTopIcon,
+  Keyboard as KeyboardIcon,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -44,6 +49,7 @@ import { NewsPanel } from '../components/NewsPanel';
 import { DecisionPanel } from '../components/DecisionPanel';
 import { BacktestPanel } from '../components/BacktestPanel';
 import { VerificationPanel } from '../components/VerificationPanel';
+import { QuickMetricsBar } from '../components/QuickMetricsBar';
 import CandlestickChart from '../components/CandlestickChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
 import { PriceTicker } from '../components/PriceTicker';
@@ -117,6 +123,8 @@ const Dashboard: React.FC = () => {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [fetchResult, setFetchResult] = useState<FetchResult | null>(null);
   const [alertDrawerOpen, setAlertDrawerOpen] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [snackbarMsg, setSnackbarMsg] = useState<string | null>(null);
 
   const symbol = 'BTC/USD';
 
@@ -160,7 +168,7 @@ const Dashboard: React.FC = () => {
     setFetchResult(null);
   };
 
-  const handleRefreshAll = () => {
+  const handleRefreshAll = useCallback(() => {
     indicators.refresh();
     gaps.refresh();
     candles.refresh();
@@ -168,6 +176,51 @@ const Dashboard: React.FC = () => {
     decision.refresh();
     alertsHook.refresh();
     news.refresh();
+    setSnackbarMsg('✓ Données rafraîchies');
+  }, [indicators, gaps, candles, signals, decision, alertsHook, news]);
+
+  // Scroll-to-top visibility
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore events from input/select/textarea
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+
+      switch (e.key.toLowerCase()) {
+        case 'r':
+          e.preventDefault();
+          handleRefreshAll();
+          break;
+        case 'f':
+          if (!e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            handleFetchCandles();
+          }
+          break;
+        case 'a':
+          e.preventDefault();
+          setAlertDrawerOpen(prev => !prev);
+          break;
+        case 'escape':
+          setAlertDrawerOpen(false);
+          break;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleRefreshAll]);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleFetchCandles = async () => {
@@ -313,7 +366,7 @@ const Dashboard: React.FC = () => {
                     textTransform: 'uppercase',
                   }}
                 >
-                  Trading Assistant v0.9
+                  Trading Assistant v1.2
                 </Typography>
               </Box>
             </Box>
@@ -627,7 +680,7 @@ const Dashboard: React.FC = () => {
         {/* ================================================================= */}
         {/* ZONE 1 — CHART HERO                                               */}
         {/* ================================================================= */}
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: 2 }}>
           {candles.error && <Alert severity="error" sx={{ mb: 2 }}>{candles.error}</Alert>}
           {noData && !candles.error && (
             <Alert severity="info" sx={{ mb: 2 }}>
@@ -645,13 +698,25 @@ const Dashboard: React.FC = () => {
         </Box>
 
         {/* ================================================================= */}
-        {/* ZONE 2 — ANALYSE RAPIDE (2×2 grid sans alertes)                   */}
+        {/* QUICK METRICS BAR — KPIs résumés en un coup d'œil                 */}
         {/* ================================================================= */}
-        <SectionHeader icon="📊" title="Analyse du marché" accentColor="#7C4DFF" delay={0.1} />
+        <Box sx={{ mb: 3 }}>
+          <QuickMetricsBar
+            decision={decision.data}
+            signals={signals.data}
+            news={news.data}
+            loading={decision.loading || signals.loading}
+          />
+        </Box>
 
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          {/* Décision — Panel le plus actionnable, en premier */}
-          <Grid item xs={12} md={6} lg={4}>
+        {/* ================================================================= */}
+        {/* ZONE 2 — ANALYSE RAPIDE (grid 2×2 équilibré)                      */}
+        {/* ================================================================= */}
+        <SectionHeader icon="📊" title="Analyse du marché" subtitle="Décision • Signaux • News • Backtest" accentColor="#7C4DFF" delay={0.1} />
+
+        <Grid container spacing={2.5} sx={{ mb: 3 }}>
+          {/* Row 1: Décision + Signaux */}
+          <Grid item xs={12} md={6}>
             <DecisionPanel
               data={decision.data}
               loading={decision.loading}
@@ -662,7 +727,7 @@ const Dashboard: React.FC = () => {
             />
           </Grid>
 
-          <Grid item xs={12} md={6} lg={4}>
+          <Grid item xs={12} md={6}>
             <SignalPanel
               data={signals.data}
               loading={signals.loading}
@@ -673,7 +738,8 @@ const Dashboard: React.FC = () => {
             />
           </Grid>
 
-          <Grid item xs={12} md={6} lg={4}>
+          {/* Row 2: News + Backtest */}
+          <Grid item xs={12} md={6}>
             <NewsPanel
               data={news.data}
               loading={news.loading}
@@ -682,7 +748,7 @@ const Dashboard: React.FC = () => {
             />
           </Grid>
 
-          <Grid item xs={12} md={6} lg={4}>
+          <Grid item xs={12} md={6}>
             <BacktestPanel
               data={backtest.data}
               loading={backtest.loading}
@@ -699,9 +765,9 @@ const Dashboard: React.FC = () => {
         {/* ================================================================= */}
         {/* ZONE 2.5 — VÉRIFICATION HISTORIQUE (TIME-TRAVEL BACKTEST)          */}
         {/* ================================================================= */}
-        <SectionHeader icon="🕰️" title="Vérification Historique" accentColor="#B388FF" delay={0.15} />
+        <SectionHeader icon="🕰️" title="Vérification Historique" subtitle="Time-travel backtest • Walk-forward analysis" accentColor="#B388FF" delay={0.15} />
 
-        <Grid container>
+        <Grid container sx={{ mb: 3 }}>
           <Grid item xs={12}>
             <VerificationPanel />
           </Grid>
@@ -710,7 +776,7 @@ const Dashboard: React.FC = () => {
         {/* ================================================================= */}
         {/* ZONE 3 — DONNÉES TECHNIQUES                                       */}
         {/* ================================================================= */}
-        <SectionHeader icon="🔬" title="Données techniques détaillées" accentColor="#448AFF" delay={0.2} />
+        <SectionHeader icon="🔬" title="Données techniques détaillées" subtitle="RSI • MACD • SMA • Bollinger • Qualité" accentColor="#448AFF" delay={0.2} />
 
         <IndicatorPanel
           data={indicators.data}
@@ -721,6 +787,168 @@ const Dashboard: React.FC = () => {
           historyDays={effectiveDays}
         />
       </Container>
+
+      {/* ================================================================= */}
+      {/* FOOTER                                                              */}
+      {/* ================================================================= */}
+      <Box
+        component="footer"
+        sx={{
+          mt: 6,
+          py: 2.5,
+          px: 3,
+          borderTop: '1px solid rgba(255,255,255,0.04)',
+          background: 'rgba(10, 14, 23, 0.6)',
+          backdropFilter: 'blur(12px)',
+          position: 'relative',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '1px',
+            background: 'linear-gradient(90deg, transparent, #F7931A30, transparent)',
+          },
+        }}
+      >
+        <Container maxWidth="xl">
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 2,
+            }}
+          >
+            {/* Left: Brand */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography
+                variant="caption"
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '0.65rem',
+                  background: 'linear-gradient(135deg, #F7931A, #FFB74D)',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}
+              >
+                BTC Insight v1.2.0
+              </Typography>
+              <Divider orientation="vertical" flexItem sx={{ mx: 0.5, borderColor: 'rgba(255,255,255,0.08)' }} />
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem' }}>
+                © {new Date().getFullYear()} Bitcoin Trading Assistant
+              </Typography>
+            </Box>
+
+            {/* Center: Keyboard shortcuts */}
+            <Tooltip
+              title={
+                <Box sx={{ p: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+                    Raccourcis clavier
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block' }}>R — Rafraîchir les données</Typography>
+                  <Typography variant="caption" sx={{ display: 'block' }}>F — Fetch API</Typography>
+                  <Typography variant="caption" sx={{ display: 'block' }}>A — Ouvrir/Fermer les alertes</Typography>
+                  <Typography variant="caption" sx={{ display: 'block' }}>Esc — Fermer le panneau</Typography>
+                </Box>
+              }
+              arrow
+            >
+              <Box
+                sx={{
+                  display: { xs: 'none', sm: 'flex' },
+                  alignItems: 'center',
+                  gap: 0.5,
+                  cursor: 'help',
+                }}
+              >
+                <KeyboardIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem' }}>
+                  R Rafraîchir • F Fetch • A Alertes
+                </Typography>
+              </Box>
+            </Tooltip>
+
+            {/* Right: Data status */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: livePrice.connected ? '#00E676' : '#FF1744',
+                  animation: livePrice.connected ? 'pulse-dot 2s ease-in-out infinite' : 'none',
+                }}
+              />
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem' }}>
+                {livePrice.connected ? 'WebSocket connecté' : 'WebSocket déconnecté'}
+              </Typography>
+            </Box>
+          </Box>
+        </Container>
+      </Box>
+
+      {/* ================================================================= */}
+      {/* FAB: Scroll to top                                                  */}
+      {/* ================================================================= */}
+      <AnimatePresence>
+        {showScrollTop && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.5 }}
+            transition={{ duration: 0.2 }}
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              right: 24,
+              zIndex: 1200,
+            }}
+          >
+            <Fab
+              size="small"
+              onClick={scrollToTop}
+              sx={{
+                background: 'linear-gradient(135deg, rgba(247, 147, 26, 0.9), rgba(230, 81, 0, 0.9))',
+                color: '#fff',
+                backdropFilter: 'blur(10px)',
+                boxShadow: '0 4px 20px rgba(247, 147, 26, 0.3)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #FFB74D, #F7931A)',
+                  boxShadow: '0 6px 30px rgba(247, 147, 26, 0.5)',
+                },
+              }}
+            >
+              <ScrollTopIcon />
+            </Fab>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ================================================================= */}
+      {/* SNACKBAR: Feedback actions                                          */}
+      {/* ================================================================= */}
+      <Snackbar
+        open={!!snackbarMsg}
+        autoHideDuration={2000}
+        onClose={() => setSnackbarMsg(null)}
+        message={snackbarMsg}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{
+          '& .MuiSnackbarContent-root': {
+            background: 'rgba(17, 24, 39, 0.9)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(247, 147, 26, 0.2)',
+            borderRadius: 2,
+            fontWeight: 600,
+            fontSize: '0.8rem',
+          },
+        }}
+      />
     </Box>
   );
 };

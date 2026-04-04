@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 5 avril 2026
 > **Version :** v1.2.0
 > **Branche :** `master`
-> **Dernier commit :** feat(signals+verification): ADX, Volume, MACD relatif, seuils adaptatifs, quality score
+> **Dernier commit :** style(ui): amélioration UX/UI — QuickMetricsBar, grid 2×2, scroll-to-top FAB, keyboard shortcuts, footer, animations viewport
 
 ---
 
@@ -312,7 +312,8 @@ bitcoin-trading-assistant/
 | **VerificationPanel** | **Charger historique + vérifier date + walk-forward + résultats ✅/❌** | **✅ NOUVEAU v1.1.1** |
 | **BacktestPanel** | **Config + métriques (PnL, Sharpe, DD, Win Rate) + journal trades** | **✅ v1.1** |
 | **DecisionPanel** | Scénarios visuels + recommandation + règles collapsibles | ✅ |
-| **Dashboard** | Page principale avec 14 TF + 15 durées + live price + décision + backtest + vérification | ✅ **MAJ v1.1.1** |
+| **QuickMetricsBar** | **Barre KPIs rapides (Décision, Score, Tendance, Signaux, Sentiment)** | **✅ NOUVEAU** |
+| **Dashboard** | Page principale avec 14 TF + 15 durées + live price + décision + backtest + vérification + FAB + raccourcis clavier + footer | ✅ **MAJ** |
 | **CandlestickChart** | Graphique chandeliers (Lightweight Charts) | ✅ |
 | **IndicatorPanel** | Affichage RSI, MACD, SMA, Bollinger avec couleurs | ✅ |
 | **SignalPanel** | Jauge score composite, liste signaux, consensus | ✅ |

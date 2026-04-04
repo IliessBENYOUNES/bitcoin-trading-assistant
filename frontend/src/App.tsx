@@ -101,6 +101,9 @@ const premiumDarkTheme = createTheme({
         root: {
           paddingBottom: 8,
         },
+        title: {
+          fontSize: '1rem',
+        },
       },
     },
     // Paper glassmorphism
