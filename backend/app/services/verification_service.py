@@ -60,6 +60,15 @@ class VerificationService:
         self.db = db
         self.decision_service = DecisionService(db)
 
+    @staticmethod
+    def _ensure_aware(dt: datetime) -> datetime:
+        """Assure qu'un datetime est timezone-aware (UTC).
+        SQLite retourne des naive datetimes, PostgreSQL des aware.
+        On normalise tout en UTC pour pouvoir soustraire."""
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+
     def get_history_range(
         self, symbol: str = "BTC/USD", timeframe: str = "1d"
     ) -> HistoryRangeResponse:
@@ -94,6 +103,9 @@ class VerificationService:
         """
         Recupere le prix de cloture a une date donnee.
         Si pas de candle exacte, cherche la plus proche dans les 2 jours.
+
+        NOTE : On utilise un tri Python au lieu de julianday() SQL
+        pour compatibilite SQLite + PostgreSQL.
         """
         # D'abord essayer exact match
         candle = (
@@ -112,7 +124,7 @@ class VerificationService:
         window_start = target_date - timedelta(days=2)
         window_end = target_date + timedelta(days=2)
 
-        candle = (
+        candles = (
             self.db.query(Candle.close_price, Candle.timestamp)
             .filter(
                 Candle.symbol == symbol,
@@ -120,14 +132,14 @@ class VerificationService:
                 Candle.timestamp >= window_start,
                 Candle.timestamp <= window_end,
             )
-            .order_by(
-                func.abs(
-                    func.julianday(Candle.timestamp) - func.julianday(target_date)
-                )
-            )
-            .first()
+            .all()
         )
-        return candle[0] if candle else None
+        if not candles:
+            return None
+
+        # Tri par proximite temporelle en Python (cross-database)
+        closest = min(candles, key=lambda c: abs((self._ensure_aware(c[1]) - target_date).total_seconds()))
+        return closest[0]
 
     def _get_closest_price_at(
         self, symbol: str, timeframe: str, target_date: datetime
@@ -135,11 +147,14 @@ class VerificationService:
         """
         Recupere le prix et la date exacte de la candle la plus proche.
         Retourne (price, date_iso) ou (None, None).
+
+        NOTE : On utilise un tri Python au lieu de julianday() SQL
+        pour compatibilite SQLite + PostgreSQL.
         """
         window_start = target_date - timedelta(days=3)
         window_end = target_date + timedelta(days=3)
 
-        candle = (
+        candles = (
             self.db.query(Candle.close_price, Candle.timestamp)
             .filter(
                 Candle.symbol == symbol,
@@ -147,17 +162,15 @@ class VerificationService:
                 Candle.timestamp >= window_start,
                 Candle.timestamp <= window_end,
             )
-            .order_by(
-                func.abs(
-                    func.julianday(Candle.timestamp) - func.julianday(target_date)
-                )
-            )
-            .first()
+            .all()
         )
-        if candle:
-            ts = candle[1]
-            return candle[0], (ts.isoformat() if isinstance(ts, datetime) else str(ts))
-        return None, None
+        if not candles:
+            return None, None
+
+        # Tri par proximite temporelle en Python (cross-database)
+        closest = min(candles, key=lambda c: abs((self._ensure_aware(c[1]) - target_date).total_seconds()))
+        ts = closest[1]
+        return closest[0], (ts.isoformat() if isinstance(ts, datetime) else str(ts))
 
     def verify_at_date(self, request: VerificationRequest) -> VerificationResult:
         """
