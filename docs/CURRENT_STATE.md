@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 5 avril 2026
 > **Version :** v1.1.2
 > **Branche :** `master`
-> **Dernier commit :** fix(verification): rewrite _is_prediction_correct with score-aware + horizon-scaled logic
+> **Dernier commit :** style(ui): move AlertPanel to right-side Drawer, remove from grid layout
 
 ---
 

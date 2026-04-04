@@ -4,8 +4,6 @@
 
 import React, { useState } from 'react';
 import {
-  CardContent,
-  CardHeader,
   Typography,
   Box,
   Chip,
@@ -20,7 +18,6 @@ import {
   Alert as MuiAlert,
   Stack,
   Collapse,
-  Badge,
   Tooltip,
   SelectChangeEvent,
   Switch,
@@ -34,8 +31,6 @@ import {
   Refresh as RefreshIcon,
   Add as AddIcon,
   Delete as DeleteIcon,
-  Notifications as NotificationsIcon,
-  NotificationsActive as NotificationsActiveIcon,
   ExpandMore as ExpandMoreIcon,
   ExpandLess as ExpandLessIcon,
   PlayArrow as CheckIcon,
@@ -50,7 +45,6 @@ import type {
   AlertStatus,
 } from '../types';
 import { AlertPresets } from './AlertPresets';
-import { GlowingCard, ACCENT } from './GlowingCard';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -398,65 +392,52 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
   };
 
   return (
-    <GlowingCard accentColor={ACCENT.orange.start} accentColorEnd={ACCENT.orange.end} delay={0.15}>
-      <CardHeader
-        title={
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Badge
-              badgeContent={notifications.length}
-              color="error"
-              invisible={notifications.length === 0}
-              sx={{
-                '& .MuiBadge-badge': {
-                  animation: notifications.length > 0 ? 'pulse-glow 2s ease-in-out infinite' : 'none',
-                },
-              }}
-            >
-              {notifications.length > 0 ? (
-                <NotificationsActiveIcon color="warning" />
-              ) : (
-                <NotificationsIcon />
-              )}
-            </Badge>
-            <Typography variant="h6" fontWeight={800} sx={{ fontSize: '1rem' }}>
-              🔔 Alertes
-            </Typography>
-            <Chip
-              label={`${activeCount} active${activeCount > 1 ? 's' : ''}`}
-              size="small"
-              color="success"
-              variant="outlined"
-            />
-            {triggeredCount > 0 && (
-              <Chip
-                label={`${triggeredCount} déclenchée${triggeredCount > 1 ? 's' : ''}`}
-                size="small"
-                color="warning"
-                variant="outlined"
-              />
-            )}
-          </Box>
-        }
-        action={
-          <Box sx={{ display: 'flex', gap: 0.5 }}>
-            <Tooltip title="Vérifier les alertes maintenant">
-              <IconButton
-                size="small"
-                onClick={handleCheck}
-                disabled={checking || loading}
-                color="primary"
-              >
-                <CheckIcon />
-              </IconButton>
-            </Tooltip>
-            <IconButton size="small" onClick={onRefresh} disabled={loading}>
-              <RefreshIcon />
-            </IconButton>
-          </Box>
-        }
-      />
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Barre d'actions compacte */}
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          px: 2,
+          py: 1,
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+        }}
+      >
+        <Chip
+          label={`${activeCount} active${activeCount > 1 ? 's' : ''}`}
+          size="small"
+          color="success"
+          variant="outlined"
+          sx={{ fontSize: '0.7rem' }}
+        />
+        {triggeredCount > 0 && (
+          <Chip
+            label={`${triggeredCount} déclenchée${triggeredCount > 1 ? 's' : ''}`}
+            size="small"
+            color="warning"
+            variant="outlined"
+            sx={{ fontSize: '0.7rem' }}
+          />
+        )}
+        <Box sx={{ flex: 1 }} />
+        <Tooltip title="Vérifier les alertes maintenant">
+          <IconButton
+            size="small"
+            onClick={handleCheck}
+            disabled={checking || loading}
+            color="primary"
+          >
+            <CheckIcon />
+          </IconButton>
+        </Tooltip>
+        <IconButton size="small" onClick={onRefresh} disabled={loading}>
+          <RefreshIcon />
+        </IconButton>
+      </Box>
 
-      <CardContent sx={{ pt: 0 }}>
+      {/* Contenu scrollable */}
+      <Box sx={{ flex: 1, overflow: 'auto', px: 2, py: 1.5 }}>
         {/* Notifications de déclenchement */}
         {notifications.length > 0 && (
           <MuiAlert
@@ -528,7 +509,7 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
           timeframe={timeframe}
         />
 
-        <Divider sx={{ my: 1 }} />
+        <Divider sx={{ my: 1.5 }} />
 
         {/* Liste des alertes */}
         <Typography
@@ -557,8 +538,8 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
         {/* Compteurs résumé */}
         {alerts.length > 0 && (
           <>
-            <Divider sx={{ my: 1 }} />
-            <Stack direction="row" spacing={1} justifyContent="center">
+            <Divider sx={{ my: 1.5 }} />
+            <Stack direction="row" spacing={1} justifyContent="center" sx={{ pb: 1 }}>
               <Chip
                 label={`${activeCount} active${activeCount > 1 ? 's' : ''}`}
                 size="small"
@@ -577,8 +558,8 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
             </Stack>
           </>
         )}
-      </CardContent>
-    </GlowingCard>
+      </Box>
+    </Box>
   );
 };
 

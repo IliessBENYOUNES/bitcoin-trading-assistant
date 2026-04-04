@@ -21,12 +21,17 @@ import {
   Toolbar,
   IconButton,
   Tooltip,
+  Drawer,
+  Badge,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
   CloudDownload as FetchIcon,
   CheckCircle as SuccessIcon,
   CurrencyBitcoin as BitcoinIcon,
+  NotificationsNone as NotificationsNoneIcon,
+  NotificationsActive as NotificationsActiveIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -98,6 +103,9 @@ function formatDuration(days: number): string {
   return `${days}j`;
 }
 
+// Largeur du panneau d'alertes latéral
+const ALERT_DRAWER_WIDTH = 420;
+
 // -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
@@ -108,6 +116,7 @@ const Dashboard: React.FC = () => {
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [fetchResult, setFetchResult] = useState<FetchResult | null>(null);
+  const [alertDrawerOpen, setAlertDrawerOpen] = useState(false);
 
   const symbol = 'BTC/USD';
 
@@ -131,6 +140,10 @@ const Dashboard: React.FC = () => {
 
   // Utilise le prix live si disponible, sinon fallback sur indicators
   const currentPrice = livePrice.price ?? indicators.data?.latest?.close ?? null;
+
+  // Compteur de notifications pour le badge
+  const alertNotificationCount = alertsHook.notifications.length;
+  const alertActiveCount = alertsHook.alerts.filter(a => a.status === 'active').length;
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -225,7 +238,7 @@ const Dashboard: React.FC = () => {
       }}
     >
       {/* ================================================================= */}
-      {/* APPBAR PREMIUM — Glassmorphism + gradient accent line              */}
+      {/* APPBAR PREMIUM                                                     */}
       {/* ================================================================= */}
       <AppBar
         position="sticky"
@@ -234,7 +247,6 @@ const Dashboard: React.FC = () => {
           backgroundColor: 'rgba(10, 14, 23, 0.88)',
           backdropFilter: 'blur(24px)',
           borderBottom: '1px solid rgba(255,255,255,0.04)',
-          // Orange gradient accent line at bottom
           '&::after': {
             content: '""',
             position: 'absolute',
@@ -427,9 +439,113 @@ const Dashboard: React.FC = () => {
                 <RefreshIcon />
               </IconButton>
             </Tooltip>
+
+            {/* Bouton Alertes — ouvre le panneau latéral droit */}
+            <Tooltip title={`Alertes${alertActiveCount > 0 ? ` (${alertActiveCount} actives)` : ''}`}>
+              <IconButton
+                onClick={() => setAlertDrawerOpen(true)}
+                size="small"
+                sx={{
+                  color: alertNotificationCount > 0 ? '#ff9800' : 'text.secondary',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    color: '#F7931A',
+                    backgroundColor: 'rgba(247, 147, 26, 0.08)',
+                  },
+                }}
+              >
+                <Badge
+                  badgeContent={alertNotificationCount}
+                  color="error"
+                  invisible={alertNotificationCount === 0}
+                  sx={{
+                    '& .MuiBadge-badge': {
+                      animation: alertNotificationCount > 0 ? 'pulse-glow 2s ease-in-out infinite' : 'none',
+                      fontSize: '0.6rem',
+                      height: 16,
+                      minWidth: 16,
+                    },
+                  }}
+                >
+                  {alertNotificationCount > 0 ? (
+                    <NotificationsActiveIcon />
+                  ) : (
+                    <NotificationsNoneIcon />
+                  )}
+                </Badge>
+              </IconButton>
+            </Tooltip>
           </Box>
         </Toolbar>
       </AppBar>
+
+      {/* ================================================================= */}
+      {/* DRAWER ALERTES — Panneau latéral droit                             */}
+      {/* ================================================================= */}
+      <Drawer
+        anchor="right"
+        open={alertDrawerOpen}
+        onClose={() => setAlertDrawerOpen(false)}
+        PaperProps={{
+          sx: {
+            width: { xs: '100%', sm: ALERT_DRAWER_WIDTH },
+            maxWidth: '100vw',
+            background: 'linear-gradient(180deg, #0D1321 0%, #0A0E17 100%)',
+            borderLeft: '1px solid rgba(255,255,255,0.06)',
+            boxShadow: '-8px 0 40px rgba(0,0,0,0.5)',
+          },
+        }}
+      >
+        {/* Header du drawer */}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            px: 2,
+            py: 1.5,
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            background: 'rgba(247, 147, 26, 0.03)',
+          }}
+        >
+          <Typography
+            variant="h6"
+            fontWeight={800}
+            sx={{
+              fontSize: '1rem',
+              background: 'linear-gradient(135deg, #F7931A, #FFB74D)',
+              backgroundClip: 'text',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
+            🔔 Alertes & Notifications
+          </Typography>
+          <IconButton
+            onClick={() => setAlertDrawerOpen(false)}
+            size="small"
+            sx={{ color: 'text.secondary' }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </Box>
+
+        {/* Contenu : AlertPanel */}
+        <Box sx={{ overflow: 'auto', flex: 1 }}>
+          <AlertPanel
+            alerts={alertsHook.alerts}
+            notifications={alertsHook.notifications}
+            loading={alertsHook.loading}
+            error={alertsHook.error}
+            onRefresh={alertsHook.refresh}
+            onAdd={alertsHook.add}
+            onDelete={alertsHook.remove}
+            onCheck={alertsHook.check}
+            onDismissNotifications={alertsHook.dismissNotifications}
+            timeframe={timeframe}
+          />
+        </Box>
+      </Drawer>
 
       <Container maxWidth="xl" sx={{ pt: { xs: 1.5, sm: 2.5 }, pb: 4, px: { xs: 1.5, sm: 3 } }}>
         {/* Mobile Price Ticker */}
@@ -529,7 +645,7 @@ const Dashboard: React.FC = () => {
         </Box>
 
         {/* ================================================================= */}
-        {/* ZONE 2 — ANALYSE RAPIDE (3 colonnes)                              */}
+        {/* ZONE 2 — ANALYSE RAPIDE (2×2 grid sans alertes)                   */}
         {/* ================================================================= */}
         <SectionHeader icon="📊" title="Analyse du marché" accentColor="#7C4DFF" delay={0.1} />
 
@@ -554,21 +670,6 @@ const Dashboard: React.FC = () => {
               onRefresh={signals.refresh}
               timeframe={timeframe}
               historyDays={effectiveDays}
-            />
-          </Grid>
-
-          <Grid item xs={12} md={6} lg={4}>
-            <AlertPanel
-              alerts={alertsHook.alerts}
-              notifications={alertsHook.notifications}
-              loading={alertsHook.loading}
-              error={alertsHook.error}
-              onRefresh={alertsHook.refresh}
-              onAdd={alertsHook.add}
-              onDelete={alertsHook.remove}
-              onCheck={alertsHook.check}
-              onDismissNotifications={alertsHook.dismissNotifications}
-              timeframe={timeframe}
             />
           </Grid>
 
