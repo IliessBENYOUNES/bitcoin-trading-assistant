@@ -1,23 +1,23 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 5 avril 2026
-> **Version :** v1.1.0
+> **Version :** v1.1.1
 > **Branche :** `master`
-> **Dernier commit :** feat(backtest): add backtesting engine v1.1 — replay + metrics + UI
+> **Dernier commit :** docs(roadmap): add Phase v3.0 ML Convergent + detailed API pricing + coverage analysis
 
 ---
 
 ## 1. Vue d'ensemble
 
-Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'aide à la lecture et à la **décision** sur le marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur **14 timeframes**, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, affiche un **prix BTC temps réel via WebSocket Binance**, **produit des recommandations explicables via un moteur de décision combinant analyse technique et sentiment**, et **valide empiriquement les décisions via un moteur de backtesting**.
+Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'aide à la lecture et à la **décision** sur le marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur **14 timeframes**, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, affiche un **prix BTC temps réel via WebSocket Binance**, **produit des recommandations explicables via un moteur de décision combinant analyse technique et sentiment**, **valide empiriquement les décisions via un moteur de backtesting**, et **vérifie les prédictions sur l'historique profond via un système de time-travel backtest + walk-forward**.
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.1.0** |
+| Version courante | **v1.1.1** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **448 tests**, tous passing ✅ |
+| Tests backend | **481 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -37,7 +37,8 @@ bitcoin-trading-assistant/
 │   │   │   ├── health.py       # GET /health, /health/db
 │   │   │   ├── market.py       # GET /market/candles, indicators, gaps, price, signals
 │   │   │   ├── decision.py     # GET /market/decision
-│   │   │   ├── backtest.py     # ← NOUVEAU v1.1 — POST /backtest/run
+│   │   │   ├── backtest.py     # POST /backtest/run
+│   │   │   ├── verification.py # ← NOUVEAU v1.1.1 — /backtest/history/*, /backtest/verify, /backtest/walk-forward
 │   │   │   ├── alerts.py       # CRUD /alerts + POST /alerts/check
 │   │   │   ├── news.py         # GET /news, GET /news/sentiment
 │   │   │   └── scheduler.py    # GET /scheduler/status, POST trigger
@@ -48,11 +49,14 @@ bitcoin-trading-assistant/
 │   │   │   ├── candle.py       # Schémas Pydantic candle
 │   │   │   ├── signal.py       # Schémas SignalItem, CompositeScore, SignalResponse
 │   │   │   ├── decision.py     # Scenario, RuleResult, Recommendation, DecisionResponse
-│   │   │   ├── backtest.py     # ← NOUVEAU v1.1 — BacktestConfig, BacktestMetrics, BacktestResponse
+│   │   │   ├── backtest.py     # BacktestConfig, BacktestMetrics, BacktestResponse
+│   │   │   ├── verification.py # ← NOUVEAU v1.1.1 — HistoryLoadConfig, VerificationResult, WalkForwardResult
 │   │   │   ├── alert.py        # AlertCreate, AlertResponse, AlertCheck
 │   │   │   └── news.py         # NewsItem, NewsSentimentSummary, NewsResponse
 │   │   ├── services/
-│   │   │   ├── backtest_service.py    # ← NOUVEAU v1.1 — Moteur de replay historique
+│   │   │   ├── verification_service.py # ← NOUVEAU v1.1.1 — Time-travel + walk-forward
+│   │   │   ├── history_loader_service.py # ← NOUVEAU v1.1.1 — Chargement historique Binance 2017→now
+│   │   │   ├── backtest_service.py    # Moteur de replay historique
 │   │   │   ├── decision_service.py    # Moteur de décision (règles + scénarios)
 │   │   │   ├── binance_service.py     # Client HTTP Binance (14 intervalles natifs)
 │   │   │   ├── data_source_router.py  # Routeur Binance/CoinGecko
@@ -67,7 +71,7 @@ bitcoin-trading-assistant/
 │   │   └── utils/
 │   │       ├── time_buckets.py # Alignement UTC 14 timeframes, fenêtres glissantes
 │   │       └── db_upsert.py    # Upsert dialect-aware
-│   └── tests/                  # 448 tests pytest
+│   └── tests/                  # 481 tests pytest
 │       ├── test_health.py
 │       ├── test_indicators.py
 │       ├── test_market.py
@@ -79,7 +83,8 @@ bitcoin-trading-assistant/
 │       ├── test_alerts.py
 │       ├── test_news.py
 │       ├── test_decision.py
-│       ├── test_backtest.py            # ← NOUVEAU v1.1 — 31 tests backtesting
+│       ├── test_backtest.py            # 31 tests backtesting
+│       ├── test_verification.py        # ← NOUVEAU v1.1.1 — 33 tests vérification historique
 │       ├── test_binance_and_router.py
 │       └── test_time_buckets.py
 │
@@ -89,7 +94,8 @@ bitcoin-trading-assistant/
 │       ├── pages/
 │       │   └── Dashboard.tsx   # Page principale (14 TF + 15 durées + live price + décision + backtest)
 │       ├── components/
-│       │   ├── BacktestPanel.tsx        # ← NOUVEAU v1.1 — Métriques + journal trades + config
+│       │   ├── BacktestPanel.tsx        # Métriques + journal trades + config
+│       │   ├── VerificationPanel.tsx    # ← NOUVEAU v1.1.1 — Charger historique + vérifier + walk-forward
 │       │   ├── DecisionPanel.tsx        # Scénarios + recommandation + règles
 │       │   ├── CandlestickChart.tsx
 │       │   ├── IndicatorPanel.tsx
@@ -107,7 +113,7 @@ bitcoin-trading-assistant/
 │       │   ├── PriceCard.tsx
 │       │   └── ErrorBoundary.tsx
 │       ├── hooks/
-│       │   ├── useBacktest.ts           # ← NOUVEAU v1.1 — Hook backtesting
+│       │   ├── useBacktest.ts           # Hook backtesting
 │       │   ├── useDecision.ts
 │       │   ├── useCandles.ts
 │       │   ├── useIndicators.ts
@@ -147,7 +153,11 @@ bitcoin-trading-assistant/
 | GET | `/market/indicators` | Indicateurs techniques (RSI, MACD, SMA, Bollinger) | ✅ |
 | GET | `/market/signals` | Signaux de trading + score composite | ✅ |
 | GET | `/market/decision` | Moteur de décision (scénarios + recommandation) | ✅ |
-| **POST** | **`/backtest/run`** | **Backtesting — replay historique + métriques** | **✅ NOUVEAU v1.1** |
+| **POST** | **`/backtest/run`** | **Backtesting — replay historique + métriques** | **✅ v1.1** |
+| **POST** | **`/backtest/history/load`** | **Chargement historique profond depuis Binance 2017→now** | **✅ NOUVEAU v1.1.1** |
+| **GET** | **`/backtest/history/range`** | **Plage de dates disponible en base** | **✅ NOUVEAU v1.1.1** |
+| **POST** | **`/backtest/verify`** | **Vérification ponctuelle à une date (time-travel)** | **✅ NOUVEAU v1.1.1** |
+| **POST** | **`/backtest/walk-forward`** | **Analyse walk-forward complète (précision globale)** | **✅ NOUVEAU v1.1.1** |
 | GET | `/market/price` | Prix courant | ✅ |
 | GET | `/market/info` | Info marché | ✅ |
 | GET | `/alerts` | Lister les alertes | ✅ |
@@ -167,7 +177,9 @@ bitcoin-trading-assistant/
 
 | Service | Description | Status |
 |---------|-------------|--------|
-| **Backtest Service** | **Replay historique des décisions + simulation de trades + métriques** | **✅ NOUVEAU v1.1** |
+| **Verification Service** | **Time-travel backtest + walk-forward + comparaison prédiction/réalité** | **✅ NOUVEAU v1.1.1** |
+| **History Loader Service** | **Chargement historique profond Binance 2017→now, pagination, upsert idempotent** | **✅ NOUVEAU v1.1.1** |
+| **Backtest Service** | **Replay historique des décisions + simulation de trades + métriques** | **✅ v1.1** |
 | **Decision Service** | Moteur de décision combinant signaux techniques + sentiment → scénarios + recommandation | ✅ |
 | **Binance Service** | Client HTTP async Binance, **14 intervalles natifs** | ✅ |
 | **DataSource Router** | Routeur intelligent Binance / CoinGecko | ✅ |
@@ -193,6 +205,18 @@ bitcoin-trading-assistant/
 | **Warning suroptimisation** | Alerte si <10 trades ou Sharpe >3.0 | ✅ |
 | **Clôture automatique** | Position ouverte en fin de backtest fermée automatiquement | ✅ |
 | **Résumé lisible** | Synthèse texte des résultats | ✅ |
+
+### 3.3b Backend — Vérification Historique / Time-Travel (v1.1.1)
+
+| Fonctionnalité | Description | Status |
+|----------------|-------------|--------|
+| **Chargement historique profond** | Binance 2017→maintenant, pagination automatique, upsert idempotent | ✅ |
+| **Time-travel verify** | Se positionner à n'importe quelle date, exécuter le moteur avec seulement les données antérieures | ✅ |
+| **Comparaison prédiction/réalité** | Compare la recommandation du modèle avec la variation réelle à 7j, 30j, 90j | ✅ |
+| **Walk-forward analysis** | Test automatique sur des dizaines/centaines de dates espacées régulièrement | ✅ |
+| **Précision par horizon** | Taux de prédictions correctes par horizon (7j, 30j, 90j) | ✅ |
+| **Mode 100% technique** | En historique, sentiment non dispo → mode dégradé documenté | ✅ |
+| **Résumé global** | Synthèse texte avec accuracy et nombre de points testés | ✅ |
 
 ### 3.4 Backend — Moteur de Décision (v1.0)
 
@@ -272,15 +296,17 @@ bitcoin-trading-assistant/
 - Panel signaux avec jauge, liste, confiance et consensus
 - Panel alertes avec formulaire, liste, notifications polling
 - Panel news avec jauge sentiment, liste articles, filtres, liens cliquables
-- **Panel backtesting avec config, métriques, journal de trades** ← NOUVEAU v1.1
+- **Panel backtesting avec config, métriques, journal de trades** ← v1.1
+- **Panel vérification historique avec chargement, date picker, walk-forward** ← NOUVEAU v1.1.1
 
-### 3.10 Frontend — Composants (v1.1)
+### 3.10 Frontend — Composants (v1.1.1)
 
 | Composant | Description | Status |
 |-----------|-------------|--------|
-| **BacktestPanel** | **Config + métriques (PnL, Sharpe, DD, Win Rate) + journal trades** | **✅ NOUVEAU v1.1** |
+| **VerificationPanel** | **Charger historique + vérifier date + walk-forward + résultats ✅/❌** | **✅ NOUVEAU v1.1.1** |
+| **BacktestPanel** | **Config + métriques (PnL, Sharpe, DD, Win Rate) + journal trades** | **✅ v1.1** |
 | **DecisionPanel** | Scénarios visuels + recommandation + règles collapsibles | ✅ |
-| **Dashboard** | Page principale avec 14 TF + 15 durées + live price + décision + backtest | ✅ **MAJ v1.1** |
+| **Dashboard** | Page principale avec 14 TF + 15 durées + live price + décision + backtest + vérification | ✅ **MAJ v1.1.1** |
 | **CandlestickChart** | Graphique chandeliers (Lightweight Charts) | ✅ |
 | **IndicatorPanel** | Affichage RSI, MACD, SMA, Bollinger avec couleurs | ✅ |
 | **SignalPanel** | Jauge score composite, liste signaux, consensus | ✅ |
@@ -311,9 +337,10 @@ bitcoin-trading-assistant/
 | test_news.py | 43 | Sentiment, impact, RSS, résumé, résilience, endpoints |
 | test_decision.py | 75 | Règles, scénarios, recommandation, intégration, endpoint |
 | **test_backtest.py** | **31** | **Schémas, métriques, intégration DB, endpoints, edge cases** |
+| **test_verification.py** | **33** | **Range, verify, walk-forward, correctness, endpoints, mock loader** |
 | test_binance_and_router.py | 89 | Binance 14 intervalles, DataSourceRouter, combinaisons |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **448** | **Tous passing ✅** |
+| **TOTAL** | **481** | **Tous passing ✅** |
 
 ---
 
@@ -378,7 +405,7 @@ python -m pytest tests/ -v
 | **2** | INFINI v1 | v1.0 → v1.5 | Assistant intelligent, décisionnel | 🔄 **En cours (v1.1 livré)** |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) livrés, prochaine étape : Multi-Assets (v1.2)
+**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) livrés, prochaine étape : Multi-Assets (v1.2)
 
 ---
 
@@ -405,6 +432,7 @@ Le système passe de "BTC uniquement" à "multi-cryptos" :
 | ~~News & Sentiment~~ | ~~v0.9~~ | ✅ **Livré** |
 | ~~Moteur de Décision~~ | ~~v1.0~~ | ✅ **Livré** |
 | ~~Backtesting engine~~ | ~~v1.1~~ | ✅ **Livré** |
+| ~~Vérification historique~~ | ~~v1.1.1~~ | ✅ **Livré** |
 | Multi-Assets (ETH, SOL...) | v1.2 | ❌ Non commencé |
 | Risk management engine | v1.3 | ❌ Non commencé |
 | Paper trading | v1.4 | ❌ Non commencé |

@@ -1,8 +1,8 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v0.8.0
-## Date: 2026-04-02
+## Version: v1.1.1
+## Date: 2026-04-05
 
 ---
 
@@ -38,6 +38,18 @@
 | **FR-ALT-003** | **Évaluation conditions** | **Prix, RSI, MACD hist, score vs seuils** | **✅ PASS** | **test_check_price_above_triggered** |
 | **FR-ALT-004** | **Alertes récurrentes** | **one-shot ou recurring (réarme après trigger)** | **✅ PASS** | **test_recurring_stays_active** |
 | **FR-ALT-005** | **AlertPanel UI** | **Formulaire + liste + notifications polling** | **✅ PASS** | **tsc --noEmit clean** |
+| **FR-BKT-001** | **Replay historique candle par candle** | **POST /backtest/run retourne trades et métriques** | **✅ PASS** | **31 tests passing** |
+| **FR-BKT-002** | **Simulation positions achat/vente** | **Trades générés quand action=acheter/vendre** | **✅ PASS** | **test_run_with_enough_candles** |
+| **FR-BKT-003** | **Métriques de performance** | **Win rate, Sharpe, drawdown, profit factor calculés** | **✅ PASS** | **test_win_rate, test_profit_factor, test_sharpe** |
+| **FR-BKT-004** | **Buy & Hold benchmark** | **Comparaison avec stratégie passive** | **✅ PASS** | **test_buy_and_hold_benchmark** |
+| **FR-BKT-005** | **Warning suroptimisation** | **Alerte si <10 trades ou Sharpe >3.0** | **✅ PASS** | **test_overfitting_warning_few_trades** |
+| **FR-BKT-006** | **BacktestPanel UI** | **Config + métriques + journal trades** | **✅ PASS** | **tsc --noEmit clean** |
+| **FR-VER-001** | **Chargement historique profond** | **POST /backtest/history/load retourne fetched + inserted** | **✅ PASS** | **33 tests passing** |
+| **FR-VER-002** | **Plage de dates en base** | **GET /backtest/history/range retourne min/max date** | **✅ PASS** | **test_get_history_range_with_data** |
+| **FR-VER-003** | **Time-travel verify** | **POST /backtest/verify retourne prédiction + outcomes** | **✅ PASS** | **test_verify_returns_prediction** |
+| **FR-VER-004** | **Comparaison prédiction/réalité** | **Outcomes 7j/30j/90j avec correct=true/false** | **✅ PASS** | **test_buy_hausse_is_correct, test_sell_baisse_is_correct** |
+| **FR-VER-005** | **Walk-forward analysis** | **POST /backtest/walk-forward retourne accuracy par horizon** | **✅ PASS** | **test_walk_forward_accuracy_structure** |
+| **FR-VER-006** | **VerificationPanel UI** | **Charger historique + date picker + résultats + walk-forward** | **✅ PASS** | **tsc --noEmit clean** |
 
 ---
 
@@ -47,7 +59,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 210 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 481 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 
@@ -116,4 +128,8 @@
 | **test_signals.py** | **52** | **✅** |
 | **test_alerts.py** | **48** | **✅** |
 | **test_news.py** | **43** | **✅** |
-| **Total** | **253** | ✅ |
+| **test_decision.py** | **75** | **✅** |
+| **test_backtest.py** | **31** | **✅** |
+| **test_verification.py** | **33** | **✅** |
+| **test_binance_and_router.py** | **89** | **✅** |
+| **Total** | **481** | ✅ |

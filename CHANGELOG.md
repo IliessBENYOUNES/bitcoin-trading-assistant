@@ -2,6 +2,73 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - 2026-04-04
+
+### Added
+- **Vérification Historique v1.1.1** : Système de time-travel backtest permettant de vérifier les prédictions du modèle sur l'historique profond
+- `verification_service.py` : Service de vérification avec verify_at_date() + walk_forward()
+- `history_loader_service.py` : Chargement historique profond Binance 2017→maintenant avec pagination et upsert idempotent
+- `verification.py` schemas : HistoryLoadConfig, HistoryLoadResponse, HistoryRangeResponse, VerificationRequest, VerificationResult, HorizonOutcome, WalkForwardConfig, WalkForwardResult, HorizonAccuracy
+- `POST /backtest/history/load` : Charger l'historique BTC depuis Binance (2017→now)
+- `GET /backtest/history/range` : Plage de dates disponible en base
+- `POST /backtest/verify` : Vérification ponctuelle à une date (time-travel)
+- `POST /backtest/walk-forward` : Analyse walk-forward complète avec précision par horizon
+- **Comparaison prédiction/réalité** : Compare la recommandation du modèle avec la variation réelle à 7j, 30j, 90j
+- **Walk-forward analysis** : Test automatique sur des dizaines de dates espacées régulièrement
+- **Précision par horizon** : Taux de prédictions correctes par horizon (7j, 30j, 90j)
+- `VerificationPanel.tsx` : UI pour charger historique, choisir une date, voir résultats ✅/❌, lancer walk-forward
+- **33 nouveaux tests backend** : range, verify, walk-forward, correctness (7 cas), schemas (6), endpoints (5), mock loader
+
+### Changed
+- Dashboard intègre le VerificationPanel dans la grille
+- `schemas/__init__.py` : export des schémas verification
+- `routes/__init__.py` : export du router verification
+- `main.py` : inclusion du router verification
+- `marketApi.ts` : ajout des fonctions API verification
+- `types/api.ts` + `types/index.ts` : types Verification
+
+### Technical
+- 481 tests backend passing (448 → 481, +33)
+- Frontend tsc --noEmit sans erreur
+- Mode 100% technique en historique (sentiment non disponible, documenté)
+- Limitation connue : le sentiment historique sera ajouté en v1.2.5
+
+## [1.1.0] - 2026-04-03
+
+### Added
+- **Backtesting Engine v1.1**: Moteur de replay historique validant empiriquement les decisions du moteur v1.0
+- `backtest_service.py` : Replay candle par candle avec recalcul indicateurs/signaux/decision a chaque pas
+- `backtest.py` schemas : BacktestConfig, BacktestTradeItem, BacktestMetrics, EquityPoint, BacktestMeta, BacktestResponse, TradeDirection
+- `POST /backtest/run` : Endpoint lançant un backtest complet avec parametres configurables
+- `backtest.py` route : Endpoint avec gestion d'erreurs (422/500)
+- **Simulation de positions** : Achat quand action=acheter, vente quand action=vendre, un seul trade a la fois
+- **Metriques completes** : Win rate, Sharpe ratio, max drawdown, profit factor, PnL net/%, avg trade duration
+- **Buy & Hold benchmark** : Comparaison automatique avec strategie passive
+- **Equity curve** : Capital + drawdown a chaque pas de temps
+- **Journal de trades** : Liste detaillee (entree, sortie, PnL, duree, raison)
+- **Warning suroptimisation** : Alerte si <10 trades ou Sharpe >3.0
+- **Cloture automatique** : Position ouverte en fin de backtest fermee automatiquement
+- **Warmup indicateurs** : Skip des premieres candles (min 5, max 30) pour convergence
+- `BacktestPanel.tsx` : UI premium avec config (jours, capital), metriques visuelles, journal collapsible
+- `useBacktest.ts` : Hook React avec launch/reset/loading/error
+- Types TypeScript : TradeDirection, BacktestConfig, BacktestTradeItem, BacktestMetrics, EquityPoint, BacktestMeta, BacktestResponse
+- **31 nouveaux tests backend** : schemas (6), metriques (9), integration DB (6), endpoints HTTP (5), edge cases (5)
+
+### Changed
+- Dashboard integre le BacktestPanel dans la grille "Analyse du marche"
+- `marketApi.ts` : ajout de `runBacktest()`
+- `schemas/__init__.py` : export des schemas backtest
+- `routes/__init__.py` : export du router backtest
+- `main.py` : inclusion du router backtest
+- `types/api.ts` + `types/index.ts` : barrel exports des types Backtest
+
+### Technical
+- 448 tests backend passing (417 -> 448, +31)
+- Frontend tsc --noEmit sans erreur
+- Aucune nouvelle dependance npm/pip
+- Pas de slippage ni frais simules (resultats optimistes, documente)
+- Un seul trade a la fois (pas de positions multiples)
+
 ## [1.0.0] - 2026-04-02
 
 ### Added
