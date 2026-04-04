@@ -127,6 +127,7 @@ const CombinedScoreGauge: React.FC<{
   sentimentAvailable: boolean;
 }> = ({ combinedScore, technicalScore, sentimentScore, sentimentAvailable }) => {
   const color = getScoreColor(combinedScore);
+  // L'angle va de -90° (score -100, gauche) à +90° (score +100, droite)
   const angle = (combinedScore / 100) * 90;
   const radians = ((angle - 90) * Math.PI) / 180;
   const radius = 70;
@@ -136,8 +137,10 @@ const CombinedScoreGauge: React.FC<{
   const y = cy + radius * Math.sin(radians);
   const bgPath = `M ${cx - radius} ${cy} A ${radius} ${radius} 0 0 1 ${cx + radius} ${cy}`;
   const startX = cx - radius;
-  const largeArc = angle > 0 ? 1 : 0;
-  const fgPath = `M ${startX} ${cy} A ${radius} ${radius} 0 ${largeArc} 1 ${x} ${y}`;
+  // L'arc de la jauge ne dépasse jamais 180° (il couvre [0°, 180°] du demi-cercle)
+  // donc largeArc est toujours 0 (arc mineur). Avec 1, l'arc passait par le bas
+  // du cercle (hors viewBox), ce qui causait un décalage visuel du vert.
+  const fgPath = `M ${startX} ${cy} A ${radius} ${radius} 0 0 1 ${x} ${y}`;
 
   return (
     <Box sx={{ textAlign: 'center', py: 1, position: 'relative' }}>

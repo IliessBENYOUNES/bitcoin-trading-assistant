@@ -128,8 +128,8 @@ const ScoreGauge: React.FC<{ score: number; direction: SignalDirection }> = ({ s
   const y = cy + radius * Math.sin(radians);
   const bgPath = `M ${cx - radius} ${cy} A ${radius} ${radius} 0 0 1 ${cx + radius} ${cy}`;
   const startX = cx - radius;
-  const largeArc = angle > 0 ? 1 : 0;
-  const fgPath = `M ${startX} ${cy} A ${radius} ${radius} 0 ${largeArc} 1 ${x} ${y}`;
+  // L'arc ne dépasse jamais 180° → toujours arc mineur (largeArc=0)
+  const fgPath = `M ${startX} ${cy} A ${radius} ${radius} 0 0 1 ${x} ${y}`;
 
   // Background glow based on direction
   const bgGradient = direction === 'bullish'
