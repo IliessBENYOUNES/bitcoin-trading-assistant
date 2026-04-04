@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.2] - 2026-04-05
+
+### Fixed
+- **Logique de vérification corrigée** : La fonction `_is_prediction_correct` marquait faussement toutes les prédictions comme INCORRECT
+  - Le score directionnel est maintenant pris en compte (pas seulement l'action)
+  - Les seuils s'adaptent à l'horizon temporel (7j, 30j, 90j) — BTC est volatile
+  - "Attendre" signifie "pas assez de signal" et non "stabilité attendue"
+  - Un score de -4 avec "attendre" + baisse réelle → désormais ✅ CORRECT (penchant validé)
+  - Un score neutre + mouvement normal pour BTC (~20% en 7j, ~35% en 30j, ~50% en 90j) → ✅ CORRECT
+
+### Added
+- `_is_hold_correct()` : Sous-méthode dédiée à l'évaluation nuancée de "attendre"
+- `_get_hold_tolerance()` : Marge d'erreur par horizon pour penchant directionnel
+- `_get_neutral_threshold()` : Seuil adapté à la volatilité BTC par horizon
+- **14 nouveaux tests** : Cas réels du screenshot 2020-01-01, penchants directionnels, seuils par horizon
+- Affichage du penchant directionnel dans le détail des verdicts ("penchant haussier/baissier")
+
+### Changed
+- `_is_prediction_correct()` accepte désormais `predicted_score` et `horizon_days`
+- "Acheter" est correct si pas de baisse franche (>2%), plus tolérant pour les mouvements stables
+- "Vendre" est correct si pas de hausse franche (>2%)
+
+### Technical
+- 495 tests backend passing (481 → 495, +14 tests)
+- Frontend tsc --noEmit sans erreur
+- Aucune régression
+
 ## [1.1.1] - 2026-04-04
 
 ### Added

@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 5 avril 2026
-> **Version :** v1.1.1
+> **Version :** v1.1.2
 > **Branche :** `master`
-> **Dernier commit :** docs(roadmap): add Phase v3.0 ML Convergent + detailed API pricing + coverage analysis
+> **Dernier commit :** fix(verification): rewrite _is_prediction_correct with score-aware + horizon-scaled logic
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.1.1** |
+| Version courante | **v1.1.2** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **481 tests**, tous passing ✅ |
+| Tests backend | **495 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -337,10 +337,10 @@ bitcoin-trading-assistant/
 | test_news.py | 43 | Sentiment, impact, RSS, résumé, résilience, endpoints |
 | test_decision.py | 75 | Règles, scénarios, recommandation, intégration, endpoint |
 | **test_backtest.py** | **31** | **Schémas, métriques, intégration DB, endpoints, edge cases** |
-| **test_verification.py** | **33** | **Range, verify, walk-forward, correctness, endpoints, mock loader** |
+| **test_verification.py** | **47** | **Range, verify, walk-forward, correctness (21 cas), endpoints, mock loader** |
 | test_binance_and_router.py | 89 | Binance 14 intervalles, DataSourceRouter, combinaisons |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **481** | **Tous passing ✅** |
+| **TOTAL** | **495** | **Tous passing ✅** |
 
 ---
 
@@ -450,3 +450,4 @@ Le système passe de "BTC uniquement" à "multi-cryptos" :
 | 2 | Vite build warning : chunk > 500 kB | ⚠️ Low | Suggestion de code-splitting |
 | 3 | News RSS peuvent être indisponibles (timeout) | ⚠️ Low | Géré par fallback + cache TTL 5min |
 | 4 | Backtest sans frais/slippage | ⚠️ Low | Résultats optimistes, documenté dans le code |
+| ~~5~~ | ~~Vérification marquait toutes les prédictions INCORRECT~~ | ~~🔴 High~~ | ~~✅ Corrigé v1.1.2 — logique score-aware + horizon-scaled~~ |

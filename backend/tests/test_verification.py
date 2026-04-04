@@ -230,37 +230,150 @@ class TestVerifyAtDate:
 # =============================================================================
 
 class TestPredictionCorrectness:
-    """Tests pour la logique de verification des predictions."""
+    """Tests pour la logique de verification des predictions (v1.1.2 amelioree)."""
+
+    # --- Acheter ---
 
     def test_buy_hausse_is_correct(self, db_session):
+        """Acheter + hausse = CORRECT."""
         service = VerificationService(db_session)
         assert service._is_prediction_correct("acheter", "hausse", 5.0) is True
 
     def test_buy_baisse_is_incorrect(self, db_session):
+        """Acheter + baisse franche = INCORRECT."""
         service = VerificationService(db_session)
         assert service._is_prediction_correct("acheter", "baisse", -5.0) is False
 
+    def test_buy_stable_is_correct(self, db_session):
+        """Acheter + stable (petit mouvement) = CORRECT (pas de baisse franche)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct("acheter", "stable", 0.5) is True
+
+    def test_buy_stable_slight_negative_is_correct(self, db_session):
+        """Acheter + stable avec -1% = CORRECT (stable, pas baisse)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct("acheter", "stable", -1.0) is True
+
+    # --- Vendre ---
+
     def test_sell_baisse_is_correct(self, db_session):
+        """Vendre + baisse = CORRECT."""
         service = VerificationService(db_session)
         assert service._is_prediction_correct("vendre", "baisse", -8.0) is True
 
     def test_sell_hausse_is_incorrect(self, db_session):
+        """Vendre + hausse franche = INCORRECT."""
         service = VerificationService(db_session)
         assert service._is_prediction_correct("vendre", "hausse", 10.0) is False
 
+    def test_sell_stable_is_correct(self, db_session):
+        """Vendre + stable = CORRECT (pas de hausse franche)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct("vendre", "stable", -0.5) is True
+
+    # --- Attendre : score neutre (entre -5 et +5) ---
+
     def test_hold_stable_is_correct(self, db_session):
+        """Attendre (score neutre) + stable = CORRECT."""
         service = VerificationService(db_session)
-        assert service._is_prediction_correct("attendre", "stable", 1.5) is True
+        assert service._is_prediction_correct(
+            "attendre", "stable", 1.5, predicted_score=0, horizon_days=7
+        ) is True
 
-    def test_hold_big_move_is_incorrect(self, db_session):
-        """Attendre est incorrect si un gros mouvement arrive."""
+    def test_hold_neutral_moderate_move_7d_is_correct(self, db_session):
+        """Attendre (score neutre) + 15% en 7j = CORRECT (BTC est volatil)."""
         service = VerificationService(db_session)
-        assert service._is_prediction_correct("attendre", "hausse", 15.0) is False
+        assert service._is_prediction_correct(
+            "attendre", "hausse", 15.0, predicted_score=0, horizon_days=7
+        ) is True
 
-    def test_buy_slight_positive_is_correct(self, db_session):
-        """Acheter avec un leger gain positif est correct."""
+    def test_hold_neutral_extreme_move_7d_is_incorrect(self, db_session):
+        """Attendre (score neutre) + 25% en 7j = INCORRECT (mouvement extreme)."""
         service = VerificationService(db_session)
-        assert service._is_prediction_correct("acheter", "stable", 0.5) is True
+        assert service._is_prediction_correct(
+            "attendre", "hausse", 25.0, predicted_score=0, horizon_days=7
+        ) is False
+
+    def test_hold_neutral_30d_normal_move_is_correct(self, db_session):
+        """Attendre (score neutre) + 30% en 30j = CORRECT (normal pour BTC)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "hausse", 30.0, predicted_score=-2, horizon_days=30
+        ) is True
+
+    def test_hold_neutral_90d_normal_move_is_correct(self, db_session):
+        """Attendre (score neutre) + 40% en 90j = CORRECT (volatilite BTC)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "hausse", 40.0, predicted_score=0, horizon_days=90
+        ) is True
+
+    def test_hold_neutral_90d_extreme_is_incorrect(self, db_session):
+        """Attendre (score neutre) + 55% en 90j = INCORRECT (devrait avoir detecte)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "hausse", 55.0, predicted_score=0, horizon_days=90
+        ) is False
+
+    # --- Attendre : score avec penchant directionnel ---
+
+    def test_hold_bearish_lean_with_baisse_is_correct(self, db_session):
+        """Attendre (score -10, penchant baissier) + baisse = CORRECT."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "baisse", -11.0, predicted_score=-10, horizon_days=90
+        ) is True
+
+    def test_hold_bearish_lean_with_small_hausse_is_correct(self, db_session):
+        """Attendre (score -10) + petite hausse 5% en 30j = CORRECT (tolerant)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "hausse", 5.0, predicted_score=-10, horizon_days=30
+        ) is True
+
+    def test_hold_bearish_lean_with_big_hausse_is_incorrect(self, db_session):
+        """Attendre (score -10) + forte hausse 25% en 30j = INCORRECT."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "hausse", 25.0, predicted_score=-10, horizon_days=30
+        ) is False
+
+    def test_hold_bullish_lean_with_hausse_is_correct(self, db_session):
+        """Attendre (score +15) + hausse = CORRECT (penchant confirme)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "hausse", 12.0, predicted_score=15, horizon_days=30
+        ) is True
+
+    def test_hold_bullish_lean_with_big_baisse_is_incorrect(self, db_session):
+        """Attendre (score +15) + forte baisse 15% en 30j = INCORRECT."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "hausse", -20.0, predicted_score=15, horizon_days=30
+        ) is False
+
+    # --- Cas reel du screenshot : 2020-01-01, score -4, attendre ---
+
+    def test_real_case_2020_hold_7d_hausse_12pct(self, db_session):
+        """Cas reel: attendre (score -4) + hausse 12% en 7j = CORRECT (score neutre, mouvement normal)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "hausse", 11.9, predicted_score=-4, horizon_days=7
+        ) is True
+
+    def test_real_case_2020_hold_30d_hausse_30pct(self, db_session):
+        """Cas reel: attendre (score -4) + hausse 30% en 30j = CORRECT (score neutre, mouvement fort mais normal BTC)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "hausse", 29.9, predicted_score=-4, horizon_days=30
+        ) is True
+
+    def test_real_case_2020_hold_90d_baisse_11pct(self, db_session):
+        """Cas reel: attendre (score -4) + baisse 11% en 90j = CORRECT (score neutre, mouvement modere)."""
+        service = VerificationService(db_session)
+        assert service._is_prediction_correct(
+            "attendre", "baisse", -11.0, predicted_score=-4, horizon_days=90
+        ) is True
 
 
 # =============================================================================

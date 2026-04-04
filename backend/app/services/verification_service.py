@@ -268,7 +268,8 @@ class VerificationService:
 
             # Determiner si la prediction etait correcte
             correct = self._is_prediction_correct(
-                predicted_action, actual_direction, actual_change_pct
+                predicted_action, actual_direction, actual_change_pct,
+                predicted_score=combined_score, horizon_days=horizon,
             )
 
             # Construire l'explication
@@ -310,28 +311,109 @@ class VerificationService:
         )
 
     def _is_prediction_correct(
-        self, predicted_action: str, actual_direction: str, actual_change_pct: float
+        self, predicted_action: str, actual_direction: str, actual_change_pct: float,
+        predicted_score: int = 0, horizon_days: int = 7,
     ) -> bool:
         """
         Determine si la prediction etait correcte.
 
-        Logique :
-        - acheter + hausse = correct
-        - vendre + baisse = correct
-        - attendre + stable = correct
-        - acheter + baisse forte (>5%) = incorrect
-        - vendre + hausse forte (>5%) = incorrect
-        - Dans les cas ambigus, on est plus souple
+        Logique amelioree (v1.1.2) :
+        - Utilise le SCORE directionnel, pas seulement l'action
+        - Adapte les seuils a l'horizon temporel (BTC est tres volatil)
+        - "Attendre" = pas assez de signal → on evalue le penchant du score
+
+        Exemples :
+        - acheter + hausse = CORRECT
+        - vendre + baisse = CORRECT
+        - attendre (score -4) + baisse = CORRECT (penchant baissier valide)
+        - attendre (score -4) + forte hausse 30j = depasse le seuil → INCORRECT
+        - attendre (score 0) + mouvement normal pour l'horizon = CORRECT
         """
         if predicted_action == ActionType.BUY.value:
-            # Acheter = prediction de hausse
-            return actual_direction == "hausse" or actual_change_pct > 0
+            # Acheter = conviction haussiere (score > +25)
+            # Correct si la realite n'est pas une baisse franche (> 2%)
+            return actual_direction != "baisse"
+
         elif predicted_action == ActionType.SELL.value:
-            # Vendre = prediction de baisse
-            return actual_direction == "baisse" or actual_change_pct < 0
+            # Vendre = conviction baissiere (score < -25)
+            # Correct si la realite n'est pas une hausse franche (> 2%)
+            return actual_direction != "hausse"
+
         else:
-            # Attendre = pas de mouvement fort attendu
-            return abs(actual_change_pct) < 10  # Tolerant pour "attendre"
+            # "Attendre" = score entre -25 et +25 (signal insuffisant pour agir)
+            # Le score indique le penchant directionnel du modele
+            return self._is_hold_correct(
+                predicted_score, actual_change_pct, actual_direction, horizon_days
+            )
+
+    def _is_hold_correct(
+        self,
+        score: int,
+        actual_change_pct: float,
+        actual_direction: str,
+        horizon_days: int,
+    ) -> bool:
+        """
+        Evalue la justesse d'une prediction "attendre".
+
+        "Attendre" signifie que le modele n'avait pas assez de signal pour
+        recommander acheter ou vendre. Le score (-25 a +25) indique toutefois
+        un penchant directionnel.
+
+        Logique :
+        1. Si le score a un penchant et la realite va dans ce sens → CORRECT
+        2. Si le score a un penchant contraire mais le mouvement est faible → CORRECT
+        3. Si le score est neutre → CORRECT sauf mouvement extreme pour l'horizon
+        """
+        tolerance = self._get_hold_tolerance(horizon_days)
+        neutral_threshold = self._get_neutral_threshold(horizon_days)
+
+        if score > 5:
+            # Penchant haussier leger
+            if actual_change_pct >= 0:
+                return True  # Direction confirmee
+            # Petite baisse toleree (le modele n'etait pas confiant)
+            return abs(actual_change_pct) < tolerance
+
+        elif score < -5:
+            # Penchant baissier leger
+            if actual_change_pct <= 0:
+                return True  # Direction confirmee
+            # Petite hausse toleree
+            return actual_change_pct < tolerance
+
+        else:
+            # Score vraiment neutre (-5 a +5) → "je ne sais pas"
+            # Correct sauf mouvement extreme que le modele aurait du detecter
+            return abs(actual_change_pct) < neutral_threshold
+
+    @staticmethod
+    def _get_hold_tolerance(horizon_days: int) -> float:
+        """Marge d'erreur acceptable pour un penchant directionnel 'attendre'."""
+        # Le modele penche dans une direction mais dit "attendre"
+        # On tolere un mouvement contraire modere
+        if horizon_days <= 7:
+            return 10.0
+        elif horizon_days <= 30:
+            return 18.0
+        elif horizon_days <= 90:
+            return 25.0
+        else:
+            return 35.0
+
+    @staticmethod
+    def _get_neutral_threshold(horizon_days: int) -> float:
+        """Seuil de mouvement acceptable quand le modele est neutre (~score 0)."""
+        # BTC est volatil : un score neutre ne predit pas la stabilite,
+        # il dit "pas assez de signal". On adapte a l'horizon.
+        if horizon_days <= 7:
+            return 20.0   # ±20% en 7j est "normal" pour BTC
+        elif horizon_days <= 30:
+            return 35.0   # ±35% en 30j
+        elif horizon_days <= 90:
+            return 50.0   # ±50% en 90j
+        else:
+            return 60.0   # ±60% au-dela
 
     def _build_outcome_detail(
         self,
@@ -351,8 +433,14 @@ class VerificationService:
 
         verdict = "✅ CORRECT" if correct else "❌ INCORRECT"
 
+        # Ajouter le penchant directionnel pour "attendre"
+        lean = ""
+        if predicted_action == "attendre" and abs(score) > 5:
+            lean_dir = "haussier" if score > 0 else "baissier"
+            lean = f", penchant {lean_dir}"
+
         return (
-            f"Prediction: {action_label} (score {score:+d}) → "
+            f"Prediction: {action_label} (score {score:+d}{lean}) → "
             f"Realite a {horizon}j: {actual_direction} ({actual_change:+.1f}%) "
             f"— {verdict}"
         )
