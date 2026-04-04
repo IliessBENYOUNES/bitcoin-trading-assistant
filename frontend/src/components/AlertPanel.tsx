@@ -402,6 +402,7 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
           px: 2,
           py: 1,
           borderBottom: '1px solid rgba(255,255,255,0.06)',
+          flexShrink: 0,
         }}
       >
         <Chip
@@ -411,15 +412,16 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
           variant="outlined"
           sx={{ fontSize: '0.7rem' }}
         />
-        {triggeredCount > 0 && (
-          <Chip
-            label={`${triggeredCount} déclenchée${triggeredCount > 1 ? 's' : ''}`}
-            size="small"
-            color="warning"
-            variant="outlined"
-            sx={{ fontSize: '0.7rem' }}
-          />
-        )}
+        <Chip
+          label={`${triggeredCount} déclenchée${triggeredCount > 1 ? 's' : ''}`}
+          size="small"
+          color="warning"
+          variant="outlined"
+          sx={{
+            fontSize: '0.7rem',
+            opacity: triggeredCount > 0 ? 1 : 0.3,
+          }}
+        />
         <Box sx={{ flex: 1 }} />
         <Tooltip title="Vérifier les alertes maintenant">
           <IconButton
@@ -535,7 +537,7 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
           </List>
         )}
 
-        {/* Compteurs résumé */}
+        {/* Compteurs résumé — toujours visibles pour layout stable */}
         {alerts.length > 0 && (
           <>
             <Divider sx={{ my: 1.5 }} />
@@ -548,12 +550,19 @@ export const AlertPanel: React.FC<AlertPanelProps> = ({
               <Chip
                 label={`${triggeredCount} déclenchée${triggeredCount > 1 ? 's' : ''}`}
                 size="small"
-                sx={{ backgroundColor: '#ff980020', color: '#ff9800' }}
+                sx={{
+                  backgroundColor: triggeredCount > 0 ? '#ff980020' : 'transparent',
+                  color: triggeredCount > 0 ? '#ff9800' : 'text.disabled',
+                  opacity: triggeredCount > 0 ? 1 : 0.4,
+                }}
               />
               <Chip
                 label={`${alerts.length - activeCount - triggeredCount} désactivée${(alerts.length - activeCount - triggeredCount) > 1 ? 's' : ''}`}
                 size="small"
                 variant="outlined"
+                sx={{
+                  opacity: (alerts.length - activeCount - triggeredCount) > 0 ? 1 : 0.4,
+                }}
               />
             </Stack>
           </>
