@@ -3,13 +3,15 @@ Service de persistance des news crypto en base de données.
 
 Ce service gère :
 1. La persistance automatique des news RSS collectées par NewsService
-2. Le calcul d'un score de sentiment agrégé par jour (pour le walk-forward)
-3. La requête d'articles et de sentiment historique à une date donnée
+2. La persistance des news CryptoCompare (historique depuis 2015, gratuit)
+3. Le calcul d'un score de sentiment agrégé par jour (pour le walk-forward)
+4. La requête d'articles et de sentiment historique à une date donnée
 
 ARCHITECTURE :
 - NewsService (existant) collecte via RSS + cache mémoire 5min → temps réel
-- NewsHistoryService (nouveau) persiste en DB → historique permanent
-- Le scheduler appelle persist_current_news() toutes les 30 minutes
+- CryptoCompareService (v1.2.3b) collecte via API JSON → historique profond
+- NewsHistoryService persiste en DB → historique permanent
+- Le scheduler appelle persist_current_news() + persist_cryptocompare_recent()
 
 SCORE DE SENTIMENT PAR ARTICLE :
 - positive + high impact → +75
@@ -398,7 +400,221 @@ class NewsHistoryService:
             "total_articles": total,
         }
 
+    # ================================================================
+    # CHARGEMENT CRYPTOCOMPARE NEWS HISTORIQUES (v1.2.3b)
+    # ================================================================
+
+    def load_cryptocompare_history(
+        self,
+        start_year: int = 2015,
+        max_pages: int = 100,
+        categories: str = "BTC",
+    ) -> dict:
+        """
+        Charge les news historiques depuis CryptoCompare et les persiste en base.
+
+        Pagination en arrière via lTs (last timestamp).
+        S'arrête quand :
+        - Les articles sont antérieurs à start_year
+        - Il n'y a plus d'articles
+        - max_pages est atteint
+
+        DELTA LOADING : commence à partir du plus ancien article CryptoCompare
+        déjà en base, pour ne charger que ce qui manque.
+
+        Args:
+            start_year: Année de départ (défaut: 2015)
+            max_pages: Maximum de pages à charger (garde-fou)
+            categories: Catégories CryptoCompare (défaut: BTC)
+
+        Returns:
+            dict avec inserted, skipped, total_fetched, pages_loaded, etc.
+        """
+        from app.services.cryptocompare_service import (
+            CryptoCompareService,
+            CRYPTOCOMPARE_SOURCE,
+            CRYPTOCOMPARE_PAGE_DELAY,
+        )
+
+        t0 = time.time()
+
+        # Delta loading : trouver le plus ancien article CryptoCompare en base
+        oldest_in_db = (
+            self.db.query(func.min(NewsHistory.published_at))
+            .filter(NewsHistory.source == CRYPTOCOMPARE_SOURCE)
+            .scalar()
+        )
+
+        # Déterminer le lTs de départ
+        start_lts = None
+        if oldest_in_db is not None:
+            # Commencer juste avant le plus ancien article existant
+            start_lts = int(oldest_in_db.timestamp())
+            logger.info(
+                f"CryptoCompare: delta mode — DB a des données depuis "
+                f"{oldest_in_db.date()}, pagination à partir de lTs={start_lts}"
+            )
+        else:
+            logger.info("CryptoCompare: full mode — premier chargement")
+
+        # Limite de date : s'arrêter avant start_year
+        stop_timestamp = int(datetime(start_year, 1, 1, tzinfo=timezone.utc).timestamp())
+
+        client = CryptoCompareService()
+        total_fetched = 0
+        total_inserted = 0
+        total_skipped = 0
+        pages_loaded = 0
+        next_lts = start_lts
+
+        for page in range(max_pages):
+            items, new_lts = client.fetch_news_page(
+                lTs=next_lts, categories=categories
+            )
+
+            if not items:
+                logger.info(f"CryptoCompare: page {page + 1} vide, arrêt")
+                break
+
+            pages_loaded += 1
+            total_fetched += len(items)
+
+            # Persister chaque article via _upsert_news_item
+            page_inserted = 0
+            reached_start = False
+
+            for item in items:
+                # Vérifier si on a dépassé start_year
+                if item.published_at and item.published_at.timestamp() < stop_timestamp:
+                    reached_start = True
+                    continue
+
+                result = self._upsert_news_item(item)
+                if result == "inserted":
+                    page_inserted += 1
+                    total_inserted += 1
+                else:
+                    total_skipped += 1
+
+            # Commit par page (pas par article) pour la performance
+            self.db.commit()
+
+            logger.info(
+                f"CryptoCompare page {page + 1}: "
+                f"{page_inserted} insérés / {len(items)} articles"
+            )
+
+            # Conditions d'arrêt
+            if reached_start:
+                logger.info(
+                    f"CryptoCompare: atteint l'année {start_year}, arrêt"
+                )
+                break
+
+            if new_lts is None or (next_lts is not None and new_lts >= next_lts):
+                logger.info("CryptoCompare: plus de pagination possible, arrêt")
+                break
+
+            next_lts = new_lts
+
+            # Rate limiting entre les pages
+            if page < max_pages - 1:
+                time.sleep(CRYPTOCOMPARE_PAGE_DELAY)
+
+        total_in_db = self._count_total()
+        cc_count = self._count_by_source(CRYPTOCOMPARE_SOURCE)
+        duration = round(time.time() - t0, 2)
+
+        logger.info(
+            f"CryptoCompare historique: {total_inserted} insérés, "
+            f"{total_skipped} déjà en base, {pages_loaded} pages chargées "
+            f"({duration}s). Total CryptoCompare: {cc_count}, Total DB: {total_in_db}"
+        )
+
+        return {
+            "source": CRYPTOCOMPARE_SOURCE,
+            "pages_loaded": pages_loaded,
+            "total_fetched": total_fetched,
+            "inserted": total_inserted,
+            "skipped": total_skipped,
+            "total_cryptocompare": cc_count,
+            "total_in_db": total_in_db,
+            "duration_seconds": duration,
+        }
+
+    def persist_cryptocompare_recent(self) -> dict:
+        """
+        Persiste les news CryptoCompare les plus récentes (1 page).
+
+        Utilisé par le scheduler pour enrichir le corpus en continu.
+        Plus léger que load_cryptocompare_history() (une seule requête).
+
+        Returns:
+            dict avec inserted, skipped, total_in_db
+        """
+        from app.services.cryptocompare_service import (
+            CryptoCompareService,
+            CRYPTOCOMPARE_SOURCE,
+        )
+
+        t0 = time.time()
+
+        client = CryptoCompareService()
+        items = client.fetch_all_recent(max_pages=1)
+
+        if not items:
+            logger.info("CryptoCompare recent: aucune news")
+            return {
+                "source": CRYPTOCOMPARE_SOURCE,
+                "inserted": 0,
+                "skipped": 0,
+                "total_fetched": 0,
+                "total_in_db": self._count_total(),
+                "duration_seconds": round(time.time() - t0, 2),
+            }
+
+        inserted = 0
+        skipped = 0
+
+        for item in items:
+            result = self._upsert_news_item(item)
+            if result == "inserted":
+                inserted += 1
+            else:
+                skipped += 1
+
+        self.db.commit()
+
+        total_in_db = self._count_total()
+        duration = round(time.time() - t0, 2)
+
+        logger.info(
+            f"CryptoCompare recent: {inserted} insérés, "
+            f"{skipped} déjà en base sur {len(items)} articles ({duration}s)"
+        )
+
+        return {
+            "source": CRYPTOCOMPARE_SOURCE,
+            "inserted": inserted,
+            "skipped": skipped,
+            "total_fetched": len(items),
+            "total_in_db": total_in_db,
+            "duration_seconds": duration,
+        }
+
+    # ================================================================
+    # UTILITAIRES INTERNES
+    # ================================================================
+
     def _count_total(self) -> int:
         """Nombre total d'articles en base."""
         return self.db.query(func.count(NewsHistory.id)).scalar() or 0
+
+    def _count_by_source(self, source: str) -> int:
+        """Nombre d'articles en base pour une source donnée."""
+        return (
+            self.db.query(func.count(NewsHistory.id))
+            .filter(NewsHistory.source == source)
+            .scalar()
+        ) or 0
 

@@ -2,12 +2,13 @@
 Routes API pour les news et le sentiment.
 
 Endpoints :
-- GET  /news                   : Liste des articles récents avec sentiment et impact
-- GET  /news/sentiment         : Résumé du sentiment global uniquement
-- POST /news/history/persist   : Persister les news RSS actuelles en base
-- GET  /news/history/range     : Plage de dates des news en base
-- GET  /news/history/coverage  : Couverture par source
-- GET  /news/history/at-date   : Articles et sentiment agrégé à une date
+- GET  /news                             : Liste des articles récents avec sentiment et impact
+- GET  /news/sentiment                   : Résumé du sentiment global uniquement
+- POST /news/history/persist             : Persister les news RSS actuelles en base
+- POST /news/history/load-cryptocompare  : Charger les news CryptoCompare historiques
+- GET  /news/history/range               : Plage de dates des news en base
+- GET  /news/history/coverage            : Couverture par source
+- GET  /news/history/at-date             : Articles et sentiment agrégé à une date
 """
 
 from fastapi import APIRouter, Query, Depends
@@ -70,6 +71,37 @@ def persist_news(db: Session = Depends(get_db)):
     """Persiste les news RSS actuelles en base de données."""
     service = NewsHistoryService(db)
     return service.persist_current_news()
+
+
+@router.post(
+    "/history/load-cryptocompare",
+    summary="Charger les news CryptoCompare historiques",
+    description=(
+        "Charge les news crypto historiques depuis l'API CryptoCompare (gratuit, "
+        "depuis 2015). Pagine en arrière jusqu'à start_year. "
+        "Idempotent : relancer ne crée pas de doublons (dédoublonnage par URL). "
+        "Le chargement complet peut prendre plusieurs minutes selon max_pages."
+    ),
+)
+def load_cryptocompare_news(
+    start_year: int = Query(
+        default=2015,
+        ge=2010, le=2026,
+        description="Année de départ (défaut: 2015)",
+    ),
+    max_pages: int = Query(
+        default=100,
+        ge=1, le=1000,
+        description="Nombre max de pages à charger (défaut: 100, ~50 articles/page)",
+    ),
+    db: Session = Depends(get_db),
+):
+    """Charge les news CryptoCompare historiques en base."""
+    service = NewsHistoryService(db)
+    return service.load_cryptocompare_history(
+        start_year=start_year,
+        max_pages=max_pages,
+    )
 
 
 @router.get(

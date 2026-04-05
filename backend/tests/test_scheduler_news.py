@@ -83,9 +83,21 @@ class TestFetchNewsJobExecution:
             "duration_seconds": 1.5,
         }
 
+        mock_cc_result = {
+            "source": "CryptoCompare",
+            "inserted": 3,
+            "skipped": 7,
+            "total_fetched": 10,
+            "total_in_db": 100,
+            "duration_seconds": 0.5,
+        }
+
         with patch(
             "app.services.news_history_service.NewsHistoryService.persist_current_news",
             return_value=mock_persist_result,
+        ), patch(
+            "app.services.news_history_service.NewsHistoryService.persist_cryptocompare_recent",
+            return_value=mock_cc_result,
         ):
             fetch_news_job()
 
@@ -94,7 +106,8 @@ class TestFetchNewsJobExecution:
         assert news_state["last_run_time"] is not None
         assert news_state["last_result"] is not None
         assert news_state["last_result"]["status"] == "success"
-        assert news_state["last_result"]["inserted"] == 5
+        # inserted = RSS (5) + CC (3) = 8
+        assert news_state["last_result"]["inserted"] == 8
         assert news_state["last_result"]["total_in_db"] == 100
 
         # DB doit être fermée

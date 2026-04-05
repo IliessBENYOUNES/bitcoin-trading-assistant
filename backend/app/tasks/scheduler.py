@@ -556,12 +556,12 @@ def fetch_candles_30m_job() -> None:
 # =========================
 def fetch_news_job() -> None:
     """
-    Persiste les news RSS en base toutes les N minutes.
+    Persiste les news en base toutes les N minutes.
 
-    Appelle NewsHistoryService.persist_current_news() qui :
-    1. Fetche les RSS via NewsService (avec cache mémoire 5min)
-    2. Upsert les articles en DB (dédoublonnage par URL)
-    3. Retourne les stats (inserted/updated/skipped)
+    1. Fetche les RSS via NewsService (CoinTelegraph, CoinDesk, Bitcoin Magazine)
+    2. Fetche les news récentes via CryptoCompare (4ᵉ source)
+    3. Upsert les articles en DB (dédoublonnage par URL)
+    4. Retourne les stats combinées
 
     Ce job est synchrone (pas de _run_coroutine nécessaire).
     """
@@ -574,13 +574,34 @@ def fetch_news_job() -> None:
 
         from app.services.news_history_service import NewsHistoryService
         service = NewsHistoryService(db)
-        result = service.persist_current_news()
 
-        result["status"] = "success"
-        result["duration_seconds"] = round(time.perf_counter() - start, 3)
+        # 1. Persister les news RSS
+        rss_result = service.persist_current_news()
+
+        # 2. Persister les news CryptoCompare récentes (1 page)
+        cc_result = service.persist_cryptocompare_recent()
+
+        # Combiner les résultats
+        result = {
+            "status": "success",
+            "rss": {
+                "inserted": rss_result.get("inserted", 0),
+                "skipped": rss_result.get("skipped", 0),
+            },
+            "cryptocompare": {
+                "inserted": cc_result.get("inserted", 0),
+                "skipped": cc_result.get("skipped", 0),
+            },
+            "inserted": rss_result.get("inserted", 0) + cc_result.get("inserted", 0),
+            "total_in_db": cc_result.get("total_in_db", rss_result.get("total_in_db", 0)),
+            "duration_seconds": round(time.perf_counter() - start, 3),
+        }
 
         _set_job_state("news", last_run_time=now, last_result=result)
-        logger.info(f"News job OK: {result.get('inserted', 0)} inserted, {result.get('total_in_db', 0)} total in DB ({result['duration_seconds']}s)")
+        logger.info(
+            f"News job OK: RSS {result['rss']['inserted']}+CC {result['cryptocompare']['inserted']} inserted, "
+            f"{result['total_in_db']} total in DB ({result['duration_seconds']}s)"
+        )
 
     except Exception as e:
         if db is not None:

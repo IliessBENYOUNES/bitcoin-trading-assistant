@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 5 avril 2026
 > **Version :** v1.2.3b
 > **Branche :** `master`
-> **Dernier commit :** fix(verification): fix timeframe switch race condition + feat(scheduler): add news RSS auto-persist job
+> **Dernier commit :** test(cryptocompare): add 30 tests for CryptoCompare news client + integration + fix scheduler_news mock
 
 ---
 
@@ -17,7 +17,7 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **631 tests**, tous passing ✅ |
+| Tests backend | **661 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -62,6 +62,7 @@ bitcoin-trading-assistant/
 │   │   │   ├── history_loader_service.py # ← NOUVEAU v1.1.1 — Chargement historique Binance 2017→now
 │   │   │   ├── sentiment_history_service.py # ← NOUVEAU v1.2.1 — Fear & Greed historique + requête par date
 │   │   │   ├── news_history_service.py  # ← NOUVEAU v1.2.3a — Persistance news RSS en DB
+│   │   │   ├── cryptocompare_service.py # ← NOUVEAU v1.2.3b — Client CryptoCompare News API (historique depuis 2015)
 │   │   │   ├── backtest_service.py    # Moteur de replay historique
 │   │   │   ├── decision_service.py    # Moteur de décision (règles + scénarios)
 │   │   │   ├── binance_service.py     # Client HTTP Binance (14 intervalles natifs)
@@ -86,6 +87,7 @@ bitcoin-trading-assistant/
 │       ├── test_scheduler_resample_1d.py
 │       ├── test_scheduler_resample_1h.py
 │       ├── test_scheduler_news.py         # ← NOUVEAU v1.2.3b — 11 tests job news RSS
+│       ├── test_cryptocompare.py          # ← NOUVEAU v1.2.3b — 30 tests CryptoCompare (parsing, fetch, history, endpoints)
 │       ├── test_signals.py
 │       ├── test_alerts.py
 │       ├── test_news.py
@@ -196,6 +198,7 @@ bitcoin-trading-assistant/
 | **Verification Service** | **Time-travel backtest + walk-forward + comparaison prédiction/réalité** | **✅ NOUVEAU v1.1.1** |
 | **History Loader Service** | **Chargement historique profond Binance 2017→now, pagination, upsert idempotent** | **✅ NOUVEAU v1.1.1** |
 | **News History Service** | **Persistance news RSS en DB, scoring par article, sentiment agrégé quotidien** | **✅ NOUVEAU v1.2.3a** |
+| **CryptoCompare Service** | **Client API CryptoCompare News (free tier, historique depuis 2015, pagination, parsing → NewsItem)** | **✅ NOUVEAU v1.2.3b** |
 | **Backtest Service** | **Replay historique des décisions + simulation de trades + métriques** | **✅ v1.1** |
 | **Decision Service** | Moteur de décision combinant signaux techniques + sentiment → scénarios + recommandation | ✅ |
 | **Binance Service** | Client HTTP async Binance, **14 intervalles natifs** | ✅ |
@@ -358,6 +361,8 @@ bitcoin-trading-assistant/
 | test_scheduler_dual_jobs.py | 13 | Dual config, jobs 4h/30m, erreurs |
 | test_scheduler_resample_1d.py | 7 | Resample 4h→1d, OHLCV, idempotent |
 | test_scheduler_resample_1h.py | 6 | Resample 30m→1h, OHLCV, idempotent |
+| test_scheduler_news.py         | 11 | ← NOUVEAU v1.2.3b — 11 tests job news RSS |
+| test_cryptocompare.py          | 30 | ← NOUVEAU v1.2.3b — 30 tests CryptoCompare (parsing, fetch, history, endpoints) |
 | test_signals.py | **71** | **RSI/MACD/SMA/Bollinger/ADX/Volume interpréteurs, MACD relatif, composite v1.2, résumé** |
 | test_alerts.py | 48 | CRUD, évaluation, récurrence, endpoints |
 | test_news.py | 43 | Sentiment, impact, RSS, résumé, résilience, endpoints |
@@ -367,7 +372,7 @@ bitcoin-trading-assistant/
 | test_binance_and_router.py | 89 | Binance 14 intervalles, DataSourceRouter, combinaisons |
 | **test_news_history.py** | **33** | **Modèle, scoring, persist idempotent, queries, range, coverage, endpoints** |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **620** | **Tous passing ✅** |
+| **TOTAL** | **661** | **Tous passing ✅** |
 
 ---
 

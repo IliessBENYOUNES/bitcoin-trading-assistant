@@ -375,7 +375,7 @@ export const VerificationPanel: React.FC = () => {
               fontWeight: 700, fontSize: '0.72rem', px: 1.5,
             }}
           >
-            {loadingHistory ? 'Chargement...' : 'Charger depuis 2017'}
+            {loadingHistory ? 'Chargement...' : range?.has_data ? 'Mettre à jour' : 'Charger depuis 2017'}
           </Button>
 
           {range?.has_data && (
@@ -404,7 +404,7 @@ export const VerificationPanel: React.FC = () => {
             color="secondary"
             sx={{ fontWeight: 700, fontSize: '0.72rem', px: 1.5 }}
           >
-            {loadingSentiment ? 'Chargement...' : 'Charger Fear & Greed (sentiment)'}
+            {loadingSentiment ? 'Chargement...' : sentimentRange?.has_data ? 'Mettre à jour Fear & Greed' : 'Charger Fear & Greed (sentiment)'}
           </Button>
 
           {sentimentRange?.has_data && (

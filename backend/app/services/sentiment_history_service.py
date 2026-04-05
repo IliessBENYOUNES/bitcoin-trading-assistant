@@ -102,7 +102,11 @@ class SentimentHistoryService:
         """
         Charge l'historique complet du Fear & Greed Index depuis Alternative.me.
 
-        L'API retourne TOUS les points en une seule requête (~2900 jours).
+        DELTA LOADING : si des données existent déjà en base, ne télécharge
+        que les jours manquants (limit = delta_days) au lieu de tous les points.
+        Cela réduit le temps de ~5s à <1s lors des mises à jour.
+
+        L'API retourne TOUS les points si limit=0, ou les N derniers si limit=N.
         On fait un upsert idempotent : relancer ne crée pas de doublons.
         """
         t0 = time.time()
@@ -110,12 +114,34 @@ class SentimentHistoryService:
         if config is None:
             config = SentimentLoadConfig(source=FEAR_AND_GREED_SOURCE)
 
+        # Delta loading : vérifier ce qui est déjà en base
+        latest_in_db = (
+            self.db.query(func.max(SentimentHistory.date))
+            .filter(SentimentHistory.source == FEAR_AND_GREED_SOURCE)
+            .scalar()
+        )
+
+        # Calculer le limit pour l'API
+        # limit=0 → tous les points (~2900), limit=N → les N derniers jours
+        if latest_in_db is not None:
+            if latest_in_db.tzinfo is None:
+                latest_in_db = latest_in_db.replace(tzinfo=timezone.utc)
+            days_since = (datetime.now(timezone.utc) - latest_in_db).days
+            # +3 jours de marge pour capturer les éventuelles corrections
+            api_limit = max(days_since + 3, 5)
+            logger.info(
+                f"Fear & Greed: delta mode — DB a des données jusqu'à "
+                f"{latest_in_db.date()}, fetch des {api_limit} derniers jours"
+            )
+        else:
+            api_limit = 0  # Premier chargement : tout récupérer
+            logger.info("Fear & Greed: full mode — premier chargement complet")
+
         # Récupérer les données depuis l'API
-        # limit=0 = tous les points disponibles
         try:
             response = httpx.get(
                 FEAR_AND_GREED_API_URL,
-                params={"limit": 0, "format": "json"},
+                params={"limit": api_limit, "format": "json"},
                 timeout=FEAR_AND_GREED_TIMEOUT,
             )
             response.raise_for_status()
