@@ -56,6 +56,7 @@ import type {
   HistoryRangeResponse,
   HistoryLoadResponse,
   HistoryIntegrityResponse,
+  HistoryIntegrityGap,
   VerificationResult,
   WalkForwardResult,
   HorizonOutcome,
@@ -445,7 +446,7 @@ export const VerificationPanel: React.FC = () => {
                   ⚠️ {integrity.gaps.length} gap{integrity.gaps.length > 1 ? 's' : ''} détecté{integrity.gaps.length > 1 ? 's' : ''} :
                 </Typography>
                 <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ mt: 0.3 }}>
-                  {integrity.gaps.slice(0, 5).map((gap, idx) => (
+                  {integrity.gaps.slice(0, 5).map((gap: HistoryIntegrityGap, idx: number) => (
                     <Chip
                       key={idx}
                       label={`${gap.start_date.slice(0, 10)} → ${gap.end_date.slice(0, 10)} (${gap.missing_days}j)`}
