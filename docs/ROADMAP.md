@@ -32,16 +32,16 @@
 │  ├── Alertes visuelles                  ✅ Livré (v0.8)            │
 │  └── News & sentiment                   ✅ Livré (v0.9)            │
 │                                                                      │
-│  ÉTAPE 2 — INFINI v1 (v1.0 → v1.5)                                 │
+│  ÉTAPE 2 — INFINI v1 (v1.0 → v1.7)                                 │
 │  Assistant intelligent, décisionnel                                  │
 │  ├── Moteur de décision / règles        ✅ Livré (v1.0)             │
 │  ├── Backtesting engine                 ✅ Livré (v1.1)             │
 │  ├── Vérification historique            ✅ Livré (v1.1.1)           │
-│  ├── Multi-assets                       ⬜ Prochaine étape (v1.2)   │
-│  ├── Sentiment historique + ML          ⬜ Planifié (v1.2.5)       │
+│  ├── Sentiment historique + ML          ⬜ Prochaine étape (v1.2)   │
 │  ├── Risk management engine             ⬜ Planifié (v1.3)         │
 │  ├── Paper trading                      ⬜ Planifié (v1.4)         │
-│  └── Production (Docker, CI/CD, Auth)   ⬜ Planifié (v1.5)         │
+│  ├── Production (Docker, CI/CD, Auth)   ⬜ Planifié (v1.5)         │
+│  └── Multi-assets (ETH, SOL...)         ⬜ Planifié (v1.6)         │
 │                                                                      │
 │  ÉTAPE 3 — INFINI v2 (v2.0+)                                       │
 │  Assistant autonome (sous contrôle humain)                           │
@@ -62,7 +62,7 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v1.1.1 — Vérification Historique (Livré) ✅
+### État actuel : v1.2.0 — Signaux + Vérification améliorés (Livré) ✅
 
 | Composant | Status |
 |-----------|--------|
@@ -84,7 +84,7 @@
 | **BacktestPanel (config + métriques + journal trades)** | **✅ Complet (v1.1)** |
 | **Vérification historique (time-travel + walk-forward)** | **✅ Complet (v1.1.1)** |
 | **VerificationPanel (charger historique + vérifier + walk-forward)** | **✅ Complet (v1.1.1)** |
-| 481 tests backend | ✅ Tous passing |
+| 523 tests backend | ✅ Tous passing |
 
 ### ✅ LIVRÉ : v0.7 — Moteur de Signaux (Niveau 2)
 
@@ -170,20 +170,13 @@
 **Livrable v1.1.1 :**
 > ✅ L'utilisateur charge l'historique BTC depuis 2017, choisit une date (ex: 1er janvier 2020), voit la recommandation du modèle (ACHETER score +42), puis compare avec la réalité (+15.3% à 30j → ✅ CORRECT). Le walk-forward teste automatiquement sur des dizaines de dates pour donner un taux de précision global.
 
-> ⚠️ **Limitation** : Le sentiment (news) n'est pas disponible en historique — le modèle fonctionne en mode 100% technique. La phase v1.2.5 (Sentiment Historique) comblera cette lacune.
+> ⚠️ **Limitation** : Le sentiment (news) n'est pas disponible en historique — le modèle fonctionne en mode 100% technique. La phase v1.2 (Sentiment Historique) comblera cette lacune.
 
-### Phase v1.2 — Multi-Assets (Prochaine étape)
-
-| Tâche | Priorité | Effort | Description |
-|-------|----------|--------|-------------|
-| 12.1 Dropdown symbole | 🔴 Haute | 2h | BTC/USD, ETH/USD, SOL/USD... |
-| 12.2 Scheduler multi-symbol | 🔴 Haute | 4h | Loop sur liste configurable |
-| 12.3 Dashboard comparatif | 🟡 Moyenne | 4h | Multi-charts ou tabs |
-| 12.4 Heatmap corrélation | 🟢 Basse | 6h | Matrice inter-assets |
-
-### Phase v1.2.5 — Sentiment Historique + Modèle d'Apprentissage 🧠
+### Phase v1.2 — Sentiment Historique + Modèle d'Apprentissage 🧠
 
 > **Objectif** : Donner au modèle une mémoire complète — technique ET contextuelle — pour que le backtest historique et le moteur de décision aient accès au sentiment réel de chaque époque.
+>
+> ⚠️ **Changement de priorité** : Le multi-assets (ETH, SOL...) a été déplacé en v1.6. On perfectionne d'abord tout sur BTC — si le modèle fonctionne bien sur BTC, on l'étend ensuite aux autres actifs.
 
 **Pourquoi c'est important** : Le moteur de décision actuel utilise 70% technique + 30% sentiment. Mais en backtest historique, le sentiment n'est pas disponible → le modèle fonctionne à 100% technique. Pour valider la qualité réelle du modèle complet, il faut reconstituer le sentiment historique.
 
@@ -293,7 +286,7 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 
 #### Stratégie recommandée (3 paliers progressifs)
 
-**Palier 1 — Gratuit (v1.2.5a) : Fear & Greed + CryptoCompare News**
+**Palier 1 — Gratuit (v1.2a) : Fear & Greed + CryptoCompare News**
 - Intégrer l'**index Fear & Greed** d'Alternative.me (gratuit, 1 valeur/jour depuis février 2018)
 - C'est un score 0-100 qui résume le sentiment global du marché BTC
 - Ajouter les **news historiques CryptoCompare** (gratuit, depuis 2015, titres + catégories)
@@ -301,7 +294,7 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 - Charger tout l'historique en une requête (~2900 points Fear & Greed)
 - Effort : **6-8h** | Coût : **0 €**
 
-**Palier 2 — Budget modéré (v1.2.5b) : CryptoPanic Pro + Santiment Pro**
+**Palier 2 — Budget modéré (v1.2b) : CryptoPanic Pro + Santiment Pro**
 - **CryptoPanic Pro** ($49/mois) pour les news crypto historiques avec votes/sentiment communauté
   - ~10 ans d'historique (2014→now)
   - Votes bullish/bearish de la communauté = sentiment crowd-sourcé
@@ -313,7 +306,7 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 - Le moteur de décision utilise : sentiment social + technique + Fear & Greed + news sentiment
 - Effort : **15-20h** | Coût : **~100 €/mois (~1080 €/an)**
 
-**Palier 3 — Modèle ML maison (v1.2.5c) : Apprentissage sur l'historique complet**
+**Palier 3 — Modèle ML maison (v1.2c) : Apprentissage sur l'historique complet**
 - Entraîner un modèle de classification de sentiment sur les news crypto
 - Le modèle apprend quels mots/phrases/patterns prédisent des mouvements de prix
 - Utiliser l'historique GDELT (gratuit) + CryptoCompare + CryptoPanic comme données d'entraînement
@@ -326,16 +319,16 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
-| 12.5.1 Modèle SentimentHistory en DB | 🔴 Haute | 3h | Table pour stocker sentiment quotidien historique (date, score, source, raw_data JSON) |
-| 12.5.2 Client Fear & Greed API | 🔴 Haute | 2h | Fetch + stockage index 0-100 depuis fév. 2018 (~2900 jours) |
-| 12.5.3 Client CryptoCompare News (free) | 🔴 Haute | 3h | Fetch news historiques gratuites depuis 2015 (titres + catégories) |
-| 12.5.4 Intégration au DecisionService | 🔴 Haute | 4h | En historique : utiliser le sentiment stocké au lieu du RSS temps réel |
-| 12.5.5 Walk-forward avec sentiment | 🔴 Haute | 3h | Vérifier que la précision s'améliore vs 100% technique |
-| 12.5.6 Client CryptoPanic Pro (Palier 2) | 🟡 Moyenne | 6h | News historiques avec votes communauté et sentiment crowd-sourcé |
-| 12.5.7 Client Santiment Pro (Palier 2) | 🟡 Moyenne | 6h | Sentiment social (Twitter, Reddit, Telegram) depuis 2016 |
-| 12.5.8 Pipeline d'enrichissement continu | 🟡 Moyenne | 4h | Job scheduler : stocker automatiquement le sentiment chaque jour |
-| 12.5.9 Normalisation multi-sources | 🟡 Moyenne | 4h | Harmoniser Fear&Greed (0-100) + CryptoPanic (votes) + Santiment (score) → score unifié -100/+100 |
-| 12.5.10 Tests et validation | 🔴 Haute | 4h | Comparer accuracy avec/sans sentiment historique, A/B walk-forward |
+| 12.1 Modèle SentimentHistory en DB | 🔴 Haute | 3h | Table pour stocker sentiment quotidien historique (date, score, source, raw_data JSON) |
+| 12.2 Client Fear & Greed API | 🔴 Haute | 2h | Fetch + stockage index 0-100 depuis fév. 2018 (~2900 jours) |
+| 12.3 Client CryptoCompare News (free) | 🔴 Haute | 3h | Fetch news historiques gratuites depuis 2015 (titres + catégories) |
+| 12.4 Intégration au DecisionService | 🔴 Haute | 4h | En historique : utiliser le sentiment stocké au lieu du RSS temps réel |
+| 12.5 Walk-forward avec sentiment | 🔴 Haute | 3h | Vérifier que la précision s'améliore vs 100% technique |
+| 12.6 Client CryptoPanic Pro (Palier 2) | 🟡 Moyenne | 6h | News historiques avec votes communauté et sentiment crowd-sourcé |
+| 12.7 Client Santiment Pro (Palier 2) | 🟡 Moyenne | 6h | Sentiment social (Twitter, Reddit, Telegram) depuis 2016 |
+| 12.8 Pipeline d'enrichissement continu | 🟡 Moyenne | 4h | Job scheduler : stocker automatiquement le sentiment chaque jour |
+| 12.9 Normalisation multi-sources | 🟡 Moyenne | 4h | Harmoniser Fear&Greed (0-100) + CryptoPanic (votes) + Santiment (score) → score unifié -100/+100 |
+| 12.10 Tests et validation | 🔴 Haute | 4h | Comparer accuracy avec/sans sentiment historique, A/B walk-forward |
 
 ### Phase v1.3 — Risk Management
 
@@ -365,6 +358,19 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 | 15.4 HTTPS + Reverse proxy | 🔴 Haute | 2h | Nginx/Caddy |
 | 15.5 Monitoring | 🟢 Basse | 4h | Prometheus + Grafana |
 
+### Phase v1.6 — Multi-Assets (ETH, SOL, etc.) 🌐
+
+> **Déplacé en dernier** : On perfectionne d'abord tout sur BTC. Si le modèle (technique + sentiment + risk + paper trading) fonctionne bien sur BTC, on l'étend aux autres actifs. BTC est le marché le plus liquide et le mieux documenté — c'est le terrain d'entraînement idéal.
+
+| Tâche | Priorité | Effort | Description |
+|-------|----------|--------|-------------|
+| 16.1 Dropdown symbole | 🔴 Haute | 2h | BTC/USD, ETH/USD, SOL/USD... |
+| 16.2 Scheduler multi-symbol | 🔴 Haute | 4h | Loop sur liste configurable |
+| 16.3 Dashboard comparatif | 🟡 Moyenne | 4h | Multi-charts ou tabs |
+| 16.4 Heatmap corrélation | 🟢 Basse | 6h | Matrice inter-assets |
+
+**Prérequis** : Toutes les phases v1.0 → v1.5 validées sur BTC. Le passage en multi-assets est une extension, pas une priorité tant que le moteur n'est pas mature sur un seul actif.
+
 ### Phase v2.0+ — INFINI Mode Autonome ⚠️
 
 > Ce mode ne sera activé qu'après validation complète par backtesting + paper trading.
@@ -382,7 +388,7 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 
 > ⚠️ **C'est un projet en soi.** Cette phase représente l'aboutissement de la vision INFINI : un modèle d'intelligence artificielle qui apprend en continu à partir de TOUTES les données disponibles — techniques, fondamentales, et contextuelles — pour prendre des décisions de plus en plus pertinentes au fil du temps.
 
-> **Prérequis** : Phases v1.2.5 (sentiment historique) + v2.0 (exécution) doivent être complètes et validées.
+> **Prérequis** : Phases v1.2 (sentiment historique) + v2.0 (exécution) doivent être complètes et validées.
 
 #### La vision : un cerveau unique qui apprend de tout
 
@@ -551,7 +557,7 @@ Aujourd'hui, le moteur de décision est **rule-based** : 8 règles écrites à l
 
 | Sous-phase | Effort | Coût data/compute | Prérequis |
 |------------|--------|-------------------|-----------|
-| v3.0 Dataset + Features | 40-50h | 0-100 €/mois | v1.2.5 complet |
+| v3.0 Dataset + Features | 40-50h | 0-100 €/mois | v1.2 complet |
 | v3.1 Modèles individuels | 60-80h | 10-30 € (GPU cloud) | v3.0 |
 | v3.2 Modèle convergent | 50-60h | 10-30 € | v3.1 |
 | v3.3 Online learning + monitoring | 50-60h | 0-100 €/mois | v3.2 |
@@ -723,7 +729,7 @@ Les types TypeScript sont bien définis pour `SchedulerStatus`, `MarketGapsRespo
 | Tests backend | ✅ Livré | v1.0 | 417 tests, tous passing |
 | Tests frontend | ❌ Non commencé | — | Aucun test E2E ni unitaire côté front |
 | Backtesting | ✅ Livré | v1.1 | Replay historique, métriques, equity curve, journal trades |
-| Multi-assets | ❌ Non commencé | — | Câblé pour (symbole paramétrable) |
+| Multi-assets | ❌ Non commencé | — | Déplacé en v1.6 (après validation BTC) |
 | Risk engine | ❌ Non commencé | — | — |
 | Paper trading | ❌ Non commencé | — | — |
 | Exécution automatisée | ❌ Non commencé | — | — |
@@ -1498,21 +1504,24 @@ Trois règles simples :
 │   └── [✅] v1.1.1 — Vérification Historique Time-Travel (33 tests) — 481 tests total
 │
 ├── Mai (en cours)
-│   ├── [🔄] v1.2.0 — Multi-Assets (PROCHAINE ÉTAPE)
-│   └── [ ] v1.2.5a — Sentiment Historique : Fear & Greed Index (gratuit)
+│   ├── [🔄] v1.2.0 — Sentiment Historique : Fear & Greed Index (gratuit) (PROCHAINE ÉTAPE)
+│   └── [ ] v1.2a — Sentiment Historique : CryptoCompare News
 │
 ├── Juin
-│   ├── [ ] v1.2.5b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
+│   ├── [ ] v1.2b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
 │   └── [ ] v1.3.0 — Risk Engine
 │
 ├── Juillet
 │   └── [ ] v1.4.0 — Paper Trading
 │
 ├── Août
-│   ├── [ ] v1.2.5c — Modèle ML sentiment basique (classification titres news)
+│   ├── [ ] v1.2c — Modèle ML sentiment basique (classification titres news)
 │   └── [ ] v1.5.0 — Production Ready (Docker, CI/CD, Auth)
 │
-├── Septembre+
+├── Septembre
+│   └── [ ] v1.6.0 — Multi-Assets (ETH, SOL... — seulement si BTC validé)
+│
+├── Octobre+
 │   └── [ ] v2.0.0 — INFINI Mode Autonome
 │
 ├── Q4 2026 — Q1 2027 : PHASE ML CONVERGENT (v3.0+) 🧠

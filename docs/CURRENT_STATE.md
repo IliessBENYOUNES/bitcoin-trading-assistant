@@ -409,24 +409,27 @@ python -m pytest tests/ -v
 | Étape | Nom | Versions | Description | Status |
 |-------|-----|----------|-------------|--------|
 | **1** | BTC Insight | v0.2 → v0.9 | Assistant visuel, pédagogique | ✅ **Complet** |
-| **2** | INFINI v1 | v1.0 → v1.5 | Assistant intelligent, décisionnel | 🔄 **En cours (v1.1 livré)** |
+| **2** | INFINI v1 | v1.0 → v1.6 | Assistant intelligent, décisionnel (BTC-first) | 🔄 **En cours (v1.1.1 livré)** |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) livrés, prochaine étape : Multi-Assets (v1.2)
+**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) livrés, prochaine étape : Sentiment Historique (v1.2)
 
 ---
 
-## 8. Prochaine étape : v1.2 — Multi-Assets
+## 8. Prochaine étape : v1.2 — Sentiment Historique + ML
 
-Le système passe de "BTC uniquement" à "multi-cryptos" :
+> **Changement de stratégie** : On perfectionne d'abord tout sur BTC. Le multi-assets (v1.6) viendra quand le modèle sera mature.
+
+Le système enrichit son moteur de décision avec du sentiment historique :
 
 | Fonctionnalité | Description |
 |-----------------|-------------|
-| Support ETH, SOL, etc. | Sélecteur de paire dans le frontend |
-| Fetch multi-symboles | Scheduler et fetch API généralisés |
-| Comparaison inter-actifs | Corrélation entre actifs |
+| Fear & Greed Index | Score quotidien 0-100 depuis février 2018 (gratuit) |
+| CryptoCompare News | News historiques gratuites depuis 2015 |
+| Intégration DecisionService | En backtest, utiliser le sentiment stocké au lieu du RSS temps réel |
+| Walk-forward amélioré | Tester le modèle COMPLET (technique + sentiment) vs 100% technique |
 
-**Résultat attendu :** L'utilisateur peut analyser plusieurs cryptomonnaies avec les mêmes outils (indicateurs, signaux, décision, backtest).
+**Résultat attendu :** Le walk-forward historique utilise le sentiment réel de chaque époque, augmentant la précision du modèle et la confiance dans les décisions.
 
 ---
 
@@ -440,12 +443,13 @@ Le système passe de "BTC uniquement" à "multi-cryptos" :
 | ~~Moteur de Décision~~ | ~~v1.0~~ | ✅ **Livré** |
 | ~~Backtesting engine~~ | ~~v1.1~~ | ✅ **Livré** |
 | ~~Vérification historique~~ | ~~v1.1.1~~ | ✅ **Livré** |
-| Multi-Assets (ETH, SOL...) | v1.2 | ❌ Non commencé |
+| Sentiment historique + ML | v1.2 | ❌ **Prochaine étape** |
 | Risk management engine | v1.3 | ❌ Non commencé |
 | Paper trading | v1.4 | ❌ Non commencé |
 | Docker Compose | v1.5 | ❌ Non commencé |
 | CI/CD GitHub Actions | v1.5 | ❌ Non commencé |
 | Auth JWT | v1.5 | ❌ Non commencé |
+| Multi-Assets (ETH, SOL...) | v1.6 | ❌ Après validation BTC |
 
 ---
 
