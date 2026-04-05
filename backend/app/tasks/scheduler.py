@@ -50,6 +50,7 @@ logger = logging.getLogger(__name__)
 JOB_ID_LEGACY = "fetch_candles_job"
 JOB_ID_4H = "fetch_candles_4h_job"
 JOB_ID_30M = "fetch_candles_30m_job"
+JOB_ID_NEWS = "fetch_news_job"
 
 # =========================
 # State thread-safe
@@ -80,6 +81,12 @@ scheduler_state: dict[str, Any] = {
         "30m": {
             "interval_minutes": None,
             "days": 1,
+            "last_run_time": None,
+            "next_run_time": None,
+            "last_result": None,
+        },
+        "news": {
+            "interval_minutes": None,
             "last_run_time": None,
             "next_run_time": None,
             "last_result": None,
@@ -146,6 +153,12 @@ def _read_config() -> dict[str, Any]:
     if interval_minutes_30m < 1:
         interval_minutes_30m = 1
 
+    # News job interval
+    raw_news = getattr(settings, "scheduler_interval_news_minutes", None)
+    interval_minutes_news = _as_int(raw_news, 10)
+    if interval_minutes_news < 1:
+        interval_minutes_news = 1
+
     return {
         # legacy
         "enabled": enabled,
@@ -158,6 +171,8 @@ def _read_config() -> dict[str, Any]:
         "days_4h": 7,    # fixed policy for job 4h
         "days_30m": 1,   # fixed policy for job 30m (never 2 to avoid CoinGecko quirks)
         "dual_jobs": raw_30m is not None,            # if the setting exists, we enable dual scheduling
+        # news job
+        "interval_minutes_news": interval_minutes_news,
     }
 
 
@@ -189,13 +204,16 @@ def get_status() -> dict[str, Any]:
             return dt
 
         def format_job(job_data: dict) -> dict:
-            return {
+            result = {
                 "interval_minutes": job_data["interval_minutes"],
-                "days": job_data["days"],
                 "last_run_time": iso(job_data["last_run_time"]),
                 "next_run_time": iso(job_data["next_run_time"]),
                 "last_result": job_data["last_result"],
             }
+            # Ajouter "days" seulement pour les jobs candles (pas pour news)
+            if "days" in job_data:
+                result["days"] = job_data["days"]
+            return result
 
         return {
             # legacy
@@ -211,6 +229,7 @@ def get_status() -> dict[str, Any]:
             "jobs": {
                 "4h": format_job(scheduler_state["jobs"]["4h"]),
                 "30m": format_job(scheduler_state["jobs"]["30m"]),
+                "news": format_job(scheduler_state["jobs"]["news"]),
             },
         }
 
@@ -533,12 +552,60 @@ def fetch_candles_30m_job() -> None:
 
 
 # =========================
+# News persistence job
+# =========================
+def fetch_news_job() -> None:
+    """
+    Persiste les news RSS en base toutes les N minutes.
+
+    Appelle NewsHistoryService.persist_current_news() qui :
+    1. Fetche les RSS via NewsService (avec cache mémoire 5min)
+    2. Upsert les articles en DB (dédoublonnage par URL)
+    3. Retourne les stats (inserted/updated/skipped)
+
+    Ce job est synchrone (pas de _run_coroutine nécessaire).
+    """
+    start = time.perf_counter()
+    now = datetime.now(timezone.utc)
+    db = None
+
+    try:
+        db = SessionLocal()
+
+        from app.services.news_history_service import NewsHistoryService
+        service = NewsHistoryService(db)
+        result = service.persist_current_news()
+
+        result["status"] = "success"
+        result["duration_seconds"] = round(time.perf_counter() - start, 3)
+
+        _set_job_state("news", last_run_time=now, last_result=result)
+        logger.info(f"News job OK: {result.get('inserted', 0)} inserted, {result.get('total_in_db', 0)} total in DB ({result['duration_seconds']}s)")
+
+    except Exception as e:
+        if db is not None:
+            db.rollback()
+        err = {
+            "status": "error",
+            "error": str(e),
+            "duration_seconds": round(time.perf_counter() - start, 3),
+        }
+        _set_job_state("news", last_run_time=now, last_result=err)
+        logger.error(f"News job error: {e}")
+    finally:
+        if db is not None:
+            db.close()
+        _update_next_run_time("news", JOB_ID_NEWS)
+
+
+# =========================
 # Lifecycle control
 # =========================
 def start_scheduler() -> None:
     """
-    - Si dual_jobs=True => schedule 2 jobs (4h + 30m)
+    - Si dual_jobs=True => schedule 2 jobs candles (4h + 30m)
     - Sinon => schedule legacy fetch_candles_job
+    - Toujours schedule le job news (indépendant des candles)
     """
     cfg = _read_config()
 
@@ -551,6 +618,7 @@ def start_scheduler() -> None:
     )
     _set_job_state("4h", interval_minutes=cfg["interval_minutes_4h"], days=cfg["days_4h"])
     _set_job_state("30m", interval_minutes=cfg["interval_minutes_30m"], days=cfg["days_30m"])
+    _set_job_state("news", interval_minutes=cfg["interval_minutes_news"])
 
     if not cfg["enabled"]:
         return
@@ -591,6 +659,18 @@ def start_scheduler() -> None:
             misfire_grace_time=60,
         )
 
+    # Job News RSS — toujours activé quand le scheduler est enabled
+    # Persiste les news RSS en base toutes les N minutes
+    scheduler.add_job(
+        fetch_news_job,
+        trigger=IntervalTrigger(minutes=cfg["interval_minutes_news"]),
+        id=JOB_ID_NEWS,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=60,
+    )
+
     scheduler.start()
     _scheduler = scheduler
     _set_state(running=True)
@@ -606,6 +686,8 @@ def start_scheduler() -> None:
     else:
         _update_next_run_time_legacy()
 
+    _update_next_run_time("news", JOB_ID_NEWS)
+
 
 def stop_scheduler() -> None:
     global _scheduler
@@ -619,3 +701,4 @@ def stop_scheduler() -> None:
         _set_state(running=False, next_run_time=None)
         _set_job_state("4h", next_run_time=None)
         _set_job_state("30m", next_run_time=None)
+        _set_job_state("news", next_run_time=None)

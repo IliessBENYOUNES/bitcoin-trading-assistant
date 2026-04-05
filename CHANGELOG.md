@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.3b] - 2026-04-05
+
+### Fixed
+- **VerificationPanel timeframe switch** : Corrigé la race condition qui faisait tourner les barres de chargement indéfiniment lors du switch entre 4h et 1d
+  - Les résultats stales (vérification, walk-forward, chargement) sont maintenant nettoyés lors du changement de timeframe
+  - Anti-race via `requestIdRef` : les réponses API obsolètes sont ignorées si le timeframe a changé entre-temps
+  - Le `useEffect` ne dépend plus de callbacks instables (boucle d'effets éliminée)
+  - Le sentiment range est chargé une seule fois au mount (indépendant du timeframe)
+
+### Added
+- **Scheduler News RSS automatique** : Nouveau job `fetch_news_job` qui persiste automatiquement les news RSS en base toutes les 10 minutes
+  - Nouveau champ config `SCHEDULER_INTERVAL_NEWS_MINUTES` (défaut : 10 minutes)
+  - Le job appelle `NewsHistoryService.persist_current_news()` (dédoublonnage par URL)
+  - Toujours activé quand `SCHEDULER_ENABLED=true` (indépendant du mode dual/legacy candles)
+  - Status exposé dans `GET /scheduler/status` sous `jobs.news`
+  - Trigger manuel via `POST /scheduler/trigger/news`
+  - **11 nouveaux tests** (`test_scheduler_news.py`) : config, state, exécution success/error, registration dans start_scheduler
+
+### Technical
+- Tests backend : 620 → **631 tests** (tous passing)
+- Frontend : `tsc --noEmit` sans erreur
+
 ## [1.2.3a] - 2026-04-05
 
 ### Added

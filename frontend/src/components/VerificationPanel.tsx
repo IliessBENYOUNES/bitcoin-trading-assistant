@@ -3,7 +3,7 @@
 // Permet de : charger l'historique, vérifier à une date, lancer un walk-forward
 // =============================================================================
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -160,42 +160,75 @@ export const VerificationPanel: React.FC = () => {
   const [sentimentLoadResult, setSentimentLoadResult] = useState<SentimentLoadResponse | null>(null);
   const [loadingSentiment, setLoadingSentiment] = useState(false);
 
-  // Fetch range on mount
-  const refreshRange = useCallback(async () => {
-    try {
-      const r = await getHistoryRange({ timeframe: loadTimeframe });
-      setRange(r);
-    } catch {
-      /* ignore */
-    }
-  }, [loadTimeframe]);
+  // Anti-race: compteur de requêtes pour ignorer les réponses stales
+  const requestIdRef = useRef(0);
 
-  const refreshIntegrity = useCallback(async () => {
-    setLoadingIntegrity(true);
-    try {
-      const r = await getHistoryIntegrity({ timeframe: loadTimeframe });
-      setIntegrity(r);
-    } catch {
-      setIntegrity(null);
-    } finally {
-      setLoadingIntegrity(false);
-    }
-  }, [loadTimeframe]);
-
-  const refreshSentimentRange = useCallback(async () => {
-    try {
-      const r = await getSentimentRange();
-      setSentimentRange(r);
-    } catch {
-      /* ignore */
-    }
+  // Handler de changement de timeframe : nettoie les résultats stales
+  const handleTimeframeChange = useCallback((newTf: string) => {
+    setLoadTimeframe(newTf);
+    // Clear les résultats de l'ancien TF pour éviter la confusion
+    setVerifyResult(null);
+    setWfResult(null);
+    setLoadResult(null);
+    setError(null);
+    // L'intégrité et le range seront rechargés par l'effet ci-dessous
   }, []);
 
+  // Charger range + intégrité quand loadTimeframe change, avec anti-race
   useEffect(() => {
-    refreshRange();
-    refreshIntegrity();
-    refreshSentimentRange();
-  }, [refreshRange, refreshIntegrity, refreshSentimentRange]);
+    const currentRequestId = ++requestIdRef.current;
+
+    const fetchData = async () => {
+      setLoadingIntegrity(true);
+
+      try {
+        const [rangeResult, integrityResult] = await Promise.all([
+          getHistoryRange({ timeframe: loadTimeframe }).catch(() => null),
+          getHistoryIntegrity({ timeframe: loadTimeframe }).catch(() => null),
+        ]);
+
+        // Ignorer si le timeframe a changé entre-temps
+        if (requestIdRef.current !== currentRequestId) return;
+
+        setRange(rangeResult);
+        setIntegrity(integrityResult);
+      } finally {
+        // Ne pas toucher au loading si un nouveau fetch est en cours
+        if (requestIdRef.current === currentRequestId) {
+          setLoadingIntegrity(false);
+        }
+      }
+    };
+
+    fetchData();
+  }, [loadTimeframe]);
+
+  // Charger le sentiment range une seule fois au mount (indépendant du TF)
+  useEffect(() => {
+    getSentimentRange()
+      .then((r) => setSentimentRange(r))
+      .catch(() => { /* ignore */ });
+  }, []);
+
+  // Helpers pour refresh après une action (utilisent le TF courant)
+  const refreshRangeAndIntegrity = useCallback(async () => {
+    const currentRequestId = ++requestIdRef.current;
+    setLoadingIntegrity(true);
+    try {
+      const [rangeResult, integrityResult] = await Promise.all([
+        getHistoryRange({ timeframe: loadTimeframe }).catch(() => null),
+        getHistoryIntegrity({ timeframe: loadTimeframe }).catch(() => null),
+      ]);
+      if (requestIdRef.current !== currentRequestId) return;
+      setRange(rangeResult);
+      setIntegrity(integrityResult);
+    } finally {
+      if (requestIdRef.current === currentRequestId) {
+        setLoadingIntegrity(false);
+      }
+    }
+  }, [loadTimeframe]);
+
 
   // Handlers
   const handleLoadHistory = async () => {
@@ -209,8 +242,7 @@ export const VerificationPanel: React.FC = () => {
         start_date: '2017-08-17',
       });
       setLoadResult(result);
-      await refreshRange();
-      await refreshIntegrity();
+      await refreshRangeAndIntegrity();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur chargement');
     } finally {
@@ -225,7 +257,10 @@ export const VerificationPanel: React.FC = () => {
     try {
       const result = await loadSentimentHistory({});
       setSentimentLoadResult(result);
-      await refreshSentimentRange();
+      // Rafraîchir le range sentiment
+      getSentimentRange()
+        .then((r) => setSentimentRange(r))
+        .catch(() => { /* ignore */ });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur chargement sentiment');
     } finally {
@@ -319,7 +354,7 @@ export const VerificationPanel: React.FC = () => {
             <InputLabel sx={{ fontSize: '0.75rem' }}>TF</InputLabel>
             <Select
               value={loadTimeframe}
-              onChange={(e) => setLoadTimeframe(e.target.value)}
+              onChange={(e) => handleTimeframeChange(e.target.value)}
               label="TF"
               sx={{ fontSize: '0.8rem', height: 36 }}
             >

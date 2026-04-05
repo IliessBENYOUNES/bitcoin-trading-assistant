@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 5 avril 2026
-> **Version :** v1.2.3a
+> **Version :** v1.2.3b
 > **Branche :** `master`
-> **Dernier commit :** feat(news-history): persist RSS news in DB with model, service, endpoints, 33 tests
+> **Dernier commit :** fix(verification): fix timeframe switch race condition + feat(scheduler): add news RSS auto-persist job
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.2.3a** |
+| Version courante | **v1.2.3b** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **620 tests**, tous passing ✅ |
+| Tests backend | **631 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -73,7 +73,7 @@ bitcoin-trading-assistant/
 │   │   │   ├── news_service.py        # RSS + sentiment + impact
 │   │   │   └── resample_service.py    # Agrégation multi-timeframe (14 niveaux)
 │   │   ├── tasks/
-│   │   │   └── scheduler.py    # APScheduler dual-jobs (4h + 30m) via DataSourceRouter
+│   │   │   └── scheduler.py    # APScheduler triple-jobs (4h + 30m + news RSS) via DataSourceRouter
 │   │   └── utils/
 │   │       ├── time_buckets.py # Alignement UTC 14 timeframes, fenêtres glissantes
 │   │       └── db_upsert.py    # Upsert dialect-aware
@@ -85,6 +85,7 @@ bitcoin-trading-assistant/
 │       ├── test_scheduler_dual_jobs.py
 │       ├── test_scheduler_resample_1d.py
 │       ├── test_scheduler_resample_1h.py
+│       ├── test_scheduler_news.py         # ← NOUVEAU v1.2.3b — 11 tests job news RSS
 │       ├── test_signals.py
 │       ├── test_alerts.py
 │       ├── test_news.py
