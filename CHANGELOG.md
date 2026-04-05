@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.3a] - 2026-04-05
+
+### Added
+- **Modèle NewsHistory** : Nouvelle table `news_history` pour stocker les articles de news crypto en base de données
+  - Colonnes : title, url, source, description, published_at, sentiment, impact, sentiment_score, keywords
+  - Index unique sur URL pour dédoublonnage idempotent
+  - Index sur (source, published_at) pour les requêtes par date
+- **Service NewsHistoryService** : Persistance et requête des news historiques
+  - `persist_current_news()` : Collecte les news RSS et les stocke en base (dédoublonnage par URL)
+  - `get_daily_sentiment()` : Score de sentiment agrégé par jour (-100/+100), pondéré par impact
+  - `get_articles_at_date()` : Récupère les articles autour d'une date
+  - `get_range()` / `get_coverage()` : Métriques sur le corpus en base
+  - Scoring par article : positive×high=+75, negative×medium=-50, etc.
+- **4 nouveaux endpoints API** :
+  - `POST /news/history/persist` : Trigger manuel de la persistance RSS → DB
+  - `GET /news/history/range` : Plage de dates et nombre d'articles en base
+  - `GET /news/history/coverage` : Couverture par source
+  - `GET /news/history/at-date` : Articles + sentiment agrégé à une date donnée
+- **33 nouveaux tests** (`test_news_history.py`) :
+  - Modèle (4) : création, repr, multi-sources, URL nullable
+  - Scoring (9) : positive/negative/neutral × high/medium/low, invalid
+  - Service persist (3) : persist, idempotence, empty
+  - Service query (7) : daily sentiment (positive, negative, none, mixed), articles, tolerance
+  - Service range (4) : empty, with data, by source, coverage
+  - Endpoints (6) : persist, range empty/with data, coverage, at-date empty/with data
+
+### Technical
+- 620 tests backend passing (587 → 620, +33 tests)
+- Nouveau fichier : `backend/app/models/news_history.py`
+- Nouveau fichier : `backend/app/services/news_history_service.py`
+- Nouveau fichier : `backend/tests/test_news_history.py`
+- Routes news étendues avec 4 endpoints `/news/history/*`
+
 ## [1.2.2] - 2026-04-05
 
 ### Added

@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 5 avril 2026
-> **Version :** v1.2.2
+> **Version :** v1.2.3a
 > **Branche :** `master`
-> **Dernier commit :** feat(verification): add history integrity check, compare mode (technique vs sentiment), UI integration
+> **Dernier commit :** feat(news-history): persist RSS news in DB with model, service, endpoints, 33 tests
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.2.2** |
+| Version courante | **v1.2.3a** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **587 tests**, tous passing ✅ |
+| Tests backend | **620 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -47,6 +47,7 @@ bitcoin-trading-assistant/
 │   │   │   ├── candle.py       # Modèle Candle (OHLCV + timeframe)
 │   │   │   ├── alert.py        # Modèle Alert (conditions + status)
 │   │   │   └── sentiment_history.py # ← NOUVEAU v1.2.1 — Modèle SentimentHistory (sentiment quotidien)
+│   │   │   └── news_history.py     # ← NOUVEAU v1.2.3a — Modèle NewsHistory (articles RSS persistés)
 │   │   ├── schemas/
 │   │   │   ├── candle.py       # Schémas Pydantic candle
 │   │   │   ├── signal.py       # Schémas SignalItem, CompositeScore, SignalResponse
@@ -60,6 +61,7 @@ bitcoin-trading-assistant/
 │   │   │   ├── verification_service.py # ← NOUVEAU v1.1.1 — Time-travel + walk-forward
 │   │   │   ├── history_loader_service.py # ← NOUVEAU v1.1.1 — Chargement historique Binance 2017→now
 │   │   │   ├── sentiment_history_service.py # ← NOUVEAU v1.2.1 — Fear & Greed historique + requête par date
+│   │   │   ├── news_history_service.py  # ← NOUVEAU v1.2.3a — Persistance news RSS en DB
 │   │   │   ├── backtest_service.py    # Moteur de replay historique
 │   │   │   ├── decision_service.py    # Moteur de décision (règles + scénarios)
 │   │   │   ├── binance_service.py     # Client HTTP Binance (14 intervalles natifs)
@@ -181,6 +183,10 @@ bitcoin-trading-assistant/
 | **GET** | **`/sentiment/history/range`** | **Plage de dates sentiment disponible** | **✅ NOUVEAU v1.2.1** |
 | **GET** | **`/sentiment/history/coverage`** | **Couverture globale sentiment** | **✅ NOUVEAU v1.2.1** |
 | **GET** | **`/sentiment/history/at-date`** | **Sentiment à une date donnée** | **✅ NOUVEAU v1.2.1** |
+| **POST** | **`/news/history/persist`** | **Persister les news RSS actuelles en base** | **✅ NOUVEAU v1.2.3a** |
+| **GET** | **`/news/history/range`** | **Plage de dates des news en base** | **✅ NOUVEAU v1.2.3a** |
+| **GET** | **`/news/history/coverage`** | **Couverture news par source** | **✅ NOUVEAU v1.2.3a** |
+| **GET** | **`/news/history/at-date`** | **Articles et sentiment agrégé à une date** | **✅ NOUVEAU v1.2.3a** |
 
 ### 3.2 Backend — Services
 
@@ -188,6 +194,7 @@ bitcoin-trading-assistant/
 |---------|-------------|--------|
 | **Verification Service** | **Time-travel backtest + walk-forward + comparaison prédiction/réalité** | **✅ NOUVEAU v1.1.1** |
 | **History Loader Service** | **Chargement historique profond Binance 2017→now, pagination, upsert idempotent** | **✅ NOUVEAU v1.1.1** |
+| **News History Service** | **Persistance news RSS en DB, scoring par article, sentiment agrégé quotidien** | **✅ NOUVEAU v1.2.3a** |
 | **Backtest Service** | **Replay historique des décisions + simulation de trades + métriques** | **✅ v1.1** |
 | **Decision Service** | Moteur de décision combinant signaux techniques + sentiment → scénarios + recommandation | ✅ |
 | **Binance Service** | Client HTTP async Binance, **14 intervalles natifs** | ✅ |
@@ -357,8 +364,9 @@ bitcoin-trading-assistant/
 | test_backtest.py | 31 | Schémas, métriques, intégration DB, endpoints, edge cases |
 | **test_verification.py** | **82** | **Range, verify, walk-forward, correctness v1.2, directional match, quality score, seuils adapatifs, integrity, compare mode, endpoints** |
 | test_binance_and_router.py | 89 | Binance 14 intervalles, DataSourceRouter, combinaisons |
+| **test_news_history.py** | **33** | **Modèle, scoring, persist idempotent, queries, range, coverage, endpoints** |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **587** | **Tous passing ✅** |
+| **TOTAL** | **620** | **Tous passing ✅** |
 
 ---
 
@@ -423,13 +431,13 @@ python -m pytest tests/ -v
 | **2** | INFINI v1 | v1.0 → v1.6 | Assistant intelligent, décisionnel (BTC-first) | 🔄 **En cours (v1.1.1 livré)** |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) livrés, prochaine étape : CryptoCompare News historique (v1.2.3)
+**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) livrés, prochaine étape : CryptoCompare News historique (v1.2.3b)
 
 ---
 
-## 8. Prochaine étape : v1.2.3 — CryptoCompare News historique
+## 8. Prochaine étape : v1.2.3b — CryptoCompare News historique
 
-> **Objectif** : Ajouter une seconde source de sentiment historique (news depuis 2015) pour enrichir le modèle.
+> **Objectif** : Ajouter CryptoCompare comme 4ᵉ source de news historiques (depuis 2015, gratuit) pour enrichir le corpus de sentiment en DB.
 
 Le système enrichit son moteur de décision avec des news historiques :
 
@@ -453,7 +461,8 @@ Le système enrichit son moteur de décision avec des news historiques :
 | ~~Vérification historique~~ | ~~v1.1.1~~ | ✅ **Livré** |
 | ~~Sentiment historique Fear & Greed~~ | ~~v1.2.1~~ | ✅ **Livré** |
 | ~~Intégrité données + mode comparaison~~ | ~~v1.2.2~~ | ✅ **Livré** |
-| CryptoCompare News historique + ML | v1.2.3+ | ❌ **Prochaine étape** |
+| ~~Persistance news RSS en DB~~ | ~~v1.2.3a~~ | ✅ **Livré** |
+| CryptoCompare News historique | v1.2.3b | ❌ **Prochaine étape** |
 | Risk management engine | v1.3 | ❌ Non commencé |
 | Paper trading | v1.4 | ❌ Non commencé |
 | Docker Compose | v1.5 | ❌ Non commencé |

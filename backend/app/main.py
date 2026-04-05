@@ -22,7 +22,7 @@ from app.api.routes.scheduler import router as scheduler_router
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 
 # IMPORTANT : importer les modèles pour que SQLAlchemy les connaisse
-from app.models import Candle, Alert, SentimentHistory  # noqa: F401
+from app.models import Candle, Alert, SentimentHistory, NewsHistory  # noqa: F401
 
 # Configuration
 settings = get_settings()

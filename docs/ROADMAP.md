@@ -37,7 +37,7 @@
 │  ├── Moteur de décision / règles        ✅ Livré (v1.0)             │
 │  ├── Backtesting engine                 ✅ Livré (v1.1)             │
 │  ├── Vérification historique            ✅ Livré (v1.1.1)           │
-│  ├── Sentiment historique + ML          🔄 En cours (v1.2.1-1.2.2 livrés)  │
+│  ├── Sentiment historique + ML          🔄 En cours (v1.2.1-1.2.3a livrés)  │
 │  ├── Risk management engine             ⬜ Planifié (v1.3)         │
 │  ├── Paper trading                      ⬜ Planifié (v1.4)         │
 │  ├── Production (Docker, CI/CD, Auth)   ⬜ Planifié (v1.5)         │
@@ -62,7 +62,7 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v1.2.2 — Intégrité données + Mode comparaison (Livré) ✅
+### État actuel : v1.2.3a — Persistance News RSS en DB (Livré) ✅
 
 | Composant | Status |
 |-----------|--------|
@@ -86,7 +86,8 @@
 | **VerificationPanel (charger historique + vérifier + walk-forward)** | **✅ Complet (v1.1.1)** |
 | **Intégrité données (complétude, gaps, grade qualité)** | **✅ Complet (v1.2.2)** |
 | **Mode comparaison walk-forward (technique vs technique+sentiment)** | **✅ Complet (v1.2.2)** |
-| 587 tests backend | ✅ Tous passing |
+| **Persistance news RSS en DB (modèle + service + endpoints + 33 tests)** | **✅ Complet (v1.2.3a)** |
+| 620 tests backend | ✅ Tous passing |
 
 ### ✅ LIVRÉ : v0.7 — Moteur de Signaux (Niveau 2)
 
@@ -1506,8 +1507,9 @@ Trois règles simples :
 │   └── [✅] v1.1.1 — Vérification Historique Time-Travel (33 tests) — 481 tests total
 │
 ├── Mai (en cours)
-│   ├── [🔄] v1.2.0 — Sentiment Historique : Fear & Greed Index (gratuit) (PROCHAINE ÉTAPE)
-│   └── [ ] v1.2a — Sentiment Historique : CryptoCompare News
+│   ├── [✅] v1.2.3a — Persistance News RSS en DB (33 tests) — 620 tests total
+│   ├── [🔄] v1.2.3b — CryptoCompare News historique (PROCHAINE ÉTAPE)
+│   └── [ ] v1.2.4 — Intégration news historique dans walk-forward
 │
 ├── Juin
 │   ├── [ ] v1.2b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
