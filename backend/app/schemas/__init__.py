@@ -64,6 +64,19 @@ from app.schemas.verification import (
     WalkForwardConfig,
     WalkForwardResult,
     HorizonAccuracy,
+    WalkForwardComparison,
+    WalkForwardSummaryStats,
+    HistoryIntegrityGap,
+    HistoryIntegrityResponse,
+)
+
+from app.schemas.sentiment import (
+    SentimentLoadConfig,
+    SentimentLoadResponse,
+    SentimentRangeResponse,
+    SentimentAtDateResponse,
+    SentimentHistoryPoint,
+    SentimentCoverageResponse,
 )
 
 __all__ = [
@@ -108,4 +121,14 @@ __all__ = [
     "WalkForwardConfig",
     "WalkForwardResult",
     "HorizonAccuracy",
+    "WalkForwardComparison",
+    "WalkForwardSummaryStats",
+    "HistoryIntegrityGap",
+    "HistoryIntegrityResponse",
+    "SentimentLoadConfig",
+    "SentimentLoadResponse",
+    "SentimentRangeResponse",
+    "SentimentAtDateResponse",
+    "SentimentHistoryPoint",
+    "SentimentCoverageResponse",
 ]

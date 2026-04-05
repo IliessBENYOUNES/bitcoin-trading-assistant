@@ -1,5 +1,5 @@
 """
-Service de verification historique — "Time-Travel Backtest" (v1.2 ameliore).
+ Service de verification historique — "Time-Travel Backtest" (v1.2 ameliore).
 
 Ce service :
 1. Se positionne a n'importe quelle date passee
@@ -38,6 +38,10 @@ from app.schemas.verification import (
     WalkForwardResult,
     HorizonAccuracy,
     HistoryRangeResponse,
+    HistoryIntegrityGap,
+    HistoryIntegrityResponse,
+    WalkForwardComparison,
+    WalkForwardSummaryStats,
 )
 
 logger = logging.getLogger(__name__)
@@ -698,11 +702,189 @@ class VerificationService:
         )
 
     # ================================================================
+    # INTÉGRITÉ DE L'HISTORIQUE
+    # ================================================================
+
+    def check_integrity(
+        self, symbol: str = "BTC/USD", timeframe: str = "1d"
+    ) -> HistoryIntegrityResponse:
+        """
+        Vérifie l'intégrité de l'historique chargé.
+
+        Détecte les jours manquants entre min_date et max_date.
+        Retourne un grade de qualité et la liste des trous.
+        """
+        range_info = self.get_history_range(symbol, timeframe)
+
+        if not range_info.has_data:
+            return HistoryIntegrityResponse(
+                symbol=symbol,
+                timeframe=timeframe,
+                quality_grade="UNKNOWN",
+                detail="Aucune donnée en base pour ce symbole/timeframe.",
+            )
+
+        # Récupérer toutes les dates de candles
+        candle_dates = (
+            self.db.query(Candle.timestamp)
+            .filter(
+                Candle.symbol == symbol,
+                Candle.timeframe == timeframe,
+            )
+            .order_by(Candle.timestamp.asc())
+            .all()
+        )
+
+        dates_set = set()
+        for (ts,) in candle_dates:
+            if isinstance(ts, datetime):
+                # Normaliser à minuit UTC
+                d = ts.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+            else:
+                d = ts
+            dates_set.add(d.date() if isinstance(d, datetime) else d)
+
+        # Calculer les dates attendues
+        min_ts = candle_dates[0][0]
+        max_ts = candle_dates[-1][0]
+
+        if isinstance(min_ts, datetime):
+            min_date = min_ts.replace(tzinfo=timezone.utc).date()
+        else:
+            min_date = min_ts
+
+        if isinstance(max_ts, datetime):
+            max_date = max_ts.replace(tzinfo=timezone.utc).date()
+        else:
+            max_date = max_ts
+
+        # Pour timeframe 1d, on attend une candle par jour
+        # Pour les autres timeframes, adapter le calcul
+        step = self._get_timeframe_step(timeframe)
+        expected_dates = set()
+        current = min_date
+        while current <= max_date:
+            expected_dates.add(current)
+            current += step
+
+        # Trouver les trous
+        missing_dates = sorted(expected_dates - dates_set)
+        total_expected = len(expected_dates)
+        total_actual = len(dates_set)
+        missing_count = len(missing_dates)
+
+        # Regrouper les trous consécutifs en plages
+        gaps = self._group_consecutive_gaps(missing_dates)
+
+        # Calculer la complétude
+        completeness_pct = (total_actual / total_expected * 100) if total_expected > 0 else 0
+
+        # Déterminer le grade
+        if completeness_pct >= 99:
+            grade = "EXCELLENT"
+        elif completeness_pct >= 95:
+            grade = "GOOD"
+        elif completeness_pct >= 85:
+            grade = "WARNING"
+        else:
+            grade = "CRITICAL"
+
+        # Description lisible
+        detail = (
+            f"{total_actual}/{total_expected} candles ({completeness_pct:.1f}% complet). "
+        )
+        if missing_count == 0:
+            detail += "Aucun trou detecte — historique parfait."
+        elif missing_count <= 5:
+            detail += f"{missing_count} jour(s) manquant(s) — impact negligeable sur les indicateurs."
+        elif missing_count <= 20:
+            detail += (
+                f"{missing_count} jours manquants dans {len(gaps)} trou(s). "
+                "Impact modere : les SMA longues (200j) peuvent etre legerement affectees."
+            )
+        else:
+            detail += (
+                f"{missing_count} jours manquants dans {len(gaps)} trou(s). "
+                "⚠️ Impact significatif : les indicateurs techniques risquent d'etre fausses. "
+                "Recommandation : recharger l'historique."
+            )
+
+        return HistoryIntegrityResponse(
+            symbol=symbol,
+            timeframe=timeframe,
+            total_candles=total_actual,
+            expected_candles=total_expected,
+            missing_candles=missing_count,
+            completeness_pct=round(completeness_pct, 2),
+            gaps=gaps,
+            min_date=str(min_date),
+            max_date=str(max_date),
+            quality_grade=grade,
+            detail=detail,
+        )
+
+    @staticmethod
+    def _get_timeframe_step(timeframe: str) -> timedelta:
+        """Retourne le pas temporel pour un timeframe donné."""
+        mapping = {
+            "1m": timedelta(minutes=1),
+            "3m": timedelta(minutes=3),
+            "5m": timedelta(minutes=5),
+            "15m": timedelta(minutes=15),
+            "30m": timedelta(minutes=30),
+            "1h": timedelta(hours=1),
+            "2h": timedelta(hours=2),
+            "4h": timedelta(hours=4),
+            "6h": timedelta(hours=6),
+            "8h": timedelta(hours=8),
+            "12h": timedelta(hours=12),
+            "1d": timedelta(days=1),
+            "3d": timedelta(days=3),
+            "1w": timedelta(weeks=1),
+        }
+        return mapping.get(timeframe, timedelta(days=1))
+
+    @staticmethod
+    def _group_consecutive_gaps(missing_dates: list) -> list[HistoryIntegrityGap]:
+        """Regroupe les dates manquantes consécutives en plages."""
+        if not missing_dates:
+            return []
+
+        gaps = []
+        group_start = missing_dates[0]
+        prev = missing_dates[0]
+
+        for d in missing_dates[1:]:
+            if (d - prev).days <= 1:
+                prev = d
+            else:
+                gaps.append(HistoryIntegrityGap(
+                    start_date=str(group_start),
+                    end_date=str(prev),
+                    missing_days=(prev - group_start).days + 1,
+                ))
+                group_start = d
+                prev = d
+
+        # Dernier groupe
+        gaps.append(HistoryIntegrityGap(
+            start_date=str(group_start),
+            end_date=str(prev),
+            missing_days=(prev - group_start).days + 1,
+        ))
+
+        return gaps
+
+    # ================================================================
     # WALK-FORWARD
     # ================================================================
 
     def walk_forward(self, config: WalkForwardConfig) -> WalkForwardResult:
-        """Analyse walk-forward : repete verify_at_date a intervalles reguliers."""
+        """
+        Analyse walk-forward : repete verify_at_date a intervalles reguliers.
+
+        Si compare_mode=True, execute aussi en mode technique-only et compare.
+        """
         t0 = time.time()
 
         start_dt = datetime.fromisoformat(config.start_date).replace(
@@ -723,26 +905,8 @@ class VerificationService:
             f"({config.start_date} → {config.end_date}, pas={config.step_days}j)"
         )
 
-        points: list[VerificationResult] = []
-        for i, target_dt in enumerate(target_dates):
-            if (i + 1) % 10 == 0:
-                logger.info(f"WalkForward: point {i + 1}/{len(target_dates)}")
-
-            request = VerificationRequest(
-                target_date=target_dt.isoformat(),
-                symbol=config.symbol,
-                timeframe=config.timeframe,
-                history_days=config.history_days,
-                horizons=config.horizons,
-            )
-
-            try:
-                result = self.verify_at_date(request)
-                if result.price_at_date > 0:
-                    points.append(result)
-            except Exception as e:
-                logger.warning(f"WalkForward: erreur a {target_dt.date()}: {e}")
-                continue
+        # Run principal (avec sentiment si disponible en base)
+        points = self._run_walk_forward_points(target_dates, config)
 
         accuracy_by_horizon = self._compute_accuracy(points, config.horizons)
 
@@ -755,6 +919,11 @@ class VerificationService:
             sum(all_quality_scores) / len(all_quality_scores)
             if all_quality_scores else 0.0
         )
+
+        # Mode comparatif : technique-only vs technique+sentiment
+        comparison = None
+        if config.compare_mode:
+            comparison = self._run_comparison(target_dates, config, points, accuracy_by_horizon, overall_quality)
 
         duration = round(time.time() - t0, 2)
         summary = self._build_walk_forward_summary(
@@ -771,6 +940,289 @@ class VerificationService:
             summary=summary,
             duration_seconds=duration,
             overall_quality_score=round(overall_quality, 1),
+            comparison=comparison,
+        )
+
+    def _run_walk_forward_points(
+        self,
+        target_dates: list[datetime],
+        config: WalkForwardConfig,
+        force_technical_only: bool = False,
+    ) -> list[VerificationResult]:
+        """Execute les points de verification walk-forward."""
+        points: list[VerificationResult] = []
+
+        for i, target_dt in enumerate(target_dates):
+            if (i + 1) % 10 == 0:
+                logger.info(f"WalkForward: point {i + 1}/{len(target_dates)}")
+
+            request = VerificationRequest(
+                target_date=target_dt.isoformat(),
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                history_days=config.history_days,
+                horizons=config.horizons,
+            )
+
+            try:
+                if force_technical_only:
+                    result = self._verify_technical_only(request)
+                else:
+                    result = self.verify_at_date(request)
+                if result.price_at_date > 0:
+                    points.append(result)
+            except Exception as e:
+                logger.warning(f"WalkForward: erreur a {target_dt.date()}: {e}")
+                continue
+
+        return points
+
+    def _verify_technical_only(self, request: VerificationRequest) -> VerificationResult:
+        """
+        Verification en mode 100% technique (force_technical_only).
+
+        Crée un DecisionService temporaire qui ignore le sentiment historique
+        en passant une date très ancienne où aucun sentiment n'existe.
+        """
+        target_dt = datetime.fromisoformat(request.target_date).replace(
+            tzinfo=timezone.utc
+        )
+
+        price_at_date = self._get_close_price_at(
+            request.symbol, request.timeframe, target_dt
+        )
+        if price_at_date is None:
+            return VerificationResult(
+                target_date=request.target_date,
+                price_at_date=0,
+                predicted_action="erreur",
+                predicted_summary="Aucune donnee disponible a cette date",
+                outcomes=[],
+                meta={"error": "no_data_at_target_date"},
+            )
+
+        # Exécuter le moteur de décision en forçant le mode sans sentiment
+        # On utilise le DecisionService normal mais on patche temporairement
+        # le sentiment_history_service pour qu'il retourne toujours None
+        original_method = self.decision_service.sentiment_history_service.get_normalized_score_at_date
+
+        try:
+            # Forcer le mode technique-only en faisant échouer le lookup sentiment
+            self.decision_service.sentiment_history_service.get_normalized_score_at_date = (
+                lambda *args, **kwargs: None
+            )
+            decision = self.decision_service.analyze(
+                symbol=request.symbol,
+                timeframe=request.timeframe,
+                history_days=request.history_days,
+                end_ts=target_dt,
+            )
+        except Exception as e:
+            logger.warning(f"Decision technique-only echouee a {request.target_date}: {e}")
+            return VerificationResult(
+                target_date=request.target_date,
+                price_at_date=price_at_date,
+                predicted_action="erreur",
+                predicted_summary=f"Erreur moteur de decision: {str(e)}",
+                outcomes=[],
+                meta={"error": str(e)},
+            )
+        finally:
+            # Restaurer la méthode originale
+            self.decision_service.sentiment_history_service.get_normalized_score_at_date = original_method
+
+        # Même logique que verify_at_date pour construire les outcomes
+        recommendation = decision.get("recommendation", {})
+        predicted_action = recommendation.get("action", "attendre")
+        predicted_confidence = recommendation.get("confidence", "low")
+        combined_score = decision.get("combined_score", 0)
+        summary = decision.get("summary", "")
+
+        scenarios = decision.get("scenarios", [])
+        dominant_label = scenarios[0].get("label", "") if scenarios else ""
+        dominant_prob = scenarios[0].get("probability", 0.0) if scenarios else 0.0
+
+        recent_volatility = self._compute_recent_volatility(
+            request.symbol, request.timeframe, target_dt
+        )
+
+        outcomes: list[HorizonOutcome] = []
+        for horizon in request.horizons:
+            horizon_dt = target_dt + timedelta(days=horizon)
+            horizon_price, horizon_date_str = self._get_closest_price_at(
+                request.symbol, request.timeframe, horizon_dt
+            )
+
+            if horizon_price is None:
+                outcomes.append(HorizonOutcome(
+                    horizon_days=horizon,
+                    end_date=horizon_dt.isoformat(),
+                    end_price=0, actual_change_pct=0,
+                    actual_direction="inconnu", predicted_action=predicted_action,
+                    predicted_score=combined_score, correct=False,
+                    quality_score=0.0, directional_match=False,
+                    detail=f"Pas de donnees disponibles a {horizon}j",
+                ))
+                continue
+
+            actual_change_pct = (horizon_price - price_at_date) / price_at_date * 100
+            dir_threshold, neutral_threshold = self._get_adaptive_thresholds(horizon, recent_volatility)
+
+            if actual_change_pct > dir_threshold:
+                actual_direction = "hausse"
+            elif actual_change_pct < -dir_threshold:
+                actual_direction = "baisse"
+            else:
+                actual_direction = "stable"
+
+            directional_match = self._check_directional_match(combined_score, actual_change_pct)
+            correct = self._is_prediction_correct(
+                predicted_action, actual_direction, actual_change_pct,
+                predicted_score=combined_score, horizon_days=horizon, volatility=recent_volatility,
+            )
+            quality_score = self._compute_prediction_quality(
+                predicted_action, combined_score, actual_change_pct,
+                horizon_days=horizon, volatility=recent_volatility,
+            )
+            detail = self._build_outcome_detail(
+                predicted_action, combined_score, actual_direction, actual_change_pct,
+                horizon, correct, quality_score, dir_threshold,
+            )
+
+            outcomes.append(HorizonOutcome(
+                horizon_days=horizon,
+                end_date=horizon_date_str or horizon_dt.isoformat(),
+                end_price=round(horizon_price, 2),
+                actual_change_pct=round(actual_change_pct, 2),
+                actual_direction=actual_direction,
+                predicted_action=predicted_action,
+                predicted_score=combined_score,
+                correct=correct,
+                quality_score=round(quality_score, 1),
+                directional_match=directional_match,
+                detail=detail,
+            ))
+
+        return VerificationResult(
+            target_date=request.target_date,
+            price_at_date=round(price_at_date, 2),
+            predicted_action=predicted_action,
+            predicted_confidence=predicted_confidence,
+            predicted_score=combined_score,
+            predicted_summary=summary,
+            dominant_scenario=dominant_label,
+            dominant_probability=dominant_prob,
+            outcomes=outcomes,
+            meta={
+                "technical_score": decision.get("technical_score", 0),
+                "sentiment_available": False,
+                "rules_satisfied": sum(
+                    1 for r in decision.get("rules_evaluated", []) if r.get("satisfied")
+                ),
+                "recent_volatility": recent_volatility,
+                "mode": "technical_only",
+            },
+        )
+
+    def _run_comparison(
+        self,
+        target_dates: list[datetime],
+        config: WalkForwardConfig,
+        with_sentiment_points: list[VerificationResult],
+        with_sentiment_accuracy: list[HorizonAccuracy],
+        with_sentiment_quality: float,
+    ) -> WalkForwardComparison:
+        """
+        Exécute un walk-forward technique-only et compare avec le run sentiment.
+
+        Retourne un WalkForwardComparison avec le delta de précision.
+        """
+        logger.info("WalkForward compare_mode: lancement du run technique-only...")
+
+        # Run technique-only
+        tech_points = self._run_walk_forward_points(target_dates, config, force_technical_only=True)
+        tech_accuracy = self._compute_accuracy(tech_points, config.horizons)
+
+        tech_quality_scores = []
+        for acc in tech_accuracy:
+            if acc.total_points > 0:
+                tech_quality_scores.append(acc.avg_quality_score)
+        tech_overall_quality = (
+            sum(tech_quality_scores) / len(tech_quality_scores)
+            if tech_quality_scores else 0.0
+        )
+
+        # Construire les stats résumées
+        tech_stats = self._build_summary_stats(tech_points, tech_accuracy, tech_overall_quality)
+        sentiment_stats = self._build_summary_stats(
+            with_sentiment_points, with_sentiment_accuracy, with_sentiment_quality
+        )
+
+        # Calculer les deltas
+        delta_accuracy = sentiment_stats.overall_accuracy_pct - tech_stats.overall_accuracy_pct
+        delta_quality = sentiment_stats.overall_quality_score - tech_stats.overall_quality_score
+
+        # Verdict lisible
+        if delta_accuracy > 2:
+            verdict = (
+                f"✅ Le sentiment historique AMÉLIORE la précision de +{delta_accuracy:.1f}% "
+                f"(qualité +{delta_quality:.1f} points). "
+                f"Le modèle technique+sentiment ({sentiment_stats.overall_accuracy_pct:.0f}%) "
+                f"surpasse le modèle technique seul ({tech_stats.overall_accuracy_pct:.0f}%)."
+            )
+        elif delta_accuracy < -2:
+            verdict = (
+                f"⚠️ Le sentiment historique DÉGRADE la précision de {delta_accuracy:.1f}% "
+                f"(qualité {delta_quality:.1f} points). "
+                f"Le modèle technique seul ({tech_stats.overall_accuracy_pct:.0f}%) "
+                f"est meilleur que technique+sentiment ({sentiment_stats.overall_accuracy_pct:.0f}%)."
+            )
+        else:
+            verdict = (
+                f"➡️ Impact marginal du sentiment (delta {delta_accuracy:+.1f}%). "
+                f"Technique seul: {tech_stats.overall_accuracy_pct:.0f}%, "
+                f"technique+sentiment: {sentiment_stats.overall_accuracy_pct:.0f}%."
+            )
+
+        return WalkForwardComparison(
+            technical_only=tech_stats,
+            with_sentiment=sentiment_stats,
+            sentiment_delta_accuracy_pct=round(delta_accuracy, 2),
+            sentiment_delta_quality=round(delta_quality, 2),
+            verdict=verdict,
+        )
+
+    def _build_summary_stats(
+        self,
+        points: list[VerificationResult],
+        accuracy_by_horizon: list[HorizonAccuracy],
+        overall_quality: float,
+    ) -> WalkForwardSummaryStats:
+        """Construit les stats résumées d'un walk-forward."""
+        total_correct = 0
+        total_points = 0
+        total_directional = 0
+        total_profitable = 0
+
+        for acc in accuracy_by_horizon:
+            total_correct += acc.correct
+            total_points += acc.total_points
+            # Weighted sum for directional and profitable
+            if acc.total_points > 0:
+                total_directional += acc.directional_accuracy_pct * acc.total_points / 100
+                total_profitable += acc.profitable_direction_pct * acc.total_points / 100
+
+        overall_accuracy = (total_correct / total_points * 100) if total_points > 0 else 0
+        dir_accuracy = (total_directional / total_points * 100) if total_points > 0 else 0
+        prof_pct = (total_profitable / total_points * 100) if total_points > 0 else 0
+
+        return WalkForwardSummaryStats(
+            total_points=len(points),
+            overall_accuracy_pct=round(overall_accuracy, 1),
+            overall_quality_score=round(overall_quality, 1),
+            directional_accuracy_pct=round(dir_accuracy, 1),
+            profitable_direction_pct=round(prof_pct, 1),
+            accuracy_by_horizon=accuracy_by_horizon,
         )
 
     def _compute_accuracy(

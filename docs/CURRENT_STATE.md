@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 5 avril 2026
-> **Version :** v1.2.0
+> **Version :** v1.2.2
 > **Branche :** `master`
-> **Dernier commit :** style(ui): amélioration UX/UI — QuickMetricsBar, grid 2×2, scroll-to-top FAB, keyboard shortcuts, footer, animations viewport
+> **Dernier commit :** feat(verification): add history integrity check, compare mode (technique vs sentiment), UI integration
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.2.0** |
+| Version courante | **v1.2.2** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **523 tests**, tous passing ✅ |
+| Tests backend | **587 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -39,23 +39,27 @@ bitcoin-trading-assistant/
 │   │   │   ├── decision.py     # GET /market/decision
 │   │   │   ├── backtest.py     # POST /backtest/run
 │   │   │   ├── verification.py # ← NOUVEAU v1.1.1 — /backtest/history/*, /backtest/verify, /backtest/walk-forward
+│   │   │   ├── sentiment.py    # ← NOUVEAU v1.2.1 — /sentiment/history/load, range, coverage, at-date
 │   │   │   ├── alerts.py       # CRUD /alerts + POST /alerts/check
 │   │   │   ├── news.py         # GET /news, GET /news/sentiment
 │   │   │   └── scheduler.py    # GET /scheduler/status, POST trigger
 │   │   ├── models/
 │   │   │   ├── candle.py       # Modèle Candle (OHLCV + timeframe)
-│   │   │   └── alert.py        # Modèle Alert (conditions + status)
+│   │   │   ├── alert.py        # Modèle Alert (conditions + status)
+│   │   │   └── sentiment_history.py # ← NOUVEAU v1.2.1 — Modèle SentimentHistory (sentiment quotidien)
 │   │   ├── schemas/
 │   │   │   ├── candle.py       # Schémas Pydantic candle
 │   │   │   ├── signal.py       # Schémas SignalItem, CompositeScore, SignalResponse
 │   │   │   ├── decision.py     # Scenario, RuleResult, Recommendation, DecisionResponse
 │   │   │   ├── backtest.py     # BacktestConfig, BacktestMetrics, BacktestResponse
 │   │   │   ├── verification.py # ← NOUVEAU v1.1.1 — HistoryLoadConfig, VerificationResult, WalkForwardResult
+│   │   │   ├── sentiment.py    # ← NOUVEAU v1.2.1 — SentimentLoadConfig, SentimentAtDateResponse, etc.
 │   │   │   ├── alert.py        # AlertCreate, AlertResponse, AlertCheck
 │   │   │   └── news.py         # NewsItem, NewsSentimentSummary, NewsResponse
 │   │   ├── services/
 │   │   │   ├── verification_service.py # ← NOUVEAU v1.1.1 — Time-travel + walk-forward
 │   │   │   ├── history_loader_service.py # ← NOUVEAU v1.1.1 — Chargement historique Binance 2017→now
+│   │   │   ├── sentiment_history_service.py # ← NOUVEAU v1.2.1 — Fear & Greed historique + requête par date
 │   │   │   ├── backtest_service.py    # Moteur de replay historique
 │   │   │   ├── decision_service.py    # Moteur de décision (règles + scénarios)
 │   │   │   ├── binance_service.py     # Client HTTP Binance (14 intervalles natifs)
@@ -157,7 +161,8 @@ bitcoin-trading-assistant/
 | **POST** | **`/backtest/history/load`** | **Chargement historique profond depuis Binance 2017→now** | **✅ NOUVEAU v1.1.1** |
 | **GET** | **`/backtest/history/range`** | **Plage de dates disponible en base** | **✅ NOUVEAU v1.1.1** |
 | **POST** | **`/backtest/verify`** | **Vérification ponctuelle à une date (time-travel)** | **✅ NOUVEAU v1.1.1** |
-| **POST** | **`/backtest/walk-forward`** | **Analyse walk-forward complète (précision globale)** | **✅ NOUVEAU v1.1.1** |
+| **POST** | **`/backtest/walk-forward`** | **Analyse walk-forward complète (précision globale) + mode comparaison** | **✅ v1.1.1 + MAJ v1.2.2** |
+| **GET** | **`/backtest/history/integrity`** | **Vérification intégrité données (complétude, gaps, grade qualité)** | **✅ NOUVEAU v1.2.2** |
 | GET | `/market/price` | Prix courant | ✅ |
 | GET | `/market/info` | Info marché | ✅ |
 | GET | `/alerts` | Lister les alertes | ✅ |
@@ -172,6 +177,10 @@ bitcoin-trading-assistant/
 | GET | `/scheduler/status` | État scheduler + dernier résultat par job | ✅ |
 | POST | `/scheduler/trigger/4h` | Trigger manuel job 4h | ✅ |
 | POST | `/scheduler/trigger/30m` | Trigger manuel job 30m | ✅ |
+| **POST** | **`/sentiment/history/load`** | **Charger le Fear & Greed Index (~2900 jours)** | **✅ NOUVEAU v1.2.1** |
+| **GET** | **`/sentiment/history/range`** | **Plage de dates sentiment disponible** | **✅ NOUVEAU v1.2.1** |
+| **GET** | **`/sentiment/history/coverage`** | **Couverture globale sentiment** | **✅ NOUVEAU v1.2.1** |
+| **GET** | **`/sentiment/history/at-date`** | **Sentiment à une date donnée** | **✅ NOUVEAU v1.2.1** |
 
 ### 3.2 Backend — Services
 
@@ -221,6 +230,8 @@ bitcoin-trading-assistant/
 | **Profitabilité** | **% de prédictions où suivre le signal aurait été profitable** | **✅ NOUVEAU v1.2** |
 | **Qualité globale** | **Score qualité moyen pondéré sur tous les horizons** | **✅ NOUVEAU v1.2** |
 | **Mode 100% technique** | En historique, sentiment non dispo → mode dégradé documenté | ✅ |
+| **Intégrité des données** | **Détection des gaps, complétude %, grade qualité (EXCELLENT/GOOD/WARNING/CRITICAL)** | **✅ NOUVEAU v1.2.2** |
+| **Mode comparaison** | **Walk-forward : technique seul vs technique + sentiment, delta accuracy/qualité, verdict** | **✅ NOUVEAU v1.2.2** |
 
 ### 3.4 Backend — Moteur de Décision (v1.0)
 
@@ -309,7 +320,7 @@ bitcoin-trading-assistant/
 
 | Composant | Description | Status |
 |-----------|-------------|--------|
-| **VerificationPanel** | **Charger historique + vérifier date + walk-forward + résultats ✅/❌** | **✅ NOUVEAU v1.1.1** |
+| **VerificationPanel** | **Charger historique + intégrité données + vérifier date + walk-forward + mode comparaison** | **✅ v1.1.1 + MAJ v1.2.2** |
 | **BacktestPanel** | **Config + métriques (PnL, Sharpe, DD, Win Rate) + journal trades** | **✅ v1.1** |
 | **DecisionPanel** | Scénarios visuels + recommandation + règles collapsibles | ✅ |
 | **QuickMetricsBar** | **Barre KPIs rapides (Décision, Score, Tendance, Signaux, Sentiment)** | **✅ NOUVEAU** |
@@ -344,10 +355,10 @@ bitcoin-trading-assistant/
 | test_news.py | 43 | Sentiment, impact, RSS, résumé, résilience, endpoints |
 | test_decision.py | 75 | Règles, scénarios, recommandation, intégration, endpoint |
 | test_backtest.py | 31 | Schémas, métriques, intégration DB, endpoints, edge cases |
-| **test_verification.py** | **60** | **Range, verify, walk-forward, correctness v1.2, directional match, quality score, seuils adapatifs, endpoints** |
+| **test_verification.py** | **82** | **Range, verify, walk-forward, correctness v1.2, directional match, quality score, seuils adapatifs, integrity, compare mode, endpoints** |
 | test_binance_and_router.py | 89 | Binance 14 intervalles, DataSourceRouter, combinaisons |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **523** | **Tous passing ✅** |
+| **TOTAL** | **587** | **Tous passing ✅** |
 
 ---
 
@@ -412,24 +423,21 @@ python -m pytest tests/ -v
 | **2** | INFINI v1 | v1.0 → v1.6 | Assistant intelligent, décisionnel (BTC-first) | 🔄 **En cours (v1.1.1 livré)** |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) livrés, prochaine étape : Sentiment Historique (v1.2)
+**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) livrés, prochaine étape : CryptoCompare News historique (v1.2.3)
 
 ---
 
-## 8. Prochaine étape : v1.2 — Sentiment Historique + ML
+## 8. Prochaine étape : v1.2.3 — CryptoCompare News historique
 
-> **Changement de stratégie** : On perfectionne d'abord tout sur BTC. Le multi-assets (v1.6) viendra quand le modèle sera mature.
+> **Objectif** : Ajouter une seconde source de sentiment historique (news depuis 2015) pour enrichir le modèle.
 
-Le système enrichit son moteur de décision avec du sentiment historique :
+Le système enrichit son moteur de décision avec des news historiques :
 
 | Fonctionnalité | Description |
 |-----------------|-------------|
-| Fear & Greed Index | Score quotidien 0-100 depuis février 2018 (gratuit) |
-| CryptoCompare News | News historiques gratuites depuis 2015 |
-| Intégration DecisionService | En backtest, utiliser le sentiment stocké au lieu du RSS temps réel |
-| Walk-forward amélioré | Tester le modèle COMPLET (technique + sentiment) vs 100% technique |
-
-**Résultat attendu :** Le walk-forward historique utilise le sentiment réel de chaque époque, augmentant la précision du modèle et la confiance dans les décisions.
+| CryptoCompare News API | Client pour récupérer les news crypto historiques depuis 2015 (gratuit) |
+| Intégration sentiment multi-source | Combiner Fear & Greed + sentiment news pour un score plus robuste |
+| Walk-forward multi-source | Tester technique seul vs technique + FnG vs technique + FnG + news |
 
 ---
 
@@ -443,7 +451,9 @@ Le système enrichit son moteur de décision avec du sentiment historique :
 | ~~Moteur de Décision~~ | ~~v1.0~~ | ✅ **Livré** |
 | ~~Backtesting engine~~ | ~~v1.1~~ | ✅ **Livré** |
 | ~~Vérification historique~~ | ~~v1.1.1~~ | ✅ **Livré** |
-| Sentiment historique + ML | v1.2 | ❌ **Prochaine étape** |
+| ~~Sentiment historique Fear & Greed~~ | ~~v1.2.1~~ | ✅ **Livré** |
+| ~~Intégrité données + mode comparaison~~ | ~~v1.2.2~~ | ✅ **Livré** |
+| CryptoCompare News historique + ML | v1.2.3+ | ❌ **Prochaine étape** |
 | Risk management engine | v1.3 | ❌ Non commencé |
 | Paper trading | v1.4 | ❌ Non commencé |
 | Docker Compose | v1.5 | ❌ Non commencé |

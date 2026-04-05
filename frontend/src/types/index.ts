@@ -63,6 +63,17 @@ export type {
   WalkForwardConfig,
   WalkForwardResult,
   HorizonAccuracy,
+  WalkForwardSummaryStats,
+  WalkForwardComparison,
+  // History Integrity
+  HistoryIntegrityGap,
+  HistoryIntegrityResponse,
+  // Sentiment Historique
+  SentimentLoadConfig,
+  SentimentLoadResponse,
+  SentimentRangeResponse,
+  SentimentAtDateResponse,
+  SentimentCoverageResponse,
 } from './api';
 
 // Représente un chandelier (bougie) OHLCV

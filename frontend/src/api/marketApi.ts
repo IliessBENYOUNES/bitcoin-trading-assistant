@@ -21,10 +21,16 @@ import type {
   HistoryLoadConfig,
   HistoryLoadResponse,
   HistoryRangeResponse,
+  HistoryIntegrityResponse,
   VerificationRequest,
   VerificationResult,
   WalkForwardConfig,
   WalkForwardResult,
+  SentimentLoadConfig,
+  SentimentLoadResponse,
+  SentimentRangeResponse,
+  SentimentAtDateResponse,
+  SentimentCoverageResponse,
 } from '../types';
 
 // -----------------------------------------------------------------------------
@@ -323,6 +329,16 @@ export async function getHistoryRange(
   return apiFetch<HistoryRangeResponse>(endpoint, options);
 }
 
+export async function getHistoryIntegrity(
+  params: { symbol?: string; timeframe?: string } = {},
+  options: FetchOptions = {}
+): Promise<HistoryIntegrityResponse> {
+  const symbol = params.symbol || 'BTC/USD';
+  const timeframe = params.timeframe || '1d';
+  const endpoint = `/backtest/history/integrity?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`;
+  return apiFetch<HistoryIntegrityResponse>(endpoint, options);
+}
+
 export async function verifyAtDate(
   request: VerificationRequest,
   options: FetchOptions = {}
@@ -359,3 +375,48 @@ export async function runWalkForward(
   return response.json() as Promise<WalkForwardResult>;
 }
 
+// -----------------------------------------------------------------------------
+// Sentiment Historique
+// ----------------------------------------------------------------------------
+
+export async function loadSentimentHistory(
+  config: SentimentLoadConfig = {},
+  options: FetchOptions = {}
+): Promise<SentimentLoadResponse> {
+  const url = `${BASE_URL}/sentiment/history/load`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(config),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<SentimentLoadResponse>;
+}
+
+export async function getSentimentRange(
+  params: { source?: string } = {},
+  options: FetchOptions = {}
+): Promise<SentimentRangeResponse> {
+  const source = params.source || 'fear_and_greed';
+  const endpoint = `/sentiment/history/range?source=${encodeURIComponent(source)}`;
+  return apiFetch<SentimentRangeResponse>(endpoint, options);
+}
+
+export async function getSentimentCoverage(
+  options: FetchOptions = {}
+): Promise<SentimentCoverageResponse> {
+  return apiFetch<SentimentCoverageResponse>('/sentiment/history/coverage', options);
+}
+
+export async function getSentimentAtDate(
+  params: { date: string; source?: string },
+  options: FetchOptions = {}
+): Promise<SentimentAtDateResponse> {
+  const source = params.source || 'fear_and_greed';
+  const endpoint = `/sentiment/history/at-date?date=${encodeURIComponent(params.date)}&source=${encodeURIComponent(source)}`;
+  return apiFetch<SentimentAtDateResponse>(endpoint, options);
+}

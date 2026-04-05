@@ -37,7 +37,7 @@
 │  ├── Moteur de décision / règles        ✅ Livré (v1.0)             │
 │  ├── Backtesting engine                 ✅ Livré (v1.1)             │
 │  ├── Vérification historique            ✅ Livré (v1.1.1)           │
-│  ├── Sentiment historique + ML          ⬜ Prochaine étape (v1.2)   │
+│  ├── Sentiment historique + ML          🔄 En cours (v1.2.1-1.2.2 livrés)  │
 │  ├── Risk management engine             ⬜ Planifié (v1.3)         │
 │  ├── Paper trading                      ⬜ Planifié (v1.4)         │
 │  ├── Production (Docker, CI/CD, Auth)   ⬜ Planifié (v1.5)         │
@@ -62,7 +62,7 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v1.2.0 — Signaux + Vérification améliorés (Livré) ✅
+### État actuel : v1.2.2 — Intégrité données + Mode comparaison (Livré) ✅
 
 | Composant | Status |
 |-----------|--------|
@@ -84,7 +84,9 @@
 | **BacktestPanel (config + métriques + journal trades)** | **✅ Complet (v1.1)** |
 | **Vérification historique (time-travel + walk-forward)** | **✅ Complet (v1.1.1)** |
 | **VerificationPanel (charger historique + vérifier + walk-forward)** | **✅ Complet (v1.1.1)** |
-| 523 tests backend | ✅ Tous passing |
+| **Intégrité données (complétude, gaps, grade qualité)** | **✅ Complet (v1.2.2)** |
+| **Mode comparaison walk-forward (technique vs technique+sentiment)** | **✅ Complet (v1.2.2)** |
+| 587 tests backend | ✅ Tous passing |
 
 ### ✅ LIVRÉ : v0.7 — Moteur de Signaux (Niveau 2)
 

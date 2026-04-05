@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.services.signal_service import SignalService
 from app.services.news_service import NewsService
+from app.services.sentiment_history_service import SentimentHistoryService
 from app.schemas.signal import SignalDirection, ConfidenceLevel
 from app.schemas.decision import (
     Scenario,
@@ -218,6 +219,7 @@ class DecisionService:
         self.db = db
         self.signal_service = SignalService(db)
         self.news_service = NewsService()
+        self.sentiment_history_service = SentimentHistoryService(db)
 
     def evaluate_rules(
         self,
@@ -493,6 +495,12 @@ class DecisionService:
 
         Point d'entrée principal du moteur de décision.
 
+        AMÉLIORATION v1.2 :
+        Quand end_ts est fourni (mode backtest/vérification historique),
+        le service cherche le sentiment historique (Fear & Greed Index)
+        stocké en base au lieu d'appeler le RSS temps réel.
+        Cela permet un backtest COMPLET (technique + sentiment).
+
         Returns:
             Dict compatible avec DecisionResponse
         """
@@ -507,18 +515,30 @@ class DecisionService:
         )
         technical_score = signals_data.get("composite", {}).get("score", 0)
 
-        # 2. Récupérer le sentiment (mode dégradé si indisponible)
+        # 2. Récupérer le sentiment
+        # Mode historique (end_ts fourni) : utiliser le sentiment stocké en base
+        # Mode temps réel (end_ts absent) : utiliser le RSS comme avant
         sentiment_available = True
         sentiment_score = 0
         sentiment_data: dict = {}
-        try:
-            sentiment_summary = self.news_service.get_sentiment_only()
-            sentiment_score = sentiment_summary.sentiment_score
-            sentiment_data = sentiment_summary.model_dump()
-        except Exception as e:
-            logger.warning(f"Sentiment indisponible, mode dégradé: {e}")
-            sentiment_available = False
-            sentiment_data = {"sentiment_score": 0}
+        sentiment_source = "live_rss"
+
+        if end_ts is not None:
+            # Mode historique : chercher le Fear & Greed Index en base
+            sentiment_score, sentiment_available, sentiment_source = (
+                self._get_historical_sentiment(end_ts)
+            )
+            sentiment_data = {"sentiment_score": sentiment_score}
+        else:
+            # Mode temps réel : RSS comme avant
+            try:
+                sentiment_summary = self.news_service.get_sentiment_only()
+                sentiment_score = sentiment_summary.sentiment_score
+                sentiment_data = sentiment_summary.model_dump()
+            except Exception as e:
+                logger.warning(f"Sentiment indisponible, mode dégradé: {e}")
+                sentiment_available = False
+                sentiment_data = {"sentiment_score": 0}
 
         # 3. Calculer le score combiné
         if sentiment_available:
@@ -566,6 +586,37 @@ class DecisionService:
             "combined_score": combined_score,
             "summary": summary,
         }
+
+    def _get_historical_sentiment(
+        self, end_ts: datetime
+    ) -> tuple[int, bool, str]:
+        """
+        Récupère le sentiment historique pour une date donnée.
+
+        Cherche le Fear & Greed Index le plus proche de end_ts en base.
+        Si aucun sentiment n'est disponible, retourne (0, False, "none").
+
+        Returns:
+            (sentiment_score, sentiment_available, source)
+        """
+        try:
+            date_str = end_ts.strftime("%Y-%m-%d")
+            normalized = self.sentiment_history_service.get_normalized_score_at_date(date_str)
+
+            if normalized is not None:
+                # Arrondir à l'entier pour compatibilité avec le moteur existant
+                score = int(round(normalized))
+                score = max(-100, min(100, score))
+                logger.debug(
+                    f"Sentiment historique à {date_str}: Fear&Greed={score}"
+                )
+                return score, True, "fear_and_greed_historical"
+            else:
+                logger.debug(f"Pas de sentiment historique disponible pour {date_str}")
+                return 0, False, "none"
+        except Exception as e:
+            logger.warning(f"Erreur récupération sentiment historique: {e}")
+            return 0, False, "none"
 
     def _build_summary(
         self,

@@ -399,6 +399,8 @@ export interface HorizonOutcome {
   predicted_action: string;
   predicted_score: number;
   correct: boolean;
+  quality_score: number;
+  directional_match: boolean;
   detail: string;
 }
 
@@ -431,6 +433,7 @@ export interface WalkForwardConfig {
   timeframe?: string;
   history_days?: number;
   horizons?: number[];
+  compare_mode?: boolean;
 }
 
 export interface HorizonAccuracy {
@@ -444,6 +447,29 @@ export interface HorizonAccuracy {
   buy_signals: number;
   sell_signals: number;
   hold_signals: number;
+  // Métriques avancées v1.2
+  directional_accuracy_pct: number;
+  avg_quality_score: number;
+  high_confidence_accuracy_pct: number;
+  high_confidence_count: number;
+  profitable_direction_pct: number;
+}
+
+export interface WalkForwardSummaryStats {
+  total_points: number;
+  overall_accuracy_pct: number;
+  overall_quality_score: number;
+  directional_accuracy_pct: number;
+  profitable_direction_pct: number;
+  accuracy_by_horizon: HorizonAccuracy[];
+}
+
+export interface WalkForwardComparison {
+  technical_only: WalkForwardSummaryStats;
+  with_sentiment: WalkForwardSummaryStats;
+  sentiment_delta_accuracy_pct: number;
+  sentiment_delta_quality: number;
+  verdict: string;
 }
 
 export interface WalkForwardResult {
@@ -455,5 +481,77 @@ export interface WalkForwardResult {
   points: VerificationResult[];
   summary: string;
   duration_seconds: number;
+  overall_quality_score: number;
+  comparison: WalkForwardComparison | null;
 }
 
+// -----------------------------------------------------------------------------
+// History Integrity (/backtest/history/integrity)
+// -----------------------------------------------------------------------------
+
+export interface HistoryIntegrityGap {
+  start_date: string;
+  end_date: string;
+  missing_days: number;
+}
+
+export interface HistoryIntegrityResponse {
+  symbol: string;
+  timeframe: string;
+  total_candles: number;
+  expected_candles: number;
+  missing_candles: number;
+  completeness_pct: number;
+  gaps: HistoryIntegrityGap[];
+  min_date: string | null;
+  max_date: string | null;
+  quality_grade: 'EXCELLENT' | 'GOOD' | 'WARNING' | 'CRITICAL' | 'UNKNOWN';
+  detail: string;
+}
+
+// -----------------------------------------------------------------------------
+// Sentiment Historique (/sentiment/history)
+// -----------------------------------------------------------------------------
+
+export interface SentimentLoadConfig {
+  source?: string;
+  start_date?: string;
+  end_date?: string;
+}
+
+export interface SentimentLoadResponse {
+  source: string;
+  fetched: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+  total_in_db: number;
+  date_range_start: string | null;
+  date_range_end: string | null;
+  duration_seconds: number;
+}
+
+export interface SentimentRangeResponse {
+  source: string;
+  min_date: string | null;
+  max_date: string | null;
+  total_points: number;
+  has_data: boolean;
+}
+
+export interface SentimentAtDateResponse {
+  date: string;
+  source: string;
+  raw_score: number;
+  normalized_score: number;
+  label: string | null;
+  exact_match: boolean;
+  actual_date: string | null;
+}
+
+export interface SentimentCoverageResponse {
+  sources: SentimentRangeResponse[];
+  total_points: number;
+  earliest_date: string | null;
+  latest_date: string | null;
+}

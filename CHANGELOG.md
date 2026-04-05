@@ -2,6 +2,67 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2026-04-05
+
+### Added
+- **Intégrité des données historiques** : Nouveau endpoint `GET /backtest/history/integrity` qui analyse la complétude des candles en base
+  - Détection automatique des gaps (jours manquants), regroupement en plages consécutives
+  - Grade de qualité : EXCELLENT (≥99%), GOOD (≥95%), WARNING (≥85%), CRITICAL (<85%)
+  - Statistiques : total, attendues, manquantes, complétude %, détail textuel
+- **Mode comparaison walk-forward** : Nouveau paramètre `compare_mode` pour l'analyse walk-forward
+  - Exécute le walk-forward en double : technique seul vs technique + sentiment (Fear & Greed)
+  - Calcul des deltas : Δ accuracy, Δ qualité, verdict automatique
+  - Quantifie l'apport réel du sentiment sur la précision du modèle
+- **Schémas Pydantic** : `WalkForwardComparison`, `WalkForwardSummaryStats`, `HistoryIntegrityGap`, `HistoryIntegrityResponse`
+- **22 nouveaux tests** :
+  - `TestHistoryIntegrity` (6) : no data, complete, with gaps, critical, min/max, timeframes
+  - `TestIntegrityEndpoint` (2) : endpoint avec/sans données
+  - `TestWalkForwardCompare` (4) : sans compare, avec compare, accuracy by horizon, endpoint
+  - `TestNewSchemas` (10) : schema models, timeframe mapping, gap grouping
+- **Frontend — Intégrité UI** : Affichage du grade qualité, complétude %, gaps détectés dans le VerificationPanel
+- **Frontend — Compare mode UI** : Checkbox pour activer le mode comparaison, affichage side-by-side des résultats (technique seul vs technique + sentiment), delta chips, verdict
+
+### Changed
+- **VerificationPanel** : Nouvelle section intégrité après chargement, checkbox compare mode dans le walk-forward, affichage résultats de comparaison
+- **Walk-forward endpoint** : Description mise à jour pour documenter le `compare_mode`
+
+### Technical
+- 587 tests backend passing (565 → 587, +22 tests)
+- Frontend tsc --noEmit sans erreur
+- Aucune régression sur les 565 tests existants
+
+## [1.2.1] - 2026-04-05
+
+### Added
+- **Sentiment Historique — Fear & Greed Index** : Le moteur de décision utilise désormais le sentiment réel lors des backtests historiques
+  - Nouveau modèle `SentimentHistory` (table SQL avec date, source, score brut 0-100, score normalisé -100/+100)
+  - Client API Alternative.me (gratuit, ~2900 points depuis février 2018)
+  - Chargement idempotent : relancer ne crée pas de doublons, met à jour les valeurs modifiées
+  - Normalisation Fear & Greed : 0 (peur extrême) → -100, 50 (neutre) → 0, 100 (avidité) → +100
+- **Intégration DecisionService ← Sentiment Historique** : En mode backtest (end_ts fourni), le moteur cherche le Fear & Greed Index en base au lieu du RSS temps réel
+  - Mode complet : 70% technique + 30% sentiment historique (au lieu de 100% technique)
+  - Fallback gracieux : si pas de sentiment à cette date → mode dégradé 100% technique
+  - Le mode temps réel (pas de end_ts) continue d'utiliser le RSS comme avant
+- **4 nouveaux endpoints API** :
+  - `POST /sentiment/history/load` — Charger le Fear & Greed Index (~2900 jours en une requête)
+  - `GET /sentiment/history/range` — Plage de dates disponible
+  - `GET /sentiment/history/coverage` — Couverture globale (toutes sources)
+  - `GET /sentiment/history/at-date` — Sentiment à une date donnée
+- **42 nouveaux tests** : Modèle (4), normalisation (6), requête par date (6), plage/couverture (5), chargement mock (7), intégration DecisionService (3), endpoints (7), schemas (4)
+- **Frontend — Types synchronisés v1.2** : `HorizonOutcome` (+quality_score, directional_match), `HorizonAccuracy` (+5 métriques), `WalkForwardResult` (+overall_quality_score)
+- **Frontend — Types sentiment** : `SentimentLoadConfig`, `SentimentLoadResponse`, `SentimentRangeResponse`, `SentimentAtDateResponse`, `SentimentCoverageResponse`
+- **Frontend — API sentiment** : `loadSentimentHistory()`, `getSentimentRange()`, `getSentimentCoverage()`, `getSentimentAtDate()`
+- **VerificationPanel amélioré** : Bouton "Charger Fear & Greed", affichage qualité score, directional match, métriques walk-forward v1.2
+
+### Changed
+- **DecisionService** : La méthode `analyze()` détecte automatiquement si `end_ts` est fourni pour router entre sentiment live (RSS) et historique (Fear & Greed en base)
+- **VerificationPanel** : Message d'info dynamique selon que le sentiment historique est chargé ou non
+
+### Technical
+- 565 tests backend passing (523 → 565, +42 tests)
+- Frontend tsc --noEmit sans erreur
+- Aucune régression sur les 523 tests existants
+
 ## [1.2.0] - 2026-04-05
 
 ### Added

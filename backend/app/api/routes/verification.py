@@ -18,6 +18,7 @@ from app.schemas.verification import (
     HistoryLoadConfig,
     HistoryLoadResponse,
     HistoryRangeResponse,
+    HistoryIntegrityResponse,
     VerificationRequest,
     VerificationResult,
     WalkForwardConfig,
@@ -69,6 +70,27 @@ def get_history_range(
     return service.get_history_range(symbol, timeframe)
 
 
+@router.get(
+    "/history/integrity",
+    response_model=HistoryIntegrityResponse,
+    summary="Verification d'integrite de l'historique",
+    description=(
+        "Analyse la completude de l'historique charge : detecte les jours manquants, "
+        "calcule un pourcentage de completude, et attribue un grade de qualite "
+        "(EXCELLENT, GOOD, WARNING, CRITICAL). "
+        "Important : les indicateurs techniques (SMA200) sont fausses si >5% de trous."
+    ),
+)
+def check_history_integrity(
+    symbol: str = "BTC/USD",
+    timeframe: str = "1d",
+    db: Session = Depends(get_db),
+) -> HistoryIntegrityResponse:
+    """Verifie l'integrite de l'historique charge."""
+    service = VerificationService(db)
+    return service.check_integrity(symbol, timeframe)
+
+
 @router.post(
     "/verify",
     response_model=VerificationResult,
@@ -102,6 +124,8 @@ def verify_at_date(
     description=(
         "Execute verify_at_date a intervalles reguliers sur une plage de dates, "
         "puis agrege les resultats pour mesurer la precision globale du modele. "
+        "Si compare_mode=true, execute aussi en mode 100% technique et compare "
+        "avec le mode technique+sentiment pour mesurer l'apport du sentiment. "
         "Attention : peut prendre plusieurs minutes selon la plage et le pas."
     ),
 )

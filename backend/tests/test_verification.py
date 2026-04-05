@@ -25,6 +25,10 @@ from app.schemas.verification import (
     WalkForwardResult,
     HorizonOutcome,
     HorizonAccuracy,
+    HistoryIntegrityResponse,
+    HistoryIntegrityGap,
+    WalkForwardComparison,
+    WalkForwardSummaryStats,
 )
 
 
@@ -724,4 +728,303 @@ class TestHistoryLoaderEndpoint:
             assert "fetched" in data
             assert "inserted" in data
             assert data["fetched"] == 2
+
+
+# =============================================================================
+# Tests Intégrité de l'historique
+# =============================================================================
+
+class TestHistoryIntegrity:
+    """Tests pour check_integrity — détection des trous dans l'historique."""
+
+    def test_integrity_no_data(self, db_session):
+        """Sans données, retourne grade UNKNOWN."""
+        service = VerificationService(db_session)
+        result = service.check_integrity("BTC/USD", "1d")
+        assert result.quality_grade == "UNKNOWN"
+        assert result.total_candles == 0
+
+    def test_integrity_complete_data(self, db_session):
+        """Avec données complètes, retourne grade EXCELLENT."""
+        # Seed 100 jours consécutifs sans trou
+        _seed_candles(db_session, days=100)
+        service = VerificationService(db_session)
+        result = service.check_integrity("BTC/USD", "1d")
+
+        assert result.quality_grade == "EXCELLENT"
+        assert result.completeness_pct >= 99
+        assert result.total_candles == 100
+        assert len(result.gaps) == 0
+
+    def test_integrity_with_gaps(self, db_session):
+        """Avec des trous, détecte les jours manquants."""
+        # Créer des candles avec un trou de 5 jours au milieu
+        base_date = datetime(2019, 1, 1, tzinfo=timezone.utc)
+        candles = []
+        for i in range(100):
+            # Skip les jours 30 à 34 (5 jours de trou)
+            if 30 <= i <= 34:
+                continue
+            ts = base_date + timedelta(days=i)
+            candles.append(Candle(
+                symbol="BTC/USD", timeframe="1d", timestamp=ts,
+                open_price=10000, high_price=10100, low_price=9900,
+                close_price=10050, volume=1000, source="test",
+            ))
+        db_session.add_all(candles)
+        db_session.commit()
+
+        service = VerificationService(db_session)
+        result = service.check_integrity("BTC/USD", "1d")
+
+        assert result.missing_candles == 5
+        assert len(result.gaps) >= 1
+        assert result.quality_grade in ("GOOD", "EXCELLENT")
+        assert result.completeness_pct < 100
+
+    def test_integrity_critical_gaps(self, db_session):
+        """Avec beaucoup de trous, retourne grade CRITICAL ou WARNING."""
+        # Seed seulement tous les 3 jours sur 100 jours → ~33% complet
+        base_date = datetime(2019, 1, 1, tzinfo=timezone.utc)
+        candles = []
+        for i in range(0, 100, 3):
+            ts = base_date + timedelta(days=i)
+            candles.append(Candle(
+                symbol="BTC/USD", timeframe="1d", timestamp=ts,
+                open_price=10000, high_price=10100, low_price=9900,
+                close_price=10050, volume=1000, source="test",
+            ))
+        db_session.add_all(candles)
+        db_session.commit()
+
+        service = VerificationService(db_session)
+        result = service.check_integrity("BTC/USD", "1d")
+
+        assert result.quality_grade == "CRITICAL"
+        assert result.missing_candles > 50
+        assert result.completeness_pct < 50
+
+    def test_integrity_response_has_min_max_date(self, db_session):
+        """Le résultat contient les dates min/max."""
+        _seed_candles(db_session, days=50)
+        service = VerificationService(db_session)
+        result = service.check_integrity("BTC/USD", "1d")
+        assert result.min_date is not None
+        assert result.max_date is not None
+
+    def test_integrity_different_timeframes(self, db_session):
+        """L'intégrité est vérifiée par timeframe sans mélanger."""
+        _seed_candles(db_session, timeframe="1d", days=50)
+        service = VerificationService(db_session)
+
+        daily = service.check_integrity("BTC/USD", "1d")
+        hourly = service.check_integrity("BTC/USD", "4h")
+
+        assert daily.total_candles == 50
+        assert hourly.total_candles == 0
+        assert hourly.quality_grade == "UNKNOWN"
+
+
+class TestIntegrityEndpoint:
+    """Tests pour l'endpoint GET /backtest/history/integrity."""
+
+    def test_integrity_endpoint_no_data(self, client):
+        """GET /backtest/history/integrity sans données."""
+        response = client.get("/backtest/history/integrity?symbol=BTC/USD&timeframe=1d")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["quality_grade"] == "UNKNOWN"
+        assert data["total_candles"] == 0
+
+    def test_integrity_endpoint_with_data(self, client, db_session):
+        """GET /backtest/history/integrity avec données."""
+        _seed_candles(db_session, days=100)
+        response = client.get("/backtest/history/integrity?symbol=BTC/USD&timeframe=1d")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["quality_grade"] in ("EXCELLENT", "GOOD", "WARNING", "CRITICAL")
+        assert data["total_candles"] == 100
+        assert "completeness_pct" in data
+        assert "gaps" in data
+        assert "detail" in data
+
+
+# =============================================================================
+# Tests Walk-Forward comparatif (compare_mode)
+# =============================================================================
+
+class TestWalkForwardCompare:
+    """Tests pour le walk-forward en mode comparatif (technique-only vs technique+sentiment)."""
+
+    def test_walk_forward_without_compare_mode(self, db_session):
+        """Sans compare_mode, comparison est None."""
+        _seed_candles(db_session, days=400)
+        service = VerificationService(db_session)
+
+        result = service.walk_forward(WalkForwardConfig(
+            start_date="2019-08-01",
+            end_date="2019-10-01",
+            step_days=30,
+            horizons=[7],
+            compare_mode=False,
+        ))
+
+        assert result.comparison is None
+
+    def test_walk_forward_with_compare_mode(self, db_session):
+        """Avec compare_mode=True, comparison est remplie."""
+        _seed_candles(db_session, days=400)
+        service = VerificationService(db_session)
+
+        result = service.walk_forward(WalkForwardConfig(
+            start_date="2019-08-01",
+            end_date="2019-10-01",
+            step_days=30,
+            horizons=[7],
+            compare_mode=True,
+        ))
+
+        assert result.comparison is not None
+        assert result.comparison.technical_only is not None
+        assert result.comparison.with_sentiment is not None
+        assert isinstance(result.comparison.sentiment_delta_accuracy_pct, float)
+        assert isinstance(result.comparison.sentiment_delta_quality, float)
+        assert len(result.comparison.verdict) > 0
+
+    def test_compare_mode_has_accuracy_by_horizon(self, db_session):
+        """Le mode comparatif a les accuracy par horizon pour les deux modes."""
+        _seed_candles(db_session, days=400)
+        service = VerificationService(db_session)
+
+        result = service.walk_forward(WalkForwardConfig(
+            start_date="2019-08-01",
+            end_date="2019-10-01",
+            step_days=30,
+            horizons=[7],
+            compare_mode=True,
+        ))
+
+        comp = result.comparison
+        assert len(comp.technical_only.accuracy_by_horizon) > 0
+        assert len(comp.with_sentiment.accuracy_by_horizon) > 0
+
+    def test_compare_mode_endpoint(self, client, db_session):
+        """POST /backtest/walk-forward avec compare_mode=true retourne comparison."""
+        _seed_candles(db_session, days=400)
+        response = client.post("/backtest/walk-forward", json={
+            "start_date": "2019-08-01",
+            "end_date": "2019-10-01",
+            "step_days": 30,
+            "horizons": [7],
+            "compare_mode": True,
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["comparison"] is not None
+        assert "technical_only" in data["comparison"]
+        assert "with_sentiment" in data["comparison"]
+        assert "verdict" in data["comparison"]
+
+
+# =============================================================================
+# Tests nouveaux schémas
+# =============================================================================
+
+class TestNewSchemas:
+    """Tests pour les nouveaux schémas ajoutés."""
+
+    def test_walk_forward_config_compare_mode_default(self):
+        """compare_mode est False par défaut."""
+        config = WalkForwardConfig(start_date="2018-01-01", end_date="2025-12-31")
+        assert config.compare_mode is False
+
+    def test_history_integrity_gap_model(self):
+        gap = HistoryIntegrityGap(
+            start_date="2020-03-15",
+            end_date="2020-03-17",
+            missing_days=3,
+        )
+        assert gap.missing_days == 3
+
+    def test_history_integrity_response_model(self):
+        resp = HistoryIntegrityResponse(
+            symbol="BTC/USD",
+            timeframe="1d",
+            total_candles=3000,
+            expected_candles=3100,
+            missing_candles=100,
+            completeness_pct=96.77,
+            quality_grade="GOOD",
+            detail="Test",
+        )
+        assert resp.quality_grade == "GOOD"
+        assert resp.completeness_pct == 96.77
+
+    def test_walk_forward_comparison_model(self):
+        tech_stats = WalkForwardSummaryStats(
+            total_points=50,
+            overall_accuracy_pct=62.0,
+            overall_quality_score=55.0,
+        )
+        sent_stats = WalkForwardSummaryStats(
+            total_points=50,
+            overall_accuracy_pct=65.0,
+            overall_quality_score=58.0,
+        )
+        comp = WalkForwardComparison(
+            technical_only=tech_stats,
+            with_sentiment=sent_stats,
+            sentiment_delta_accuracy_pct=3.0,
+            sentiment_delta_quality=3.0,
+            verdict="Le sentiment améliore la précision",
+        )
+        assert comp.sentiment_delta_accuracy_pct == 3.0
+        assert comp.with_sentiment.overall_accuracy_pct > comp.technical_only.overall_accuracy_pct
+
+    def test_walk_forward_summary_stats_model(self):
+        stats = WalkForwardSummaryStats(
+            total_points=100,
+            overall_accuracy_pct=70.5,
+            overall_quality_score=62.0,
+            directional_accuracy_pct=72.0,
+            profitable_direction_pct=68.0,
+        )
+        assert stats.overall_accuracy_pct == 70.5
+
+    def test_timeframe_step_mapping(self, db_session):
+        """Les pas temporels sont corrects pour chaque timeframe."""
+        assert VerificationService._get_timeframe_step("1d") == timedelta(days=1)
+        assert VerificationService._get_timeframe_step("4h") == timedelta(hours=4)
+        assert VerificationService._get_timeframe_step("1h") == timedelta(hours=1)
+        assert VerificationService._get_timeframe_step("1w") == timedelta(weeks=1)
+
+    def test_group_consecutive_gaps_empty(self):
+        """Pas de dates manquantes → pas de gaps."""
+        gaps = VerificationService._group_consecutive_gaps([])
+        assert gaps == []
+
+    def test_group_consecutive_gaps_single(self):
+        """Une seule date manquante → un gap de 1 jour."""
+        from datetime import date
+        gaps = VerificationService._group_consecutive_gaps([date(2020, 3, 15)])
+        assert len(gaps) == 1
+        assert gaps[0].missing_days == 1
+
+    def test_group_consecutive_gaps_consecutive(self):
+        """Dates consécutives → un seul gap."""
+        from datetime import date
+        missing = [date(2020, 3, 15), date(2020, 3, 16), date(2020, 3, 17)]
+        gaps = VerificationService._group_consecutive_gaps(missing)
+        assert len(gaps) == 1
+        assert gaps[0].missing_days == 3
+
+    def test_group_consecutive_gaps_multiple(self):
+        """Dates non-consécutives → plusieurs gaps."""
+        from datetime import date
+        missing = [date(2020, 3, 15), date(2020, 3, 16), date(2020, 4, 1), date(2020, 4, 2)]
+        gaps = VerificationService._group_consecutive_gaps(missing)
+        assert len(gaps) == 2
+        assert gaps[0].missing_days == 2
+        assert gaps[1].missing_days == 2
+
 

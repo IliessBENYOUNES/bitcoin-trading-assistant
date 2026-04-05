@@ -17,12 +17,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import engine, Base
-from app.api.routes import health_router, market_router, alerts_router, news_router, decision_router, backtest_router, verification_router
+from app.api.routes import health_router, market_router, alerts_router, news_router, decision_router, backtest_router, verification_router, sentiment_router
 from app.api.routes.scheduler import router as scheduler_router
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 
 # IMPORTANT : importer les modèles pour que SQLAlchemy les connaisse
-from app.models import Candle, Alert  # noqa: F401
+from app.models import Candle, Alert, SentimentHistory  # noqa: F401
 
 # Configuration
 settings = get_settings()
@@ -105,6 +105,7 @@ app.include_router(alerts_router)      # /alerts CRUD + /alerts/check
 app.include_router(news_router)        # /news, /news/sentiment
 app.include_router(backtest_router)    # /backtest/run
 app.include_router(verification_router) # /backtest/verify, /backtest/walk-forward, /backtest/history/*
+app.include_router(sentiment_router)    # /sentiment/history/load, range, coverage, at-date
 app.include_router(scheduler_router)   # /scheduler/status
 
 

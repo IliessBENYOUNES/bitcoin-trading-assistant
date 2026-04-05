@@ -115,6 +115,10 @@ class WalkForwardConfig(BaseModel):
         default=[7, 30, 90],
         description="Horizons de verification"
     )
+    compare_mode: bool = Field(
+        default=False,
+        description="Active la comparaison technique-only vs technique+sentiment"
+    )
 
 
 class HorizonAccuracy(BaseModel):
@@ -165,5 +169,76 @@ class WalkForwardResult(BaseModel):
     overall_quality_score: float = Field(
         default=0.0,
         description="Score qualite global moyen (0-100) sur tous les horizons"
+    )
+    # Comparaison avec/sans sentiment (si compare_mode=True)
+    comparison: Optional["WalkForwardComparison"] = Field(
+        default=None,
+        description="Resultats comparatifs technique-only vs technique+sentiment (si compare_mode=True)"
+    )
+
+
+class WalkForwardComparison(BaseModel):
+    """Comparaison walk-forward : technique-only vs technique+sentiment."""
+    technical_only: "WalkForwardSummaryStats" = Field(
+        ..., description="Resultats en mode 100% technique (sans sentiment)"
+    )
+    with_sentiment: "WalkForwardSummaryStats" = Field(
+        ..., description="Resultats en mode technique + sentiment historique"
+    )
+    sentiment_delta_accuracy_pct: float = Field(
+        default=0.0,
+        description="Difference de precision (avec_sentiment - technique_only). Positif = le sentiment ameliore"
+    )
+    sentiment_delta_quality: float = Field(
+        default=0.0,
+        description="Difference de qualite (avec_sentiment - technique_only)"
+    )
+    verdict: str = Field(
+        default="",
+        description="Verdict lisible (ex: Le sentiment ameliore la precision de +3.5%)"
+    )
+
+
+class WalkForwardSummaryStats(BaseModel):
+    """Stats resumees d'un walk-forward (pour comparaison)."""
+    total_points: int = 0
+    overall_accuracy_pct: float = 0.0
+    overall_quality_score: float = 0.0
+    directional_accuracy_pct: float = 0.0
+    profitable_direction_pct: float = 0.0
+    accuracy_by_horizon: list[HorizonAccuracy] = Field(default_factory=list)
+
+
+class HistoryIntegrityGap(BaseModel):
+    """Un trou identifie dans l'historique."""
+    start_date: str
+    end_date: str
+    missing_days: int
+
+
+class HistoryIntegrityResponse(BaseModel):
+    """Resultat de la verification d'integrite de l'historique."""
+    symbol: str
+    timeframe: str
+    total_candles: int = 0
+    expected_candles: int = 0
+    missing_candles: int = 0
+    completeness_pct: float = Field(
+        default=0.0,
+        description="Pourcentage de completude (0-100)"
+    )
+    gaps: list[HistoryIntegrityGap] = Field(
+        default_factory=list,
+        description="Liste des trous identifies"
+    )
+    min_date: Optional[str] = None
+    max_date: Optional[str] = None
+    quality_grade: str = Field(
+        default="UNKNOWN",
+        description="Grade de qualite (EXCELLENT, GOOD, WARNING, CRITICAL)"
+    )
+    detail: str = Field(
+        default="",
+        description="Description lisible de l'etat de l'historique"
     )
 
