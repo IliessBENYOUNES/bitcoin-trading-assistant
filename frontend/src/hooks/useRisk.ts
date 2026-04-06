@@ -4,7 +4,7 @@
 // =============================================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { RiskConfigItem, RiskConfigCreate, RiskStatus } from '../types';
+import type { RiskConfigItem, RiskConfigCreate, RiskStatus } from '../types/api';
 import {
   getRiskConfig,
   updateRiskConfig,

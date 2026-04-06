@@ -30,7 +30,7 @@ import {
   Cancel as CancelIcon,
 } from '@mui/icons-material';
 import { useRisk } from '../hooks/useRisk';
-import type { RiskConfigCreate, StopLossType } from '../types';
+import type { RiskConfigCreate, StopLossType } from '../types/api';
 
 // Couleurs par niveau de risque
 const RISK_COLORS: Record<string, string> = {

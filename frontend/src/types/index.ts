@@ -1,8 +1,9 @@
 /**
  * Types TypeScript pour l'application.
+ * Barrel re-export de tous les types API.
  */
 
-// Re-export explicite des types API (scheduler, gaps, indicators, signals, alerts)
+// Re-export explicite des types API (scheduler, gaps, indicators, signals, alerts, risk)
 export type {
   // Scheduler
   SchedulerLastResult,
