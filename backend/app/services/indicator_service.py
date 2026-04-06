@@ -183,6 +183,33 @@ class IndicatorService:
         else:
             df["volume_sma_20"] = None
 
+        # Stochastic RSI(14,14,3,3) — meilleur que le RSI classique pour
+        # détecter les retournements dans les tendances fortes.
+        # Le RSI classique peut rester en surachat longtemps en bull run ;
+        # le StochRSI oscille plus et détecte les micro-corrections.
+        stochrsi = ta.stochrsi(df["close"], length=14, rsi_length=14, k=3, d=3)
+        if stochrsi is not None and not stochrsi.empty:
+            df["stoch_rsi_k"] = stochrsi.iloc[:, 0] if stochrsi.shape[1] > 0 else None
+            df["stoch_rsi_d"] = stochrsi.iloc[:, 1] if stochrsi.shape[1] > 1 else None
+        else:
+            df["stoch_rsi_k"] = None
+            df["stoch_rsi_d"] = None
+
+        # EMA(9, 21) — moyennes mobiles exponentielles rapides.
+        # Le croisement EMA9/EMA21 capture les changements de tendance
+        # plus rapidement que les SMA(20/50/200), ce qui réduit le lag.
+        ema_9 = ta.ema(df["close"], length=9)
+        ema_21 = ta.ema(df["close"], length=21)
+        df["ema_9"] = ema_9 if ema_9 is not None else None
+        df["ema_21"] = ema_21 if ema_21 is not None else None
+
+        # ATR(14) — Average True Range : mesure la volatilité du prix.
+        # Utile pour calibrer la force des signaux en fonction de la
+        # volatilité actuelle (un mouvement de 2% n'a pas la même
+        # signification quand l'ATR est à 1% vs 5%).
+        atr = ta.atr(df["high"], df["low"], df["close"], length=14)
+        df["atr_14"] = atr if atr is not None else None
+
         return df
 
     def _check_completeness(
@@ -218,6 +245,9 @@ class IndicatorService:
             "bb_mid", "bb_upper", "bb_lower",
             "adx_14", "plus_di", "minus_di",
             "volume_sma_20",
+            "stoch_rsi_k", "stoch_rsi_d",
+            "ema_9", "ema_21",
+            "atr_14",
         ]
 
         for _, row in df.iterrows():

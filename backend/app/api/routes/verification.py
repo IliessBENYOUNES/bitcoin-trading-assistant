@@ -23,6 +23,7 @@ from app.schemas.verification import (
     VerificationResult,
     WalkForwardConfig,
     WalkForwardResult,
+    InterestingDatesResponse,
 )
 
 router = APIRouter(
@@ -115,6 +116,39 @@ def verify_at_date(
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur verification: {str(e)}")
+
+
+@router.get(
+    "/interesting-dates",
+    response_model=InterestingDatesResponse,
+    summary="Trouver les dates avec des signaux techniques forts",
+    description=(
+        "Scanne l'historique charge et identifie les dates ou les indicateurs "
+        "techniques montrent des signaux forts (RSI en survente/surachat, "
+        "croisements MACD marqués, prix hors bandes de Bollinger, etc.). "
+        "Utile pour tester le modele sur des situations a fort potentiel."
+    ),
+)
+def get_interesting_dates(
+    symbol: str = "BTC/USD",
+    timeframe: str = "1d",
+    min_strength: float = 0.7,
+    max_results: int = 20,
+    step_days: float = 3.0,
+    db: Session = Depends(get_db),
+) -> InterestingDatesResponse:
+    """Identifie les dates avec des signaux techniques forts."""
+    service = VerificationService(db)
+    try:
+        return service.find_interesting_dates(
+            symbol=symbol,
+            timeframe=timeframe,
+            min_strength=min_strength,
+            max_results=max_results,
+            step_days=step_days,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur scan: {str(e)}")
 
 
 @router.post(

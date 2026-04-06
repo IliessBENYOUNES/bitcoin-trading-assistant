@@ -40,6 +40,8 @@ import {
   Remove as FlatIcon,
   CompareArrows as CompareIcon,
   VerifiedUser as IntegrityIcon,
+  Info as InfoIcon,
+  HelpOutline as HelpIcon,
 } from '@mui/icons-material';
 
 import { GlowingCard, ACCENT } from './GlowingCard';
@@ -51,6 +53,7 @@ import {
   runWalkForward,
   loadSentimentHistory,
   getSentimentRange,
+  getInterestingDates,
 } from '../api/marketApi';
 import type {
   HistoryRangeResponse,
@@ -63,6 +66,7 @@ import type {
   HorizonAccuracy,
   SentimentRangeResponse,
   SentimentLoadResponse,
+  InterestingDatesResponse,
 } from '../types';
 
 // -----------------------------------------------------------------------------
@@ -70,6 +74,18 @@ import type {
 // -----------------------------------------------------------------------------
 
 const pnlColor = (val: number) => (val > 0 ? '#00E676' : val < 0 ? '#FF1744' : 'text.secondary');
+
+/** Formate un horizon fractionnaire (jours) en label lisible */
+const formatHorizonLabel = (horizonDays: number): string => {
+  const minutes = horizonDays * 24 * 60;
+  if (minutes < 60) return `${Math.round(minutes)}min`;
+  if (minutes < 1440) {
+    const h = minutes / 60;
+    return h === Math.floor(h) ? `${Math.floor(h)}h` : `${h.toFixed(1)}h`;
+  }
+  const d = horizonDays;
+  return d === Math.floor(d) ? `${Math.floor(d)}j` : `${d.toFixed(1)}j`;
+};
 
 const DirectionIcon: React.FC<{ direction: string }> = ({ direction }) => {
   if (direction === 'hausse') return <TrendUpIcon sx={{ fontSize: 16, color: '#00E676' }} />;
@@ -149,11 +165,26 @@ export const VerificationPanel: React.FC = () => {
   const [wfResult, setWfResult] = useState<WalkForwardResult | null>(null);
   const [walkingForward, setWalkingForward] = useState(false);
 
+  // State: Horizon mode (scalping / intraday / swing)
+  const [horizonMode, setHorizonMode] = useState<'scalping' | 'intraday' | 'swing'>('swing');
+
   // State: UI
   const [showOutcomes, setShowOutcomes] = useState(true);
   const [showWfDetails, setShowWfDetails] = useState(false);
   const [showComparison, setShowComparison] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // State: Interesting dates
+  const [interestingDates, setInterestingDates] = useState<InterestingDatesResponse | null>(null);
+  const [loadingInteresting, setLoadingInteresting] = useState(false);
+
+  // Pas minimum et valeurs par défaut selon le mode horizon
+  const STEP_CONFIG: Record<string, { min: number; step: number; default: number; label: string }> = {
+    scalping: { min: 0.01, step: 0.01, default: 0.25, label: 'Pas (j) — 0.01=15min, 0.04=1h, 0.25=6h' },
+    intraday: { min: 0.04, step: 0.04, default: 1, label: 'Pas (j) — 0.04=1h, 0.17=4h, 1=1j' },
+    swing: { min: 1, step: 1, default: 30, label: 'Pas (j)' },
+  };
+  const stepConfig = STEP_CONFIG[horizonMode];
 
   // State: Sentiment historique
   const [sentimentRange, setSentimentRange] = useState<SentimentRangeResponse | null>(null);
@@ -163,6 +194,16 @@ export const VerificationPanel: React.FC = () => {
   // Anti-race: compteur de requêtes pour ignorer les réponses stales
   const requestIdRef = useRef(0);
 
+  // Horizons prédéfinis par mode
+  // scalping: 5min, 15min, 1h ; intraday: 1h, 4h, 1j ; swing: 7j, 30j, 90j
+  const HORIZON_PRESETS: Record<string, { horizons: number[]; labels: string[] }> = {
+    scalping: { horizons: [5 / 1440, 15 / 1440, 60 / 1440], labels: ['5min', '15min', '1h'] },
+    intraday: { horizons: [60 / 1440, 240 / 1440, 1], labels: ['1h', '4h', '1j'] },
+    swing: { horizons: [7, 30, 90], labels: ['7j', '30j', '90j'] },
+  };
+
+  const currentPreset = HORIZON_PRESETS[horizonMode];
+
   // Handler de changement de timeframe : nettoie les résultats stales
   const handleTimeframeChange = useCallback((newTf: string) => {
     setLoadTimeframe(newTf);
@@ -170,6 +211,7 @@ export const VerificationPanel: React.FC = () => {
     setVerifyResult(null);
     setWfResult(null);
     setLoadResult(null);
+    setInterestingDates(null);
     setError(null);
     // L'intégrité et le range seront rechargés par l'effet ci-dessous
   }, []);
@@ -276,13 +318,39 @@ export const VerificationPanel: React.FC = () => {
       const result = await verifyAtDate({
         target_date: targetDate,
         timeframe: loadTimeframe,
-        horizons: [7, 30, 90],
+        horizons: currentPreset.horizons,
       });
       setVerifyResult(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur vérification');
     } finally {
       setVerifying(false);
+    }
+  };
+
+  const handleFindInterestingDates = async () => {
+    setLoadingInteresting(true);
+    setError(null);
+    setInterestingDates(null);
+    try {
+      // Adapter le step_days au timeframe pour un scan pertinent
+      const stepDaysMap: Record<string, number> = {
+        '1m': 0.25, '5m': 0.5, '15m': 1, '30m': 1,
+        '1h': 2, '4h': 5, '1d': 7, '1w': 30,
+      };
+      const stepDays = stepDaysMap[loadTimeframe] ?? 3;
+
+      const result = await getInterestingDates({
+        timeframe: loadTimeframe,
+        min_strength: 0.7,
+        max_results: 20,
+        step_days: stepDays,
+      });
+      setInterestingDates(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur scan dates');
+    } finally {
+      setLoadingInteresting(false);
     }
   };
 
@@ -296,7 +364,7 @@ export const VerificationPanel: React.FC = () => {
         end_date: wfEndDate,
         step_days: wfStepDays,
         timeframe: loadTimeframe,
-        horizons: [7, 30, 90],
+        horizons: currentPreset.horizons,
         compare_mode: wfCompareMode,
       });
       setWfResult(result);
@@ -349,6 +417,19 @@ export const VerificationPanel: React.FC = () => {
           1. Charger l'historique BTC
         </Typography>
 
+        {/* Guide Section 1 */}
+        <Box sx={{ mb: 1, p: 1, borderRadius: 1, bgcolor: 'rgba(179,136,255,0.04)', border: '1px solid rgba(179,136,255,0.1)' }}>
+          <Stack direction="row" spacing={0.5} alignItems="flex-start">
+            <HelpIcon sx={{ fontSize: 14, color: '#B388FF', mt: 0.2 }} />
+            <Typography variant="caption" sx={{ fontSize: '0.63rem', color: 'text.secondary', lineHeight: 1.5 }}>
+              <b style={{ color: '#B388FF' }}>Comment ça marche :</b> Choisissez un <b>timeframe</b> et un <b>mode</b>, puis chargez les données depuis Binance.
+              <br />• <b>Scalping</b> (1m-15m) → vérifie sur 5min/15min/1h • <b>Intraday</b> (1h-4h) → vérifie sur 1h/4h/1j • <b>Swing</b> (1d) → vérifie sur 7j/30j/90j
+              <br />• Le bouton <b>"5min / 15min / 1h"</b> indique les horizons de vérification actuels.
+              {!sentimentRange?.has_data && <><br />• 💡 <b>Conseil :</b> Chargez aussi le Fear & Greed pour un mode complet technique + sentiment.</>}
+            </Typography>
+          </Stack>
+        </Box>
+
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
           <FormControl size="small" sx={{ minWidth: 80 }}>
             <InputLabel sx={{ fontSize: '0.75rem' }}>TF</InputLabel>
@@ -358,10 +439,43 @@ export const VerificationPanel: React.FC = () => {
               label="TF"
               sx={{ fontSize: '0.8rem', height: 36 }}
             >
-              <MenuItem value="1d">1 jour</MenuItem>
+              <MenuItem value="1m">1 minute</MenuItem>
+              <MenuItem value="5m">5 minutes</MenuItem>
+              <MenuItem value="15m">15 minutes</MenuItem>
+              <MenuItem value="1h">1 heure</MenuItem>
               <MenuItem value="4h">4 heures</MenuItem>
+              <MenuItem value="1d">1 jour</MenuItem>
             </Select>
           </FormControl>
+
+          <FormControl size="small" sx={{ minWidth: 110 }}>
+            <InputLabel sx={{ fontSize: '0.75rem' }}>Mode</InputLabel>
+            <Select
+              value={horizonMode}
+              onChange={(e) => {
+                const newMode = e.target.value as 'scalping' | 'intraday' | 'swing';
+                setHorizonMode(newMode);
+                setVerifyResult(null);
+                setWfResult(null);
+                // Adapter le pas du walk-forward au mode
+                const defaults: Record<string, number> = { scalping: 0.25, intraday: 1, swing: 30 };
+                setWfStepDays(defaults[newMode] ?? 30);
+              }}
+              label="Mode"
+              sx={{ fontSize: '0.8rem', height: 36 }}
+            >
+              <MenuItem value="scalping">⚡ Scalping</MenuItem>
+              <MenuItem value="intraday">📊 Intraday</MenuItem>
+              <MenuItem value="swing">📈 Swing</MenuItem>
+            </Select>
+          </FormControl>
+
+          <Chip
+            label={currentPreset.labels.join(' / ')}
+            size="small"
+            variant="outlined"
+            sx={{ fontSize: '0.65rem', borderColor: '#B388FF', color: '#B388FF' }}
+          />
 
           <Button
             variant="contained"
@@ -514,6 +628,18 @@ export const VerificationPanel: React.FC = () => {
           2. Vérifier à une date
         </Typography>
 
+        {/* Guide Section 2 */}
+        <Box sx={{ mb: 1, p: 1, borderRadius: 1, bgcolor: 'rgba(0,188,212,0.04)', border: '1px solid rgba(0,188,212,0.1)' }}>
+          <Stack direction="row" spacing={0.5} alignItems="flex-start">
+            <HelpIcon sx={{ fontSize: 14, color: '#4DD0E1', mt: 0.2 }} />
+            <Typography variant="caption" sx={{ fontSize: '0.63rem', color: 'text.secondary', lineHeight: 1.5 }}>
+              <b style={{ color: '#4DD0E1' }}>Vérification ponctuelle :</b> Le modèle se "téléporte" à la date choisie, calcule sa prédiction <b>sans tricher</b> (uniquement les données passées), puis compare avec ce qui s'est vraiment passé.
+              <br />• 🔍 <b>Dates intéressantes</b> : scanne l'historique pour trouver des dates avec des signaux forts (RSI extrêmes, MACD croisé…). Cliquez sur un chip pour tester.
+              <br />• 💡 <b>Pour des scores de qualité élevés</b>, ciblez les dates à signaux forts plutôt que des dates aléatoires.
+            </Typography>
+          </Stack>
+        </Box>
+
         <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
           <TextField
             type="date"
@@ -539,7 +665,88 @@ export const VerificationPanel: React.FC = () => {
           >
             {verifying ? 'Analyse...' : 'Vérifier'}
           </Button>
+          <Tooltip title="Scanne l'historique pour trouver les dates avec des signaux techniques forts (RSI extrêmes, MACD croisé, Bollinger percé…)">
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={loadingInteresting ? <CircularProgress size={14} /> : <TimelineIcon />}
+              onClick={handleFindInterestingDates}
+              disabled={loadingInteresting || !range?.has_data || (range?.total_candles ?? 0) < 200}
+              sx={{
+                borderColor: '#FFD600',
+                color: '#FFD600',
+                '&:hover': { borderColor: '#FFFF00', color: '#FFFF00', bgcolor: 'rgba(255,214,0,0.08)' },
+                fontWeight: 700, fontSize: '0.68rem', px: 1.2,
+              }}
+            >
+              {loadingInteresting ? 'Scan…' : '🔍 Dates intéressantes'}
+            </Button>
+          </Tooltip>
         </Stack>
+
+        {/* Interesting Dates Chips */}
+        {interestingDates && interestingDates.dates.length > 0 && (
+          <Box sx={{ mb: 1.5 }}>
+            <Typography variant="caption" sx={{ color: '#FFD600', fontSize: '0.65rem', display: 'block', mb: 0.5 }}>
+              ⚡ {interestingDates.total_found} dates avec signaux forts trouvées ({interestingDates.duration_seconds}s) — cliquez pour vérifier :
+            </Typography>
+            <Box sx={{
+              display: 'flex', flexWrap: 'wrap', gap: 0.5,
+              maxHeight: 120, overflowY: 'auto',
+              p: 0.5, borderRadius: 1,
+              bgcolor: 'rgba(255,214,0,0.04)', border: '1px solid rgba(255,214,0,0.15)',
+            }}>
+              {interestingDates.dates.map((item, i) => (
+                <Tooltip
+                  key={i}
+                  title={
+                    <Box sx={{ fontSize: '0.7rem' }}>
+                      <b>${item.price.toLocaleString()}</b> — Score: {item.interest_score}/100<br />
+                      {item.signals.map((s, j) => (
+                        <Box key={j}>• {s.message}</Box>
+                      ))}
+                    </Box>
+                  }
+                  arrow
+                >
+                  <Chip
+                    label={
+                      <Stack direction="row" spacing={0.3} alignItems="center">
+                        {item.dominant_direction === 'bullish' && <TrendUpIcon sx={{ fontSize: 12, color: '#00E676' }} />}
+                        {item.dominant_direction === 'bearish' && <TrendDownIcon sx={{ fontSize: 12, color: '#FF1744' }} />}
+                        {item.dominant_direction === 'mixed' && <CompareIcon sx={{ fontSize: 12, color: '#FFB74D' }} />}
+                        <span>{item.date}</span>
+                        <Chip
+                          label={item.interest_score.toFixed(0)}
+                          size="small"
+                          sx={{
+                            height: 16, fontSize: '0.55rem', fontWeight: 700, ml: 0.3,
+                            bgcolor: item.interest_score >= 80 ? '#FF6D00' : item.interest_score >= 60 ? '#FFD600' : '#90A4AE',
+                            color: '#000',
+                          }}
+                        />
+                      </Stack>
+                    }
+                    size="small"
+                    onClick={() => setTargetDate(item.date)}
+                    sx={{
+                      fontSize: '0.65rem', cursor: 'pointer',
+                      border: targetDate === item.date ? '2px solid #FFD600' : '1px solid rgba(255,255,255,0.12)',
+                      '&:hover': { bgcolor: 'rgba(255,214,0,0.12)' },
+                    }}
+                  />
+                </Tooltip>
+              ))}
+            </Box>
+          </Box>
+        )}
+
+        {interestingDates && interestingDates.dates.length === 0 && (
+          <Alert severity="info" sx={{ mb: 1, fontSize: '0.7rem' }}>
+            Aucune date avec signaux forts (strength ≥ {interestingDates.min_strength}) trouvée sur {interestingDates.total_scanned} points scannés.
+            {(range?.total_candles ?? 0) < 200 && ' Il faut au moins 200 candles pour des indicateurs fiables.'}
+          </Alert>
+        )}
 
         {verifying && <LinearProgress sx={{ mb: 1, borderRadius: 1 }} />}
 
@@ -606,7 +813,7 @@ export const VerificationPanel: React.FC = () => {
                   <Box sx={{ flex: 1 }}>
                     <Stack direction="row" alignItems="center" spacing={0.5}>
                       <Typography variant="caption" fontWeight={700} sx={{ fontSize: '0.72rem' }}>
-                        +{o.horizon_days}j
+                        +{formatHorizonLabel(o.horizon_days)}
                       </Typography>
                       <DirectionIcon direction={o.actual_direction} />
                       <Typography
@@ -623,7 +830,7 @@ export const VerificationPanel: React.FC = () => {
                       <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.65rem' }}>
                         (${o.end_price.toLocaleString()})
                       </Typography>
-                      <Tooltip title={`Score de qualité : ${o.quality_score}/100`}>
+                      <Tooltip title={`Score de qualité : ${o.quality_score}/100 — ${o.quality_score >= 75 ? 'Excellent' : o.quality_score >= 55 ? 'Bon' : o.quality_score >= 35 ? 'Moyen' : 'Faible'}`}>
                         <Chip
                           label={`Q ${o.quality_score.toFixed(0)}`}
                           size="small"
@@ -636,7 +843,7 @@ export const VerificationPanel: React.FC = () => {
                         />
                       </Tooltip>
                       {o.directional_match && (
-                        <Tooltip title="Direction correcte (signe du score = direction réelle)">
+                        <Tooltip title="Direction correcte : le signe du score prédit correspond à la direction réelle du marché">
                           <Chip label="↕ DIR" size="small" color="success" variant="outlined" sx={{ fontSize: '0.5rem', height: 18 }} />
                         </Tooltip>
                       )}
@@ -647,13 +854,26 @@ export const VerificationPanel: React.FC = () => {
                   </Box>
                 </Box>
               ))}
+
+              {/* Légende des badges */}
+              <Box sx={{ mt: 1, p: 0.8, borderRadius: 1, bgcolor: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.08)' }}>
+                <Typography variant="caption" sx={{ fontSize: '0.58rem', color: 'text.secondary', lineHeight: 1.6 }}>
+                  📖 <b>Légende :</b>&nbsp;
+                  <span style={{ color: '#00E676' }}>✅ CORRECT</span> / <span style={{ color: '#FF1744' }}>❌ INCORRECT</span> = la prédiction correspond-elle à la réalité ?&nbsp;|&nbsp;
+                  <b>Q</b> = Qualité 0-100 (<span style={{ color: '#00E676' }}>≥60 bon</span>, <span style={{ color: '#FFB74D' }}>≥40 moyen</span>, <span style={{ color: '#FF1744' }}>&lt;40 faible</span>)&nbsp;|&nbsp;
+                  <b>↕ DIR</b> = le signe du score (+/-) correspond à la direction réelle du marché
+                </Typography>
+              </Box>
             </Collapse>
           </Box>
         )}
 
         {verifyResult && verifyResult.price_at_date === 0 && (
-          <Alert severity="warning" sx={{ mb: 1.5, fontSize: '0.72rem' }}>
-            Aucune donnée disponible à cette date. Chargez d'abord l'historique.
+          <Alert severity="warning" sx={{ mb: 1.5, fontSize: '0.72rem' }} icon={<InfoIcon />}>
+            <b>Aucune donnée disponible à cette date</b> ({targetDate}).
+            {range?.has_data
+              ? <> Vos données couvrent <b>{range.min_date?.slice(0, 10)} → {range.max_date?.slice(0, 10)}</b> en timeframe <b>{loadTimeframe}</b>. Choisissez une date dans cette plage, ou chargez un autre timeframe.</>
+              : <> Chargez d'abord l'historique avec le bouton de la section 1.</>}
           </Alert>
         )}
 
@@ -663,6 +883,19 @@ export const VerificationPanel: React.FC = () => {
         <Typography variant="caption" fontWeight={700} sx={{ textTransform: 'uppercase', color: '#B388FF', display: 'block', mb: 0.5 }}>
           3. Analyse Walk-Forward (précision globale)
         </Typography>
+
+        {/* Guide Section 3 */}
+        <Box sx={{ mb: 1, p: 1, borderRadius: 1, bgcolor: 'rgba(255,109,0,0.04)', border: '1px solid rgba(255,109,0,0.1)' }}>
+          <Stack direction="row" spacing={0.5} alignItems="flex-start">
+            <HelpIcon sx={{ fontSize: 14, color: '#FF9100', mt: 0.2 }} />
+            <Typography variant="caption" sx={{ fontSize: '0.63rem', color: 'text.secondary', lineHeight: 1.5 }}>
+              <b style={{ color: '#FF9100' }}>Walk-Forward :</b> Teste automatiquement le modèle sur <b>des dizaines de dates</b> entre Début et Fin, espacées du Pas choisi. Calcule la <b>précision globale</b>.
+              <br />• <b>Pas</b> : intervalle entre chaque test ({horizonMode === 'scalping' ? '0.04 = 1h, 0.25 = 6h' : horizonMode === 'intraday' ? '0.17 = 4h, 1 = 1j' : '7 = 1 semaine, 30 = 1 mois'})
+              <br />• ☑️ <b>Mode comparaison</b> : lance 2× l'analyse (technique seul vs technique + sentiment) pour mesurer l'apport du Fear & Greed.
+              <br />• ⏱️ <b>Durée</b> : ~{horizonMode === 'scalping' ? '30-120s' : horizonMode === 'intraday' ? '1-5min' : '2-10min'} selon la plage et le pas.
+            </Typography>
+          </Stack>
+        </Box>
 
         <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" sx={{ mb: 1 }}>
           <TextField
@@ -683,14 +916,14 @@ export const VerificationPanel: React.FC = () => {
             InputLabelProps={{ shrink: true }}
             sx={{ width: 145, '& input': { fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem' } }}
           />
-          <Tooltip title="Intervalle entre chaque point de vérification (jours)">
+          <Tooltip title={stepConfig.label}>
             <TextField
               type="number"
               size="small"
               label="Pas (j)"
               value={wfStepDays}
-              onChange={(e) => setWfStepDays(Math.max(7, Math.min(365, Number(e.target.value))))}
-              inputProps={{ min: 7, max: 365 }}
+              onChange={(e) => setWfStepDays(Math.max(stepConfig.min, Math.min(365, Number(e.target.value))))}
+              inputProps={{ min: stepConfig.min, max: 365, step: stepConfig.step }}
               sx={{ width: 80, '& input': { fontFamily: '"JetBrains Mono", monospace', fontSize: '0.8rem' } }}
             />
           </Tooltip>
@@ -765,7 +998,7 @@ export const VerificationPanel: React.FC = () => {
                 <AccuracyBar
                   key={acc.horizon_days}
                   accuracy={acc.accuracy_pct}
-                  label={`Horizon ${acc.horizon_days}j (${acc.correct}/${acc.total_points})`}
+                  label={`Horizon ${formatHorizonLabel(acc.horizon_days)} (${acc.correct}/${acc.total_points})`}
                 />
               ))}
             </Stack>
@@ -787,7 +1020,7 @@ export const VerificationPanel: React.FC = () => {
                 {wfResult.accuracy_by_horizon.map((acc: HorizonAccuracy) => (
                   <Stack key={acc.horizon_days} spacing={0.2}>
                     <Typography variant="caption" sx={{ fontSize: '0.6rem', color: 'text.secondary' }}>
-                      {acc.horizon_days}j
+                      {formatHorizonLabel(acc.horizon_days)}
                     </Typography>
                     <Stack direction="row" spacing={0.5}>
                       <Tooltip title={`Accuracy directionnelle: ${acc.directional_accuracy_pct.toFixed(0)}%`}>
@@ -808,6 +1041,18 @@ export const VerificationPanel: React.FC = () => {
                   </Stack>
                 ))}
               </Stack>
+
+              {/* Légende des métriques walk-forward */}
+              <Box sx={{ mt: 1, p: 0.8, borderRadius: 1, bgcolor: 'rgba(255,255,255,0.02)', border: '1px dashed rgba(255,255,255,0.08)' }}>
+                <Typography variant="caption" sx={{ fontSize: '0.58rem', color: 'text.secondary', lineHeight: 1.7 }}>
+                  📖 <b>Légende des métriques :</b>
+                  <br />• <b>Accuracy</b> = % de prédictions correctes (barre verte) — <span style={{ color: '#00E676' }}>≥60% bon</span>, <span style={{ color: '#FFB74D' }}>≥40% moyen</span>, <span style={{ color: '#FF1744' }}>&lt;40% faible</span>
+                  <br />• <b>Dir</b> = Précision directionnelle (le signe +/- du score correspond à la hausse/baisse réelle)
+                  <br />• <b>Q</b> = Score qualité moyen 0-100 (tient compte de la force du signal et du mouvement réel)
+                  <br />• <b>HC</b> = High Confidence — précision uniquement sur les signaux forts (|score| &gt; 25). <b>C'est la métrique la plus fiable !</b>
+                  <br />• <b>💰</b> = % des signaux où suivre la recommandation aurait été profitable
+                </Typography>
+              </Box>
             </Box>
 
             {/* Comparison results (compare_mode) */}
@@ -938,7 +1183,7 @@ export const VerificationPanel: React.FC = () => {
               {wfResult.accuracy_by_horizon.map((acc: HorizonAccuracy) => (
                 <Box key={acc.horizon_days}>
                   <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem', display: 'block' }}>
-                    {acc.horizon_days}j:
+                    {formatHorizonLabel(acc.horizon_days)}:
                   </Typography>
                   <Stack direction="row" spacing={0.5}>
                     <Chip label={`${acc.buy_signals} achats`} size="small" color="success" variant="outlined" sx={{ fontSize: '0.55rem', height: 20 }} />
@@ -992,7 +1237,7 @@ export const VerificationPanel: React.FC = () => {
                             <Chip
                               key={j}
                               icon={o.correct ? <CheckIcon sx={{ fontSize: '12px !important' }} /> : <CancelIcon sx={{ fontSize: '12px !important' }} />}
-                              label={`${o.horizon_days}j ${o.actual_change_pct >= 0 ? '+' : ''}${o.actual_change_pct.toFixed(0)}%`}
+                              label={`${formatHorizonLabel(o.horizon_days)} ${o.actual_change_pct >= 0 ? '+' : ''}${o.actual_change_pct.toFixed(0)}%`}
                               size="small"
                               color={o.correct ? 'success' : 'error'}
                               variant="outlined"
@@ -1011,9 +1256,17 @@ export const VerificationPanel: React.FC = () => {
 
         {/* Empty state */}
         {!range?.has_data && !loadingHistory && (
-          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 1, fontSize: '0.75rem' }}>
-            Chargez d'abord l'historique BTC pour commencer la vérification.
-          </Typography>
+          <Box sx={{ textAlign: 'center', py: 2 }}>
+            <HistoryIcon sx={{ fontSize: 40, color: 'rgba(179,136,255,0.3)', mb: 1 }} />
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', mb: 0.5 }}>
+              Chargez l'historique BTC pour commencer
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+              1. Choisissez un timeframe et un mode dans la section 1<br />
+              2. Cliquez <b>"Charger depuis 2017"</b> pour télécharger les données<br />
+              3. Vérifiez des dates ou lancez un walk-forward
+            </Typography>
+          </Box>
         )}
       </CardContent>
     </GlowingCard>

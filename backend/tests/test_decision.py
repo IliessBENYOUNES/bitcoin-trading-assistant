@@ -23,6 +23,12 @@ from app.services.decision_service import (
     _eval_sma_trend_down,
     _eval_sentiment_positive,
     _eval_sentiment_negative,
+    _eval_ema_crossover_bullish,
+    _eval_ema_crossover_bearish,
+    _eval_stochrsi_oversold,
+    _eval_stochrsi_overbought,
+    _eval_multi_confluence_bullish,
+    _eval_multi_confluence_bearish,
     _find_signal,
     DEFAULT_RULES,
     TECHNICAL_WEIGHT,
@@ -226,6 +232,165 @@ class TestRuleEvaluators:
         sentiment = _make_sentiment_data(score=-40)
         satisfied, _ = _eval_sentiment_negative(data, sentiment)
         assert satisfied is False
+
+    def test_ema_crossover_bullish_satisfied(self):
+        """EMA cross bullish fort → règle satisfaite."""
+        data = {
+            "signals": [
+                {"indicator": "ema_cross", "direction": "bullish", "strength": 0.7, "value": 500, "message": "EMA golden cross"},
+            ],
+            "composite": {"score": 30},
+        }
+        satisfied, detail = _eval_ema_crossover_bullish(data, {})
+        assert satisfied is True
+        assert "golden" in detail.lower() or "ema" in detail.lower()
+
+    def test_ema_crossover_bullish_not_satisfied(self):
+        """EMA cross absent ou faible → pas satisfaite."""
+        data = {"signals": [], "composite": {"score": 0}}
+        satisfied, _ = _eval_ema_crossover_bullish(data, {})
+        assert satisfied is False
+
+    def test_ema_crossover_bearish_satisfied(self):
+        """EMA cross bearish fort → règle satisfaite."""
+        data = {
+            "signals": [
+                {"indicator": "ema_cross", "direction": "bearish", "strength": 0.7, "value": -500, "message": "EMA death cross"},
+            ],
+            "composite": {"score": -30},
+        }
+        satisfied, detail = _eval_ema_crossover_bearish(data, {})
+        assert satisfied is True
+
+    def test_stochrsi_oversold_satisfied(self):
+        """StochRSI bullish fort → règle survente satisfaite."""
+        data = {
+            "signals": [
+                {"indicator": "stoch_rsi", "direction": "bullish", "strength": 0.8, "value": 5, "message": "StochRSI survendu"},
+            ],
+            "composite": {"score": 20},
+        }
+        satisfied, detail = _eval_stochrsi_oversold(data, {})
+        assert satisfied is True
+
+    def test_stochrsi_overbought_satisfied(self):
+        """StochRSI bearish fort → règle surachat satisfaite."""
+        data = {
+            "signals": [
+                {"indicator": "stoch_rsi", "direction": "bearish", "strength": 0.8, "value": 95, "message": "StochRSI suracheté"},
+            ],
+            "composite": {"score": -20},
+        }
+        satisfied, detail = _eval_stochrsi_overbought(data, {})
+        assert satisfied is True
+
+    def test_stochrsi_not_satisfied_weak(self):
+        """StochRSI faible → pas satisfaite (seuil 0.6)."""
+        data = {
+            "signals": [
+                {"indicator": "stoch_rsi", "direction": "bullish", "strength": 0.3, "value": 35, "message": "StochRSI léger"},
+            ],
+            "composite": {"score": 5},
+        }
+        satisfied, _ = _eval_stochrsi_oversold(data, {})
+        assert satisfied is False
+
+    def test_multi_confluence_bullish_satisfied(self):
+        """3+ signaux bullish forts → confluence satisfaite."""
+        data = {
+            "signals": [
+                {"indicator": "rsi", "direction": "bullish", "strength": 0.7, "value": 25, "message": "RSI"},
+                {"indicator": "macd", "direction": "bullish", "strength": 0.6, "value": 100, "message": "MACD"},
+                {"indicator": "sma", "direction": "bullish", "strength": 0.8, "value": 100000, "message": "SMA"},
+                {"indicator": "ema_cross", "direction": "bullish", "strength": 0.6, "value": 500, "message": "EMA"},
+            ],
+            "composite": {"score": 50},
+        }
+        satisfied, detail = _eval_multi_confluence_bullish(data, {})
+        assert satisfied is True
+        assert "confluence" in detail.lower()
+
+    def test_multi_confluence_bullish_not_enough(self):
+        """Seulement 2 signaux bullish → pas de confluence."""
+        data = {
+            "signals": [
+                {"indicator": "rsi", "direction": "bullish", "strength": 0.7, "value": 25, "message": "RSI"},
+                {"indicator": "macd", "direction": "bullish", "strength": 0.6, "value": 100, "message": "MACD"},
+            ],
+            "composite": {"score": 20},
+        }
+        satisfied, _ = _eval_multi_confluence_bullish(data, {})
+        assert satisfied is False
+
+    def test_multi_confluence_bearish_satisfied(self):
+        """3+ signaux bearish forts → confluence baissière."""
+        data = {
+            "signals": [
+                {"indicator": "rsi", "direction": "bearish", "strength": 0.8, "value": 80, "message": "RSI"},
+                {"indicator": "macd", "direction": "bearish", "strength": 0.7, "value": -100, "message": "MACD"},
+                {"indicator": "sma", "direction": "bearish", "strength": 0.6, "value": 90000, "message": "SMA"},
+            ],
+            "composite": {"score": -50},
+        }
+        satisfied, detail = _eval_multi_confluence_bearish(data, {})
+        assert satisfied is True
+
+    def test_multi_confluence_ignores_volume_and_adx(self):
+        """La confluence ignore volume et ADX (pas directionnels)."""
+        data = {
+            "signals": [
+                {"indicator": "rsi", "direction": "bullish", "strength": 0.7, "value": 25, "message": "RSI"},
+                {"indicator": "macd", "direction": "bullish", "strength": 0.6, "value": 100, "message": "MACD"},
+                {"indicator": "volume", "direction": "bullish", "strength": 0.5, "value": 2.0, "message": "Volume"},
+                {"indicator": "adx", "direction": "bullish", "strength": 0.8, "value": 35, "message": "ADX"},
+            ],
+            "composite": {"score": 40},
+        }
+        satisfied, _ = _eval_multi_confluence_bullish(data, {})
+        assert satisfied is False  # Seulement RSI + MACD = 2, pas 3
+
+    def test_neutral_data_no_new_rules_satisfied(self):
+        """Données neutres → aucune nouvelle règle satisfaite."""
+        data = {"signals": [], "composite": {"score": 0}}
+        sentiment = {"sentiment_score": 0}
+
+        for rule_eval in [_eval_ema_crossover_bullish, _eval_ema_crossover_bearish,
+                          _eval_stochrsi_oversold, _eval_stochrsi_overbought,
+                          _eval_multi_confluence_bullish, _eval_multi_confluence_bearish]:
+            satisfied, _ = rule_eval(data, sentiment)
+            assert satisfied is False
+
+    def test_lowered_threshold_score_21_buys(self, db_session):
+        """Score 26 + scénario Hausse dominant → Acheter (seuil rétabli à 25)."""
+        service = DecisionService(db_session)
+        scenarios = [
+            Scenario(label="Hausse", probability=0.55, direction=SignalDirection.BULLISH, description=""),
+            Scenario(label="Stable", probability=0.25, direction=SignalDirection.NEUTRAL, description=""),
+            Scenario(label="Baisse", probability=0.20, direction=SignalDirection.BEARISH, description=""),
+        ]
+        rules = [
+            RuleResult(rule_name="r1", condition="", satisfied=True, weight=0.7, detail="", direction=SignalDirection.BULLISH),
+        ]
+        rec = service.generate_recommendation(scenarios, rules, combined_score=26)
+        assert rec.action == ActionType.BUY
+
+    def test_lowered_threshold_score_minus_21_sells(self, db_session):
+        """Score -26 + scénario Baisse dominant → Vendre (seuil rétabli à -25)."""
+        service = DecisionService(db_session)
+        scenarios = [
+            Scenario(label="Baisse", probability=0.55, direction=SignalDirection.BEARISH, description=""),
+            Scenario(label="Stable", probability=0.25, direction=SignalDirection.NEUTRAL, description=""),
+            Scenario(label="Hausse", probability=0.20, direction=SignalDirection.BULLISH, description=""),
+        ]
+        rules = [
+            RuleResult(rule_name="r1", condition="", satisfied=True, weight=0.7, detail="", direction=SignalDirection.BEARISH),
+        ]
+        rec = service.generate_recommendation(scenarios, rules, combined_score=-26)
+        assert rec.action == ActionType.SELL
+
+    def test_default_rules_count_v13(self):
+        """Vérifie que DEFAULT_RULES contient 14 règles (v1.3)."""
+        assert len(DEFAULT_RULES) == 14
 
 
 # ============================================================
@@ -1009,4 +1174,171 @@ class TestHistoricalSentimentCombined:
         expected = int(round(50.0 * FNG_HIST_WEIGHT + (-50.0) * NEWS_HIST_WEIGHT))
         assert score == expected
         assert available is True
+
+
+# ============================================================
+# TESTS : Nouvelles règles v1.3 (EMA, StochRSI, Confluence)
+# ============================================================
+
+class TestNewRulesV13:
+    """Tests pour les nouvelles règles de décision v1.3."""
+
+    def test_ema_crossover_bullish_satisfied(self):
+        """EMA cross bullish fort → règle satisfaite."""
+        data = {
+            "signals": [
+                {"indicator": "ema_cross", "direction": "bullish", "strength": 0.7, "value": 500, "message": "EMA golden cross"},
+            ],
+            "composite": {"score": 30},
+        }
+        satisfied, detail = _eval_ema_crossover_bullish(data, {})
+        assert satisfied is True
+        assert "golden" in detail.lower() or "ema" in detail.lower()
+
+    def test_ema_crossover_bullish_not_satisfied(self):
+        """EMA cross absent ou faible → pas satisfaite."""
+        data = {"signals": [], "composite": {"score": 0}}
+        satisfied, _ = _eval_ema_crossover_bullish(data, {})
+        assert satisfied is False
+
+    def test_ema_crossover_bearish_satisfied(self):
+        """EMA cross bearish fort → règle satisfaite."""
+        data = {
+            "signals": [
+                {"indicator": "ema_cross", "direction": "bearish", "strength": 0.7, "value": -500, "message": "EMA death cross"},
+            ],
+            "composite": {"score": -30},
+        }
+        satisfied, detail = _eval_ema_crossover_bearish(data, {})
+        assert satisfied is True
+
+    def test_stochrsi_oversold_satisfied(self):
+        """StochRSI bullish fort → règle survente satisfaite."""
+        data = {
+            "signals": [
+                {"indicator": "stoch_rsi", "direction": "bullish", "strength": 0.8, "value": 5, "message": "StochRSI survendu"},
+            ],
+            "composite": {"score": 20},
+        }
+        satisfied, detail = _eval_stochrsi_oversold(data, {})
+        assert satisfied is True
+
+    def test_stochrsi_overbought_satisfied(self):
+        """StochRSI bearish fort → règle surachat satisfaite."""
+        data = {
+            "signals": [
+                {"indicator": "stoch_rsi", "direction": "bearish", "strength": 0.8, "value": 95, "message": "StochRSI suracheté"},
+            ],
+            "composite": {"score": -20},
+        }
+        satisfied, detail = _eval_stochrsi_overbought(data, {})
+        assert satisfied is True
+
+    def test_stochrsi_not_satisfied_weak(self):
+        """StochRSI faible → pas satisfaite (seuil 0.6)."""
+        data = {
+            "signals": [
+                {"indicator": "stoch_rsi", "direction": "bullish", "strength": 0.3, "value": 35, "message": "StochRSI léger"},
+            ],
+            "composite": {"score": 5},
+        }
+        satisfied, _ = _eval_stochrsi_oversold(data, {})
+        assert satisfied is False
+
+    def test_multi_confluence_bullish_satisfied(self):
+        """3+ signaux bullish forts → confluence satisfaite."""
+        data = {
+            "signals": [
+                {"indicator": "rsi", "direction": "bullish", "strength": 0.7, "value": 25, "message": "RSI"},
+                {"indicator": "macd", "direction": "bullish", "strength": 0.6, "value": 100, "message": "MACD"},
+                {"indicator": "sma", "direction": "bullish", "strength": 0.8, "value": 100000, "message": "SMA"},
+                {"indicator": "ema_cross", "direction": "bullish", "strength": 0.6, "value": 500, "message": "EMA"},
+            ],
+            "composite": {"score": 50},
+        }
+        satisfied, detail = _eval_multi_confluence_bullish(data, {})
+        assert satisfied is True
+        assert "confluence" in detail.lower()
+
+    def test_multi_confluence_bullish_not_enough(self):
+        """Seulement 2 signaux bullish → pas de confluence."""
+        data = {
+            "signals": [
+                {"indicator": "rsi", "direction": "bullish", "strength": 0.7, "value": 25, "message": "RSI"},
+                {"indicator": "macd", "direction": "bullish", "strength": 0.6, "value": 100, "message": "MACD"},
+            ],
+            "composite": {"score": 20},
+        }
+        satisfied, _ = _eval_multi_confluence_bullish(data, {})
+        assert satisfied is False
+
+    def test_multi_confluence_bearish_satisfied(self):
+        """3+ signaux bearish forts → confluence baissière."""
+        data = {
+            "signals": [
+                {"indicator": "rsi", "direction": "bearish", "strength": 0.8, "value": 80, "message": "RSI"},
+                {"indicator": "macd", "direction": "bearish", "strength": 0.7, "value": -100, "message": "MACD"},
+                {"indicator": "sma", "direction": "bearish", "strength": 0.6, "value": 90000, "message": "SMA"},
+            ],
+            "composite": {"score": -50},
+        }
+        satisfied, detail = _eval_multi_confluence_bearish(data, {})
+        assert satisfied is True
+
+    def test_multi_confluence_ignores_volume_and_adx(self):
+        """La confluence ignore volume et ADX (pas directionnels)."""
+        data = {
+            "signals": [
+                {"indicator": "rsi", "direction": "bullish", "strength": 0.7, "value": 25, "message": "RSI"},
+                {"indicator": "macd", "direction": "bullish", "strength": 0.6, "value": 100, "message": "MACD"},
+                {"indicator": "volume", "direction": "bullish", "strength": 0.5, "value": 2.0, "message": "Volume"},
+                {"indicator": "adx", "direction": "bullish", "strength": 0.8, "value": 35, "message": "ADX"},
+            ],
+            "composite": {"score": 40},
+        }
+        satisfied, _ = _eval_multi_confluence_bullish(data, {})
+        assert satisfied is False  # Seulement RSI + MACD = 2, pas 3
+
+    def test_neutral_data_no_new_rules_satisfied(self):
+        """Données neutres → aucune nouvelle règle satisfaite."""
+        data = {"signals": [], "composite": {"score": 0}}
+        sentiment = {"sentiment_score": 0}
+
+        for rule_eval in [_eval_ema_crossover_bullish, _eval_ema_crossover_bearish,
+                          _eval_stochrsi_oversold, _eval_stochrsi_overbought,
+                          _eval_multi_confluence_bullish, _eval_multi_confluence_bearish]:
+            satisfied, _ = rule_eval(data, sentiment)
+            assert satisfied is False
+
+    def test_lowered_threshold_score_21_buys(self, db_session):
+        """Score 26 + scénario Hausse dominant → Acheter (seuil rétabli à 25)."""
+        service = DecisionService(db_session)
+        scenarios = [
+            Scenario(label="Hausse", probability=0.55, direction=SignalDirection.BULLISH, description=""),
+            Scenario(label="Stable", probability=0.25, direction=SignalDirection.NEUTRAL, description=""),
+            Scenario(label="Baisse", probability=0.20, direction=SignalDirection.BEARISH, description=""),
+        ]
+        rules = [
+            RuleResult(rule_name="r1", condition="", satisfied=True, weight=0.7, detail="", direction=SignalDirection.BULLISH),
+        ]
+        rec = service.generate_recommendation(scenarios, rules, combined_score=26)
+        assert rec.action == ActionType.BUY
+
+    def test_lowered_threshold_score_minus_21_sells(self, db_session):
+        """Score -26 + scénario Baisse dominant → Vendre (seuil rétabli à -25)."""
+        service = DecisionService(db_session)
+        scenarios = [
+            Scenario(label="Baisse", probability=0.55, direction=SignalDirection.BEARISH, description=""),
+            Scenario(label="Stable", probability=0.25, direction=SignalDirection.NEUTRAL, description=""),
+            Scenario(label="Hausse", probability=0.20, direction=SignalDirection.BULLISH, description=""),
+        ]
+        rules = [
+            RuleResult(rule_name="r1", condition="", satisfied=True, weight=0.7, detail="", direction=SignalDirection.BEARISH),
+        ]
+        rec = service.generate_recommendation(scenarios, rules, combined_score=-26)
+        assert rec.action == ActionType.SELL
+
+    def test_default_rules_count_v13(self):
+        """Vérifie que DEFAULT_RULES contient 14 règles (v1.3)."""
+        assert len(DEFAULT_RULES) == 14
 

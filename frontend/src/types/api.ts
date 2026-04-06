@@ -409,7 +409,7 @@ export interface VerificationRequest {
   symbol?: string;
   timeframe?: string;
   history_days?: number;
-  horizons?: number[];
+  horizons?: number[];  // float: 0.00347=5min, 0.01042=15min, 0.04167=1h, 0.1667=4h, 7, 30, 90
 }
 
 export interface VerificationResult {
@@ -432,7 +432,7 @@ export interface WalkForwardConfig {
   symbol?: string;
   timeframe?: string;
   history_days?: number;
-  horizons?: number[];
+  horizons?: number[];  // float: supports scalping (0.00347, 0.01042, 0.04167) and swing (7, 30, 90)
   compare_mode?: boolean;
 }
 
@@ -483,6 +483,36 @@ export interface WalkForwardResult {
   duration_seconds: number;
   overall_quality_score: number;
   comparison: WalkForwardComparison | null;
+}
+
+// -----------------------------------------------------------------------------
+// Interesting Dates (/backtest/interesting-dates)
+// -----------------------------------------------------------------------------
+
+export interface InterestingSignalDetail {
+  indicator: string;   // rsi, macd, sma, bollinger
+  direction: string;   // bullish, bearish, neutral
+  strength: number;    // 0-1
+  message: string;
+  value: number | null;
+}
+
+export interface InterestingDateItem {
+  date: string;                    // ISO date (ex: 2021-05-19)
+  price: number;
+  interest_score: number;          // 0-100
+  dominant_direction: string;      // bullish, bearish, mixed
+  signals: InterestingSignalDetail[];
+  label: string;                   // ex: "RSI survendu + MACD ↑"
+}
+
+export interface InterestingDatesResponse {
+  dates: InterestingDateItem[];
+  total_scanned: number;
+  total_found: number;
+  timeframe: string;
+  min_strength: number;
+  duration_seconds: number;
 }
 
 // -----------------------------------------------------------------------------

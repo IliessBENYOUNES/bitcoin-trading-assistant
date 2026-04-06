@@ -65,6 +65,10 @@ export type {
   HorizonAccuracy,
   WalkForwardSummaryStats,
   WalkForwardComparison,
+  // Interesting Dates
+  InterestingSignalDetail,
+  InterestingDateItem,
+  InterestingDatesResponse,
   // History Integrity
   HistoryIntegrityGap,
   HistoryIntegrityResponse,

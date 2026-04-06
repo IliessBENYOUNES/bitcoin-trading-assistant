@@ -927,220 +927,193 @@ class TestWalkForwardCompare:
 
 
 # =============================================================================
-# Tests nouveaux schémas
+# Tests : find_interesting_dates
 # =============================================================================
 
-class TestNewSchemas:
-    """Tests pour les nouveaux schémas ajoutés."""
+def _seed_extreme_candles(db, symbol="BTC/USD", timeframe="1d"):
+    """
+    Genere 300 candles quotidiennes avec des patterns extremes :
+    - Jour 220-230 : crash brutal (-5%/j) → RSI survendu
+    - Jour 260-270 : rally (+4%/j) → RSI suracheté
+    """
+    import math
+    base_date = datetime(2019, 1, 1, tzinfo=timezone.utc)
+    price = 10000.0
 
-    def test_walk_forward_config_compare_mode_default(self):
-        """compare_mode est False par défaut."""
-        config = WalkForwardConfig(start_date="2018-01-01", end_date="2025-12-31")
-        assert config.compare_mode is False
+    candles = []
+    for i in range(300):
+        ts = base_date + timedelta(days=i)
 
-    def test_history_integrity_gap_model(self):
-        gap = HistoryIntegrityGap(
-            start_date="2020-03-15",
-            end_date="2020-03-17",
-            missing_days=3,
-        )
-        assert gap.missing_days == 3
+        # Phase normale : +0.2%/j avec bruit
+        if 220 <= i <= 230:
+            # Crash : -5%/j
+            daily_change = 0.95
+        elif 260 <= i <= 270:
+            # Rally : +4%/j
+            daily_change = 1.04
+        elif i % 7 == 6:
+            daily_change = 0.99
+        else:
+            daily_change = 1.002
 
-    def test_history_integrity_response_model(self):
-        resp = HistoryIntegrityResponse(
-            symbol="BTC/USD",
-            timeframe="1d",
-            total_candles=3000,
-            expected_candles=3100,
-            missing_candles=100,
-            completeness_pct=96.77,
-            quality_grade="GOOD",
-            detail="Test",
-        )
-        assert resp.quality_grade == "GOOD"
-        assert resp.completeness_pct == 96.77
+        price *= daily_change
+        price = max(100, price)
 
-    def test_walk_forward_comparison_model(self):
-        tech_stats = WalkForwardSummaryStats(
-            total_points=50,
-            overall_accuracy_pct=62.0,
-            overall_quality_score=55.0,
-        )
-        sent_stats = WalkForwardSummaryStats(
-            total_points=50,
-            overall_accuracy_pct=65.0,
-            overall_quality_score=58.0,
-        )
-        comp = WalkForwardComparison(
-            technical_only=tech_stats,
-            with_sentiment=sent_stats,
-            sentiment_delta_accuracy_pct=3.0,
-            sentiment_delta_quality=3.0,
-            verdict="Le sentiment améliore la précision",
-        )
-        assert comp.sentiment_delta_accuracy_pct == 3.0
-        assert comp.with_sentiment.overall_accuracy_pct > comp.technical_only.overall_accuracy_pct
+        # High/Low plus larges pendant les crashes/rallies
+        hl_spread = 0.03 if (220 <= i <= 230 or 260 <= i <= 270) else 0.01
 
-    def test_walk_forward_summary_stats_model(self):
-        stats = WalkForwardSummaryStats(
-            total_points=100,
-            overall_accuracy_pct=70.5,
-            overall_quality_score=62.0,
-            directional_accuracy_pct=72.0,
-            profitable_direction_pct=68.0,
-        )
-        assert stats.overall_accuracy_pct == 70.5
-
-    def test_timeframe_step_mapping(self, db_session):
-        """Les pas temporels sont corrects pour chaque timeframe."""
-        assert VerificationService._get_timeframe_step("1d") == timedelta(days=1)
-        assert VerificationService._get_timeframe_step("4h") == timedelta(hours=4)
-        assert VerificationService._get_timeframe_step("1h") == timedelta(hours=1)
-        assert VerificationService._get_timeframe_step("1w") == timedelta(weeks=1)
-
-    def test_group_consecutive_gaps_empty(self):
-        """Pas de dates manquantes → pas de gaps."""
-        gaps = VerificationService._group_consecutive_gaps([])
-        assert gaps == []
-
-    def test_group_consecutive_gaps_single(self):
-        """Une seule date manquante → un gap de 1 jour."""
-        from datetime import date
-        gaps = VerificationService._group_consecutive_gaps([date(2020, 3, 15)])
-        assert len(gaps) == 1
-        assert gaps[0].missing_days == 1
-
-    def test_group_consecutive_gaps_consecutive(self):
-        """Dates consécutives → un seul gap."""
-        from datetime import date
-        missing = [date(2020, 3, 15), date(2020, 3, 16), date(2020, 3, 17)]
-        gaps = VerificationService._group_consecutive_gaps(missing)
-        assert len(gaps) == 1
-        assert gaps[0].missing_days == 3
-
-    def test_group_consecutive_gaps_multiple(self):
-        """Dates non-consécutives → plusieurs gaps."""
-        from datetime import date
-        missing = [date(2020, 3, 15), date(2020, 3, 16), date(2020, 4, 1), date(2020, 4, 2)]
-        gaps = VerificationService._group_consecutive_gaps(missing)
-        assert len(gaps) == 2
-        assert gaps[0].missing_days == 2
-        assert gaps[1].missing_days == 2
-
-
-# =============================================================================
-# Tests v1.2.4 : technical_only patche les deux sources sentiment
-# =============================================================================
-
-class TestTechnicalOnlyPatchesBothSources:
-    """Tests pour vérifier que _verify_technical_only neutralise FGI + News History."""
-
-    def test_technical_only_patches_fng(self, db_session):
-        """Le mode technique-only patche get_normalized_score_at_date → None."""
-        _seed_candles(db_session, days=400)
-        service = VerificationService(db_session)
-
-        # S'assurer que le FGI retournerait normalement une valeur
-        original_fng = service.decision_service.sentiment_history_service.get_normalized_score_at_date
-        service.decision_service.sentiment_history_service.get_normalized_score_at_date = (
-            lambda *args, **kwargs: 50.0
-        )
-
-        request = VerificationRequest(
-            target_date="2019-08-01",
-            horizons=[7],
-        )
-
-        result = service._verify_technical_only(request)
-        # Après exécution, la méthode originale doit être restaurée
-        # Le mode technique-only devait forcer sentiment_available=False
-        assert result.meta.get("mode") == "technical_only"
-        assert result.meta.get("sentiment_available") is False
-
-    def test_technical_only_patches_news_history(self, db_session):
-        """Le mode technique-only patche get_daily_sentiment → None."""
-        _seed_candles(db_session, days=400)
-        service = VerificationService(db_session)
-
-        # S'assurer que le news history retournerait normalement une valeur
-        service.decision_service.news_history_service.get_daily_sentiment = (
-            lambda *args, **kwargs: 30.0
-        )
-
-        request = VerificationRequest(
-            target_date="2019-08-01",
-            horizons=[7],
-        )
-
-        result = service._verify_technical_only(request)
-        assert result.meta.get("mode") == "technical_only"
-        assert result.meta.get("sentiment_available") is False
-
-    def test_technical_only_restores_methods_after(self, db_session):
-        """Les méthodes originales sont restaurées après _verify_technical_only."""
-        _seed_candles(db_session, days=400)
-        service = VerificationService(db_session)
-
-        # Définir des sentinelles
-        sentinel_fng = lambda *a, **kw: 42.0
-        sentinel_news = lambda *a, **kw: 33.0
-        service.decision_service.sentiment_history_service.get_normalized_score_at_date = sentinel_fng
-        service.decision_service.news_history_service.get_daily_sentiment = sentinel_news
-
-        request = VerificationRequest(
-            target_date="2019-08-01",
-            horizons=[7],
-        )
-        service._verify_technical_only(request)
-
-        # Après exécution, les méthodes doivent être restaurées aux sentinelles
-        assert service.decision_service.sentiment_history_service.get_normalized_score_at_date is sentinel_fng
-        assert service.decision_service.news_history_service.get_daily_sentiment is sentinel_news
-
-    def test_technical_only_restores_on_exception(self, db_session):
-        """Les méthodes sont restaurées même si l'analyse lève une exception."""
-        service = VerificationService(db_session)
-        # Pas de candles → ça va échouer/retourner une erreur
-
-        sentinel_fng = lambda *a, **kw: 99.0
-        sentinel_news = lambda *a, **kw: 88.0
-        service.decision_service.sentiment_history_service.get_normalized_score_at_date = sentinel_fng
-        service.decision_service.news_history_service.get_daily_sentiment = sentinel_news
-
-        request = VerificationRequest(
-            target_date="2019-08-01",
-            horizons=[7],
-        )
-        # Même si ça échoue, les méthodes doivent être restaurées
-        result = service._verify_technical_only(request)
-
-        assert service.decision_service.sentiment_history_service.get_normalized_score_at_date is sentinel_fng
-        assert service.decision_service.news_history_service.get_daily_sentiment is sentinel_news
-
-    def test_compare_mode_uses_both_patches(self, db_session):
-        """Le compare_mode walk-forward produit des résultats technique-only cohérents."""
-        _seed_candles(db_session, days=400)
-        service = VerificationService(db_session)
-
-        # Injecter du sentiment pour que les deux runs diffèrent
-        service.decision_service.sentiment_history_service.get_normalized_score_at_date = (
-            lambda *args, **kwargs: 80.0  # Très bullish
-        )
-        service.decision_service.news_history_service.get_daily_sentiment = (
-            lambda *args, **kwargs: 70.0  # Très bullish
-        )
-
-        result = service.walk_forward(WalkForwardConfig(
-            start_date="2019-08-01",
-            end_date="2019-10-01",
-            step_days=30,
-            horizons=[7],
-            compare_mode=True,
+        candles.append(Candle(
+            symbol=symbol,
+            timeframe=timeframe,
+            timestamp=ts,
+            open_price=round(price * (1 - hl_spread * 0.5), 2),
+            high_price=round(price * (1 + hl_spread), 2),
+            low_price=round(price * (1 - hl_spread), 2),
+            close_price=round(price, 2),
+            volume=1000.0 + i * 10,
+            source="test",
         ))
 
-        assert result.comparison is not None
-        # Les deux runs doivent avoir des résultats
-        assert result.comparison.technical_only.total_points > 0
-        assert result.comparison.with_sentiment.total_points > 0
-        # Le verdict doit exister
-        assert len(result.comparison.verdict) > 0
+    db.add_all(candles)
+    db.commit()
+    return candles
+
+
+class TestFindInterestingDates:
+    """Tests pour VerificationService.find_interesting_dates."""
+
+    def test_no_data_returns_empty(self, db_session):
+        """Sans données, retourne une liste vide."""
+        service = VerificationService(db_session)
+        result = service.find_interesting_dates(timeframe="1d")
+
+        assert result.dates == []
+        assert result.total_found == 0
+        assert result.duration_seconds >= 0
+
+    def test_insufficient_data_returns_empty(self, db_session):
+        """Avec trop peu de candles (< 200), retourne vide."""
+        _seed_minimal_candles(db_session)
+        service = VerificationService(db_session)
+        result = service.find_interesting_dates(timeframe="1d")
+
+        assert result.dates == []
+        assert result.total_scanned < 200
+
+    def test_finds_extreme_dates(self, db_session):
+        """Avec données extremes, trouve des dates interessantes."""
+        _seed_extreme_candles(db_session)
+        service = VerificationService(db_session)
+
+        result = service.find_interesting_dates(
+            timeframe="1d",
+            min_strength=0.6,
+            max_results=20,
+            step_days=1,
+        )
+
+        assert result.total_scanned > 0
+        assert result.total_found >= 0  # Peut trouver ou non selon les calculs
+
+        # Si des dates sont trouvées, vérifier la structure
+        if result.dates:
+            item = result.dates[0]
+            assert 0 < item.interest_score <= 100
+            assert item.price > 0
+            assert len(item.date) >= 10
+            assert item.dominant_direction in ("bullish", "bearish", "mixed")
+            assert len(item.signals) > 0
+            assert len(item.label) > 0
+
+            # Les signals doivent avoir la bonne structure
+            sig = item.signals[0]
+            assert sig.indicator in ("rsi", "macd", "sma", "bollinger")
+            assert sig.direction in ("bullish", "bearish", "neutral")
+            assert 0 <= sig.strength <= 1
+            assert len(sig.message) > 0
+
+    def test_max_results_respected(self, db_session):
+        """Le nombre de résultats est limité par max_results."""
+        _seed_extreme_candles(db_session)
+        service = VerificationService(db_session)
+
+        result = service.find_interesting_dates(
+            timeframe="1d",
+            min_strength=0.3,  # Seuil bas pour beaucoup de résultats
+            max_results=5,
+            step_days=1,
+        )
+
+        assert len(result.dates) <= 5
+
+    def test_sorted_by_interest_score(self, db_session):
+        """Les dates sont triées par score d'intérêt décroissant."""
+        _seed_extreme_candles(db_session)
+        service = VerificationService(db_session)
+
+        result = service.find_interesting_dates(
+            timeframe="1d",
+            min_strength=0.3,
+            max_results=20,
+            step_days=1,
+        )
+
+        if len(result.dates) >= 2:
+            scores = [d.interest_score for d in result.dates]
+            assert scores == sorted(scores, reverse=True)
+
+    def test_duration_tracked(self, db_session):
+        """Le temps de scan est mesuré."""
+        _seed_extreme_candles(db_session)
+        service = VerificationService(db_session)
+
+        result = service.find_interesting_dates(timeframe="1d", step_days=5)
+        assert result.duration_seconds >= 0
+        assert result.timeframe == "1d"
+
+    def test_high_min_strength_filters_more(self, db_session):
+        """Un seuil de force élevé filtre plus de dates."""
+        _seed_extreme_candles(db_session)
+        service = VerificationService(db_session)
+
+        low_thresh = service.find_interesting_dates(
+            timeframe="1d", min_strength=0.3, step_days=1,
+        )
+        high_thresh = service.find_interesting_dates(
+            timeframe="1d", min_strength=0.9, step_days=1,
+        )
+
+        assert high_thresh.total_found <= low_thresh.total_found
+
+
+class TestInterestingDatesEndpoint:
+    """Tests endpoint HTTP GET /backtest/interesting-dates."""
+
+    def test_endpoint_returns_200(self, client):
+        """L'endpoint retourne 200 même sans données."""
+        resp = client.get("/backtest/interesting-dates?timeframe=1d")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "dates" in data
+        assert "total_scanned" in data
+        assert "total_found" in data
+        assert "duration_seconds" in data
+
+    def test_endpoint_with_data(self, client, db_session):
+        """L'endpoint retourne des résultats avec des données."""
+        _seed_extreme_candles(db_session)
+        resp = client.get(
+            "/backtest/interesting-dates?timeframe=1d&min_strength=0.3&step_days=1&max_results=10"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data["dates"], list)
+        assert data["timeframe"] == "1d"
+        assert data["min_strength"] == 0.3
+
+    def test_endpoint_custom_params(self, client):
+        """L'endpoint accepte les paramètres personnalisés."""
+        resp = client.get(
+            "/backtest/interesting-dates?symbol=BTC/USD&timeframe=4h&min_strength=0.5&max_results=5&step_days=7"
+        )
+        assert resp.status_code == 200

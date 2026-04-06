@@ -131,6 +131,70 @@ def _eval_sentiment_negative(signals_data: dict, sentiment_data: dict) -> tuple[
     return False, "Pas de convergence sentiment négatif + technique baissière"
 
 
+def _eval_ema_crossover_bullish(signals_data: dict, _sentiment: dict) -> tuple[bool, str]:
+    """EMA9 croise EMA21 à la hausse → signal haussier rapide."""
+    ema_signal = _find_signal(signals_data, "ema_cross")
+    if ema_signal and ema_signal.get("direction") == "bullish" and ema_signal.get("strength", 0) >= 0.5:
+        return True, f"EMA golden cross (force {ema_signal['strength']:.0%})"
+    return False, "Pas de croisement EMA haussier"
+
+
+def _eval_ema_crossover_bearish(signals_data: dict, _sentiment: dict) -> tuple[bool, str]:
+    """EMA9 croise EMA21 à la baisse → signal baissier rapide."""
+    ema_signal = _find_signal(signals_data, "ema_cross")
+    if ema_signal and ema_signal.get("direction") == "bearish" and ema_signal.get("strength", 0) >= 0.5:
+        return True, f"EMA death cross (force {ema_signal['strength']:.0%})"
+    return False, "Pas de croisement EMA baissier"
+
+
+def _eval_stochrsi_oversold(signals_data: dict, _sentiment: dict) -> tuple[bool, str]:
+    """StochRSI en zone extrême de survente → signal haussier."""
+    stoch_signal = _find_signal(signals_data, "stoch_rsi")
+    if stoch_signal and stoch_signal.get("direction") == "bullish" and stoch_signal.get("strength", 0) >= 0.6:
+        return True, f"StochRSI survendu (force {stoch_signal['strength']:.0%})"
+    return False, "StochRSI pas en survente extrême"
+
+
+def _eval_stochrsi_overbought(signals_data: dict, _sentiment: dict) -> tuple[bool, str]:
+    """StochRSI en zone extrême de surachat → signal baissier."""
+    stoch_signal = _find_signal(signals_data, "stoch_rsi")
+    if stoch_signal and stoch_signal.get("direction") == "bearish" and stoch_signal.get("strength", 0) >= 0.6:
+        return True, f"StochRSI suracheté (force {stoch_signal['strength']:.0%})"
+    return False, "StochRSI pas en surachat extrême"
+
+
+def _eval_multi_confluence_bullish(signals_data: dict, _sentiment: dict) -> tuple[bool, str]:
+    """Confluence multi-indicateurs haussière (≥ 3 signaux bullish forts).
+    La confluence est le signal le plus fiable : quand plusieurs indicateurs
+    indépendants convergent, la probabilité de succès augmente significativement."""
+    strong_bullish = []
+    for signal in signals_data.get("signals", []):
+        if (signal.get("direction") == "bullish"
+                and signal.get("strength", 0) >= 0.5
+                and signal.get("indicator") not in ("volume", "adx")):
+            strong_bullish.append(signal.get("indicator", "?"))
+
+    if len(strong_bullish) >= 3:
+        names = ", ".join(strong_bullish[:4])
+        return True, f"Confluence haussière forte ({len(strong_bullish)} indicateurs: {names})"
+    return False, f"Pas assez de confluence haussière ({len(strong_bullish)}/3 min)"
+
+
+def _eval_multi_confluence_bearish(signals_data: dict, _sentiment: dict) -> tuple[bool, str]:
+    """Confluence multi-indicateurs baissière (≥ 3 signaux bearish forts)."""
+    strong_bearish = []
+    for signal in signals_data.get("signals", []):
+        if (signal.get("direction") == "bearish"
+                and signal.get("strength", 0) >= 0.5
+                and signal.get("indicator") not in ("volume", "adx")):
+            strong_bearish.append(signal.get("indicator", "?"))
+
+    if len(strong_bearish) >= 3:
+        names = ", ".join(strong_bearish[:4])
+        return True, f"Confluence baissière forte ({len(strong_bearish)} indicateurs: {names})"
+    return False, f"Pas assez de confluence baissière ({len(strong_bearish)}/3 min)"
+
+
 # Liste des règles par défaut
 DEFAULT_RULES = [
     {
@@ -174,6 +238,48 @@ DEFAULT_RULES = [
         "direction": SignalDirection.BEARISH,
         "weight": 0.6,
         "evaluate": _eval_sma_trend_down,
+    },
+    {
+        "name": "ema_crossover_bullish",
+        "condition_desc": "EMA9 croise EMA21 à la hausse (golden cross rapide)",
+        "direction": SignalDirection.BULLISH,
+        "weight": 0.7,
+        "evaluate": _eval_ema_crossover_bullish,
+    },
+    {
+        "name": "ema_crossover_bearish",
+        "condition_desc": "EMA9 croise EMA21 à la baisse (death cross rapide)",
+        "direction": SignalDirection.BEARISH,
+        "weight": 0.7,
+        "evaluate": _eval_ema_crossover_bearish,
+    },
+    {
+        "name": "stochrsi_oversold",
+        "condition_desc": "StochRSI en zone de survente extrême",
+        "direction": SignalDirection.BULLISH,
+        "weight": 0.6,
+        "evaluate": _eval_stochrsi_oversold,
+    },
+    {
+        "name": "stochrsi_overbought",
+        "condition_desc": "StochRSI en zone de surachat extrême",
+        "direction": SignalDirection.BEARISH,
+        "weight": 0.6,
+        "evaluate": _eval_stochrsi_overbought,
+    },
+    {
+        "name": "multi_confluence_bullish",
+        "condition_desc": "≥ 3 indicateurs convergent en haussier (confluence forte)",
+        "direction": SignalDirection.BULLISH,
+        "weight": 0.9,
+        "evaluate": _eval_multi_confluence_bullish,
+    },
+    {
+        "name": "multi_confluence_bearish",
+        "condition_desc": "≥ 3 indicateurs convergent en baissier (confluence forte)",
+        "direction": SignalDirection.BEARISH,
+        "weight": 0.9,
+        "evaluate": _eval_multi_confluence_bearish,
     },
     {
         "name": "sentiment_convergence_bullish",
@@ -412,6 +518,9 @@ class DecisionService:
         total_satisfied = bullish_satisfied + bearish_satisfied
 
         # Déterminer l'action
+        # Seuils rétablis à ±25 : le passage à ±20 (v1.3) générait trop de
+        # faux signaux. Les nouveaux indicateurs (StochRSI, EMA cross) améliorent
+        # la qualité du score, mais un seuil trop bas reste contre-productif.
         if combined_score > 25 and dominant and dominant.direction == SignalDirection.BULLISH:
             action = ActionType.BUY
         elif combined_score < -25 and dominant and dominant.direction == SignalDirection.BEARISH:

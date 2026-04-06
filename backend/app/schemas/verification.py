@@ -48,8 +48,8 @@ class HistoryRangeResponse(BaseModel):
 
 
 class HorizonOutcome(BaseModel):
-    """Resultat reel pour un horizon donne (7j, 30j, 90j)."""
-    horizon_days: int = Field(..., description="Horizon en jours (ex: 7, 30, 90)")
+    """Resultat reel pour un horizon donne (ex: 0.0035j=5min, 7j, 30j, 90j)."""
+    horizon_days: float = Field(..., description="Horizon en jours (ex: 0.0035=5min, 0.0417=1h, 7, 30, 90)")
     end_date: str = Field(..., description="Date de fin de l'horizon")
     end_price: float = Field(..., description="Prix a la fin de l'horizon")
     actual_change_pct: float = Field(..., description="Variation reelle en %")
@@ -79,9 +79,9 @@ class VerificationRequest(BaseModel):
         ge=30, le=1000,
         description="Jours de contexte pour les indicateurs"
     )
-    horizons: list[int] = Field(
+    horizons: list[float] = Field(
         default=[7, 30, 90],
-        description="Horizons de verification en jours (ex: [7, 30, 90])"
+        description="Horizons de verification en jours (ex: [0.0035, 0.0104, 0.0417] pour 5min/15min/1h, ou [7, 30, 90] pour swing)"
     )
 
 
@@ -103,15 +103,15 @@ class WalkForwardConfig(BaseModel):
     """Configuration pour l'analyse walk-forward."""
     start_date: str = Field(..., description="Date de debut (ISO, ex: 2018-01-01)")
     end_date: str = Field(..., description="Date de fin (ISO, ex: 2025-12-31)")
-    step_days: int = Field(
+    step_days: float = Field(
         default=30,
-        ge=1, le=365,
-        description="Pas entre chaque verification (jours)"
+        ge=0.01, le=365,
+        description="Pas entre chaque verification (jours, fractionnel pour scalping: 0.25=6h, 0.5=12h, 1=1j)"
     )
     symbol: str = Field(default="BTC/USD", description="Paire de trading")
     timeframe: str = Field(default="1d", description="Timeframe des candles")
     history_days: float = Field(default=200, ge=30, le=1000, description="Contexte indicateurs")
-    horizons: list[int] = Field(
+    horizons: list[float] = Field(
         default=[7, 30, 90],
         description="Horizons de verification"
     )
@@ -123,7 +123,7 @@ class WalkForwardConfig(BaseModel):
 
 class HorizonAccuracy(BaseModel):
     """Precision du modele pour un horizon donne."""
-    horizon_days: int
+    horizon_days: float
     total_points: int = 0
     correct: int = 0
     incorrect: int = 0
@@ -161,7 +161,7 @@ class WalkForwardResult(BaseModel):
     total_points: int = 0
     start_date: str = ""
     end_date: str = ""
-    step_days: int = 0
+    step_days: float = 0
     accuracy_by_horizon: list[HorizonAccuracy] = Field(default_factory=list)
     points: list[VerificationResult] = Field(default_factory=list)
     summary: str = Field(default="", description="Resume lisible de l'analyse")
@@ -241,4 +241,44 @@ class HistoryIntegrityResponse(BaseModel):
         default="",
         description="Description lisible de l'etat de l'historique"
     )
+
+
+class InterestingSignalDetail(BaseModel):
+    """Detail d'un signal technique fort detecte a une date."""
+    indicator: str = Field(..., description="Nom de l'indicateur (rsi, macd, sma, bollinger)")
+    direction: str = Field(..., description="bullish / bearish / neutral")
+    strength: float = Field(..., ge=0.0, le=1.0, description="Force du signal (0-1)")
+    message: str = Field(default="", description="Description lisible du signal")
+    value: Optional[float] = Field(default=None, description="Valeur brute de l'indicateur")
+
+
+class InterestingDateItem(BaseModel):
+    """Une date identifiee comme interessante pour la verification."""
+    date: str = Field(..., description="Date ISO (ex: 2021-05-19)")
+    price: float = Field(..., description="Prix BTC a cette date")
+    interest_score: float = Field(
+        ..., ge=0.0, le=100.0,
+        description="Score d'interet (0=banal, 100=signaux tres forts)"
+    )
+    dominant_direction: str = Field(
+        ..., description="Direction dominante des signaux (bullish/bearish/mixed)"
+    )
+    signals: list[InterestingSignalDetail] = Field(
+        default_factory=list,
+        description="Liste des signaux forts detectes"
+    )
+    label: str = Field(
+        default="",
+        description="Label court (ex: 'RSI survendu + MACD croise haussier')"
+    )
+
+
+class InterestingDatesResponse(BaseModel):
+    """Reponse du scan de dates interessantes."""
+    dates: list[InterestingDateItem] = Field(default_factory=list)
+    total_scanned: int = Field(default=0, description="Nombre de dates scannees")
+    total_found: int = Field(default=0, description="Nombre de dates interessantes trouvees")
+    timeframe: str = Field(default="1d")
+    min_strength: float = Field(default=0.7, description="Seuil de force minimum utilise")
+    duration_seconds: float = Field(default=0.0, description="Temps de scan en secondes")
 

@@ -2,7 +2,7 @@
 // Dashboard.tsx — Premium dark trading dashboard with animations
 // =============================================================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Container,
@@ -168,6 +168,11 @@ const Dashboard: React.FC = () => {
     setFetchResult(null);
   };
 
+  // IMPORTANT: n'utiliser que les fonctions .refresh (stables via useCallback)
+  // et non les objets hook entiers, sinon handleRefreshAll est recréé à chaque
+  // render (car les objets changent de référence à chaque render, notamment
+  // à cause du WebSocket prix live qui update ~1x/sec).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleRefreshAll = useCallback(() => {
     indicators.refresh();
     gaps.refresh();
@@ -177,7 +182,7 @@ const Dashboard: React.FC = () => {
     alertsHook.refresh();
     news.refresh();
     setSnackbarMsg('✓ Données rafraîchies');
-  }, [indicators, gaps, candles, signals, decision, alertsHook, news]);
+  }, [indicators.refresh, gaps.refresh, candles.refresh, signals.refresh, decision.refresh, alertsHook.refresh, news.refresh]);
 
   // Scroll-to-top visibility
   useEffect(() => {
@@ -189,6 +194,10 @@ const Dashboard: React.FC = () => {
   }, []);
 
   // Keyboard shortcuts
+  // Utiliser un ref pour handleFetchCandles pour éviter de le mettre en deps
+  // (déclaré ici, sera assigné après la définition de handleFetchCandles ci-dessous)
+  const handleFetchCandlesRef = useRef<() => void>(() => {});
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore events from input/select/textarea
@@ -203,7 +212,7 @@ const Dashboard: React.FC = () => {
         case 'f':
           if (!e.ctrlKey && !e.metaKey) {
             e.preventDefault();
-            handleFetchCandles();
+            handleFetchCandlesRef.current();
           }
           break;
         case 'a':
@@ -275,6 +284,9 @@ const Dashboard: React.FC = () => {
       setFetching(false);
     }
   };
+
+  // Mise à jour du ref pour le raccourci clavier (après définition)
+  handleFetchCandlesRef.current = handleFetchCandles;
 
   const timeframeNotSupported = !isTimeframeSupported(timeframe);
   const noData = !candles.loading && candles.candles.length === 0;

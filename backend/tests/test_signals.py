@@ -22,6 +22,8 @@ from app.services.signal_service import (
     interpret_bollinger,
     interpret_adx,
     interpret_volume_trend,
+    interpret_stoch_rsi,
+    interpret_ema_cross,
     compute_composite_score,
     generate_summary,
     SignalService,
@@ -636,7 +638,7 @@ class TestSignalServiceIntegration:
             assert "direction" in signal
             assert "strength" in signal
             assert "message" in signal
-            assert signal["indicator"] in ("rsi", "macd", "sma", "bollinger", "adx", "volume")
+            assert signal["indicator"] in ("rsi", "macd", "sma", "bollinger", "adx", "volume", "stoch_rsi", "ema_cross")
             assert signal["direction"] in ("bullish", "bearish", "neutral")
             assert 0 <= signal["strength"] <= 1
 
@@ -711,4 +713,160 @@ class TestSignalEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "meta" in data
+
+
+# ============================================================
+# TESTS INTERPRÉTEUR STOCHASTIC RSI (v1.3)
+# ============================================================
+
+class TestInterpretStochRsi:
+    """Tests pour interpret_stoch_rsi — oscillateur amélioré."""
+
+    def test_stoch_rsi_none_returns_none(self):
+        """K None → pas de signal."""
+        assert interpret_stoch_rsi(None, None) is None
+
+    def test_stoch_rsi_extremely_overbought(self):
+        """K >= 90 → bearish fort."""
+        signal = interpret_stoch_rsi(95.0, 92.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BEARISH
+        assert signal.strength >= 0.7
+        assert signal.indicator == "stoch_rsi"
+
+    def test_stoch_rsi_overbought_confirmed(self):
+        """K >= 80, D >= 75 → bearish modéré."""
+        signal = interpret_stoch_rsi(85.0, 82.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BEARISH
+        assert 0.4 <= signal.strength <= 0.7
+
+    def test_stoch_rsi_extremely_oversold(self):
+        """K <= 10 → bullish fort."""
+        signal = interpret_stoch_rsi(5.0, 8.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BULLISH
+        assert signal.strength >= 0.7
+
+    def test_stoch_rsi_oversold_confirmed(self):
+        """K <= 20, D <= 25 → bullish modéré."""
+        signal = interpret_stoch_rsi(15.0, 18.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BULLISH
+        assert 0.4 <= signal.strength <= 0.7
+
+    def test_stoch_rsi_bullish_crossover_low(self):
+        """K > D en zone basse → croisement haussier."""
+        signal = interpret_stoch_rsi(30.0, 25.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BULLISH
+        assert "croisement" in signal.message.lower()
+
+    def test_stoch_rsi_bearish_crossover_high(self):
+        """K < D en zone haute → croisement baissier."""
+        signal = interpret_stoch_rsi(70.0, 75.0)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BEARISH
+        assert "croisement" in signal.message.lower()
+
+    def test_stoch_rsi_neutral_zone_returns_none(self):
+        """K en zone neutre sans croisement → pas de signal."""
+        result = interpret_stoch_rsi(50.0, 50.0)
+        assert result is None
+
+    def test_stoch_rsi_k_only_extreme_high(self):
+        """K très élevé sans D → bearish fort quand même."""
+        signal = interpret_stoch_rsi(95.0, None)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BEARISH
+
+    def test_stoch_rsi_k_only_extreme_low(self):
+        """K très bas sans D → bullish fort quand même."""
+        signal = interpret_stoch_rsi(5.0, None)
+        assert signal is not None
+        assert signal.direction == SignalDirection.BULLISH
+
+
+# ============================================================
+# TESTS INTERPRÉTEUR EMA CROSS (v1.3)
+# ============================================================
+
+class TestInterpretEmaCross:
+    """Tests pour interpret_ema_cross — croisement EMA rapide."""
+
+    def test_ema_cross_none_returns_none(self):
+        """EMA None → pas de signal."""
+        assert interpret_ema_cross(None, None, None, None) is None
+        assert interpret_ema_cross(100.0, None, None, None) is None
+
+    def test_ema_golden_cross(self):
+        """EMA9 croise EMA21 à la hausse → bullish fort."""
+        signal = interpret_ema_cross(
+            ema_9=100500, ema_21=100000,
+            prev_ema_9=99500, prev_ema_21=100000,
+            close=100500,
+        )
+        assert signal is not None
+        assert signal.direction == SignalDirection.BULLISH
+        assert signal.strength >= 0.5
+        assert "golden" in signal.message.lower() or "hausse" in signal.message.lower()
+
+    def test_ema_death_cross(self):
+        """EMA9 croise EMA21 à la baisse → bearish fort."""
+        signal = interpret_ema_cross(
+            ema_9=99500, ema_21=100000,
+            prev_ema_9=100500, prev_ema_21=100000,
+            close=99500,
+        )
+        assert signal is not None
+        assert signal.direction == SignalDirection.BEARISH
+        assert signal.strength >= 0.5
+
+    def test_ema_position_bullish(self):
+        """EMA9 > EMA21 sans croisement → biais haussier."""
+        signal = interpret_ema_cross(
+            ema_9=101000, ema_21=100000,
+            prev_ema_9=100800, prev_ema_21=100000,
+            close=101000,
+        )
+        assert signal is not None
+        assert signal.direction == SignalDirection.BULLISH
+
+    def test_ema_position_bearish(self):
+        """EMA9 < EMA21 sans croisement → biais baissier."""
+        signal = interpret_ema_cross(
+            ema_9=99000, ema_21=100000,
+            prev_ema_9=99200, prev_ema_21=100000,
+            close=99000,
+        )
+        assert signal is not None
+        assert signal.direction == SignalDirection.BEARISH
+
+    def test_ema_equal_returns_none(self):
+        """EMA9 = EMA21 → pas de signal."""
+        result = interpret_ema_cross(
+            ema_9=100000, ema_21=100000,
+            prev_ema_9=100000, prev_ema_21=100000,
+        )
+        assert result is None
+
+    def test_ema_no_previous_still_works(self):
+        """Sans données précédentes, la position donne quand même un signal."""
+        signal = interpret_ema_cross(
+            ema_9=101000, ema_21=100000,
+            prev_ema_9=None, prev_ema_21=None,
+            close=101000,
+        )
+        assert signal is not None
+        assert signal.direction == SignalDirection.BULLISH
+
+    def test_ema_large_spread_strong(self):
+        """Grand écart EMA → force élevée."""
+        signal = interpret_ema_cross(
+            ema_9=102000, ema_21=100000,
+            prev_ema_9=101500, prev_ema_21=100000,
+            close=102000,
+        )
+        assert signal is not None
+        assert signal.strength >= 0.3
 

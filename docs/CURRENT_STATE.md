@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 6 avril 2026
-> **Version :** v1.2.4
+> **Version :** v1.2.5
 > **Branche :** `master`
-> **Dernier commit :** feat(decision): integrate news history into walk-forward — combined FGI + News sentiment (v1.2.4)
+> **Dernier commit :** feat(verification): add interesting dates scanner, fractional walk-forward step, UI guides (v1.2.5)
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.2.4** |
+| Version courante | **v1.2.5** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **681 tests**, tous passing ✅ |
+| Tests backend | **722 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---

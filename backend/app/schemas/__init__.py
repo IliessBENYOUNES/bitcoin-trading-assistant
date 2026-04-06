@@ -68,6 +68,9 @@ from app.schemas.verification import (
     WalkForwardSummaryStats,
     HistoryIntegrityGap,
     HistoryIntegrityResponse,
+    InterestingSignalDetail,
+    InterestingDateItem,
+    InterestingDatesResponse,
 )
 
 from app.schemas.sentiment import (
@@ -125,6 +128,9 @@ __all__ = [
     "WalkForwardSummaryStats",
     "HistoryIntegrityGap",
     "HistoryIntegrityResponse",
+    "InterestingSignalDetail",
+    "InterestingDateItem",
+    "InterestingDatesResponse",
     "SentimentLoadConfig",
     "SentimentLoadResponse",
     "SentimentRangeResponse",

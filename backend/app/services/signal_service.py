@@ -499,24 +499,224 @@ def interpret_volume_trend(
         return None
 
 
+def interpret_stoch_rsi(
+    k: Optional[float],
+    d: Optional[float],
+) -> Optional[SignalItem]:
+    """
+    Interprète le Stochastic RSI (14,14,3,3).
+
+    Le StochRSI est plus sensible que le RSI classique pour détecter
+    les retournements à court terme, surtout DANS les tendances.
+    Le RSI classique peut rester suracheté pendant des semaines en
+    bull run ; le StochRSI oscille plus et détecte les micro-corrections.
+
+    Logique :
+    - K >= 90 : Extrêmement suracheté → bearish fort
+    - K >= 80 et D >= 80 : Suracheté confirmé → bearish modéré
+    - K <= 10 : Extrêmement survendu → bullish fort
+    - K <= 20 et D <= 20 : Survendu confirmé → bullish modéré
+    - Croisement K au-dessus de D (en zone basse) : bullish
+    - Croisement K en-dessous de D (en zone haute) : bearish
+    """
+    if k is None:
+        return None
+
+    # Normaliser K entre 0 et 100 (pandas_ta retourne 0-100)
+    k_val = max(0, min(100, k))
+    d_val = max(0, min(100, d)) if d is not None else None
+
+    if k_val >= 90:
+        return SignalItem(
+            indicator="stoch_rsi",
+            direction=SignalDirection.BEARISH,
+            strength=0.8,
+            value=round(k_val, 2),
+            message=f"StochRSI extrêmement suracheté (K={k_val:.0f}) — retournement probable",
+        )
+    elif k_val >= 80 and d_val is not None and d_val >= 75:
+        return SignalItem(
+            indicator="stoch_rsi",
+            direction=SignalDirection.BEARISH,
+            strength=0.6,
+            value=round(k_val, 2),
+            message=f"StochRSI suracheté (K={k_val:.0f}, D={d_val:.0f}) — prudence",
+        )
+    elif k_val <= 10:
+        return SignalItem(
+            indicator="stoch_rsi",
+            direction=SignalDirection.BULLISH,
+            strength=0.8,
+            value=round(k_val, 2),
+            message=f"StochRSI extrêmement survendu (K={k_val:.0f}) — rebond probable",
+        )
+    elif k_val <= 20 and d_val is not None and d_val <= 25:
+        return SignalItem(
+            indicator="stoch_rsi",
+            direction=SignalDirection.BULLISH,
+            strength=0.6,
+            value=round(k_val, 2),
+            message=f"StochRSI survendu (K={k_val:.0f}, D={d_val:.0f}) — opportunité",
+        )
+    elif d_val is not None and k_val > d_val and k_val < 40:
+        # Croisement haussier en zone basse → signal d'achat
+        strength = 0.5 if k_val < 25 else 0.3
+        return SignalItem(
+            indicator="stoch_rsi",
+            direction=SignalDirection.BULLISH,
+            strength=strength,
+            value=round(k_val, 2),
+            message=f"StochRSI croisement haussier (K={k_val:.0f} > D={d_val:.0f}) en zone basse",
+        )
+    elif d_val is not None and k_val < d_val and k_val > 60:
+        # Croisement baissier en zone haute → signal de vente
+        strength = 0.5 if k_val > 75 else 0.3
+        return SignalItem(
+            indicator="stoch_rsi",
+            direction=SignalDirection.BEARISH,
+            strength=strength,
+            value=round(k_val, 2),
+            message=f"StochRSI croisement baissier (K={k_val:.0f} < D={d_val:.0f}) en zone haute",
+        )
+    else:
+        # Zone neutre → pas de signal particulier
+        return None
+
+
+def interpret_ema_cross(
+    ema_9: Optional[float],
+    ema_21: Optional[float],
+    prev_ema_9: Optional[float],
+    prev_ema_21: Optional[float],
+    close: Optional[float] = None,
+) -> Optional[SignalItem]:
+    """
+    Interprète le croisement EMA(9) / EMA(21).
+
+    Le croisement EMA rapide/lente est un signal de tendance classique
+    plus réactif que les SMA. Il capture les changements de momentum
+    1 à 3 candles plus tôt que le croisement SMA(20)/SMA(50).
+
+    Logique :
+    - EMA9 > EMA21 alors que prev_EMA9 <= prev_EMA21 : Golden cross → bullish
+    - EMA9 < EMA21 alors que prev_EMA9 >= prev_EMA21 : Death cross → bearish
+    - EMA9 > EMA21 (position) : biais haussier
+    - EMA9 < EMA21 (position) : biais baissier
+    - Force proportionnelle à l'écart relatif EMA9-EMA21
+    """
+    if ema_9 is None or ema_21 is None:
+        return None
+
+    diff = ema_9 - ema_21
+
+    # Calculer l'écart en % du prix pour une force normalisée
+    ref_price = close if close and close > 0 else ema_21
+    if ref_price and ref_price > 0:
+        pct_diff = abs(diff) / ref_price * 100
+    else:
+        pct_diff = 0
+
+    # Détecter les croisements (si on a les valeurs précédentes)
+    is_crossover_up = False
+    is_crossover_down = False
+    if prev_ema_9 is not None and prev_ema_21 is not None:
+        prev_diff = prev_ema_9 - prev_ema_21
+        if diff > 0 and prev_diff <= 0:
+            is_crossover_up = True
+        elif diff < 0 and prev_diff >= 0:
+            is_crossover_down = True
+
+    if is_crossover_up:
+        # Golden cross EMA : signal fort
+        strength = min(0.8, 0.6 + pct_diff * 0.2)
+        return SignalItem(
+            indicator="ema_cross",
+            direction=SignalDirection.BULLISH,
+            strength=round(strength, 2),
+            value=round(diff, 2),
+            message=f"EMA9 croise EMA21 à la hausse — golden cross ({pct_diff:.2f}%)",
+        )
+    elif is_crossover_down:
+        # Death cross EMA : signal fort
+        strength = min(0.8, 0.6 + pct_diff * 0.2)
+        return SignalItem(
+            indicator="ema_cross",
+            direction=SignalDirection.BEARISH,
+            strength=round(strength, 2),
+            value=round(diff, 2),
+            message=f"EMA9 croise EMA21 à la baisse — death cross ({pct_diff:.2f}%)",
+        )
+    elif diff > 0:
+        # Position haussière (pas de croisement récent)
+        if pct_diff > 1.0:
+            strength = 0.5
+        elif pct_diff > 0.3:
+            strength = 0.3
+        else:
+            strength = 0.15
+        return SignalItem(
+            indicator="ema_cross",
+            direction=SignalDirection.BULLISH,
+            strength=strength,
+            value=round(diff, 2),
+            message=f"EMA9 ({ema_9:,.0f}) > EMA21 ({ema_21:,.0f}) — momentum haussier",
+        )
+    elif diff < 0:
+        # Position baissière
+        if pct_diff > 1.0:
+            strength = 0.5
+        elif pct_diff > 0.3:
+            strength = 0.3
+        else:
+            strength = 0.15
+        return SignalItem(
+            indicator="ema_cross",
+            direction=SignalDirection.BEARISH,
+            strength=strength,
+            value=round(diff, 2),
+            message=f"EMA9 ({ema_9:,.0f}) < EMA21 ({ema_21:,.0f}) — momentum baissier",
+        )
+    else:
+        return None
+
+
 # ============================================================
-# AGRÉGATION : SCORE COMPOSITE (v1.2 — amélioré avec ADX + Volume)
+# AGRÉGATION : SCORE COMPOSITE (v1.3 — régime-based weighting)
 # ============================================================
+
+# Multiplicateurs de pondération par régime de marché.
+# En tendance forte (ADX ≥ 25), les indicateurs de tendance (MACD, SMA, EMA)
+# sont plus fiables. En range (ADX < 20), les oscillateurs (RSI, Bollinger,
+# StochRSI) sont plus fiables. Ce sont des biais mathématiquement justifiés.
+REGIME_WEIGHTS = {
+    "trending": {
+        # Indicateurs de tendance boostés
+        "macd": 1.3, "sma": 1.3, "ema_cross": 1.4,
+        # Oscillateurs réduits (faux signaux fréquents en tendance)
+        "rsi": 0.6, "bollinger": 0.6, "stoch_rsi": 0.7,
+    },
+    "ranging": {
+        # Indicateurs de tendance réduits (whipsaws)
+        "macd": 0.6, "sma": 0.6, "ema_cross": 0.5,
+        # Oscillateurs boostés (fonctionnent bien en range)
+        "rsi": 1.3, "bollinger": 1.3, "stoch_rsi": 1.4,
+    },
+}
+
 
 def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
     """
     Agrège les signaux individuels en un score composite.
 
-    Algorithme v1.2 (amélioré ADX + Volume) :
-    1. Chaque signal bullish contribue +strength, bearish -strength
-    2. L'ADX module la confiance globale :
-       - ADX >= 25 : signaux tendanciels (MACD, SMA) sont boostés
-       - ADX < 20 : tous les signaux sont atténués (marché sans tendance)
-    3. Le volume module aussi la confiance :
-       - Volume élevé : boost de +10% du score
-       - Volume faible : atténuation de -10% du score
+    Algorithme v1.3 (régime-based weighting) :
+    1. Identifie le régime de marché via l'ADX :
+       - ADX >= 25 : trending → booste les indicateurs de tendance
+       - ADX < 20 : ranging → booste les oscillateurs
+       - ADX 20-25 ou absent : neutre → pas de modification
+    2. Chaque signal directional contribue ±strength × regime_multiplier
+    3. L'ADX et le volume agissent comme modificateurs globaux
     4. Score normalisé sur -100/+100
-    5. Confiance basée sur la convergence ET la force de la tendance
+    5. Confiance basée sur convergence + ADX + nombre de signaux
     """
     if not signals:
         return CompositeScore(
@@ -548,26 +748,35 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
     neutral_count = sum(1 for s in directional_signals if s.direction == SignalDirection.NEUTRAL)
 
     # Déterminer le régime de marché via ADX
-    # adx_multiplier : 1.0 = normal, > 1.0 = tendance forte, < 1.0 = range
     adx_value = adx_signal.value if adx_signal else None
     if adx_value is not None:
         if adx_value >= 40:
             adx_multiplier = 1.3  # Tendance très forte : boost les signaux
+            regime = "trending"
         elif adx_value >= 25:
             adx_multiplier = 1.1  # Tendance confirmée : léger boost
+            regime = "trending"
         elif adx_value >= 20:
             adx_multiplier = 1.0  # Normal
+            regime = None  # Zone de transition, pas de biais
         else:
             adx_multiplier = 0.7  # Pas de tendance : atténue les signaux
+            regime = "ranging"
     else:
-        adx_multiplier = 1.0  # Pas d'ADX disponible, pas de modification
+        adx_multiplier = 1.0
+        regime = None  # Pas d'ADX disponible → pas de biais de régime
 
-    # Score brut pondéré par la force
+    # Score brut pondéré par la force + régime
     weighted_sum = 0.0
     total_weight = 0.0
 
     for s in directional_signals:
         weight = s.strength
+
+        # Appliquer le multiplicateur de régime si disponible
+        if regime and s.indicator in REGIME_WEIGHTS.get(regime, {}):
+            weight *= REGIME_WEIGHTS[regime][s.indicator]
+
         if s.direction == SignalDirection.BULLISH:
             weighted_sum += weight
         elif s.direction == SignalDirection.BEARISH:
@@ -629,7 +838,7 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
         else:
             consensus = "divided"
 
-    # Confiance v1.2 : basée sur convergence + ADX + nombre de signaux
+    # Confiance v1.3 : basée sur convergence + ADX + nombre de signaux
     if consensus in ("unanimous", "strong_majority") and total_dir >= 3:
         if adx_value is not None and adx_value >= 25:
             confidence = ConfidenceLevel.HIGH  # Convergence + tendance confirmée
@@ -804,6 +1013,32 @@ class SignalService:
         )
         if volume_signal:
             signals.append(volume_signal)
+
+        # Stochastic RSI v1.3 : meilleure détection overbought/oversold
+        stoch_rsi_signal = interpret_stoch_rsi(
+            latest.get("stoch_rsi_k"),
+            latest.get("stoch_rsi_d"),
+        )
+        if stoch_rsi_signal:
+            signals.append(stoch_rsi_signal)
+
+        # EMA Cross v1.3 : croisement EMA(9)/EMA(21) rapide
+        # On a besoin des valeurs précédentes pour détecter les croisements
+        prev_point = indicator_result.get("series", [None, None])
+        if isinstance(prev_point, list) and len(prev_point) >= 2:
+            prev = prev_point[-2]
+        else:
+            prev = None
+
+        ema_cross_signal = interpret_ema_cross(
+            latest.get("ema_9"),
+            latest.get("ema_21"),
+            prev.get("ema_9") if prev else None,
+            prev.get("ema_21") if prev else None,
+            close=latest.get("close"),
+        )
+        if ema_cross_signal:
+            signals.append(ema_cross_signal)
 
         # Calculer le score composite
         composite = compute_composite_score(signals)

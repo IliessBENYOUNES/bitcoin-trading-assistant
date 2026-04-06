@@ -26,6 +26,7 @@ import type {
   VerificationResult,
   WalkForwardConfig,
   WalkForwardResult,
+  InterestingDatesResponse,
   SentimentLoadConfig,
   SentimentLoadResponse,
   SentimentRangeResponse,
@@ -54,28 +55,59 @@ const BASE_URL = getBaseUrl();
 
 interface FetchOptions {
   signal?: AbortSignal;
+  /** Timeout en ms (défaut: 45s — assez pour les appels RSS lents du backend) */
+  timeoutMs?: number;
 }
+
+// Timeout par défaut : 45 secondes
+// Le backend peut prendre jusqu'à 30s si les 3 sources RSS timeout (10s chacune)
+const DEFAULT_TIMEOUT_MS = 45_000;
 
 async function apiFetch<T>(
   endpoint: string,
   options: FetchOptions = {}
 ): Promise<T> {
   const url = `${BASE_URL}${endpoint}`;
-  
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
-    signal: options.signal,
-  });
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => 'Unknown error');
-    throw new Error(`API Error ${response.status}: ${errorText}`);
+  // Combiner le signal externe (ex: AbortController du hook) avec un timeout
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
+
+  // Si un signal externe est fourni, on écoute aussi son abort
+  if (options.signal) {
+    options.signal.addEventListener('abort', () => timeoutController.abort());
   }
 
-  return response.json() as Promise<T>;
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+      signal: timeoutController.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`API Error ${response.status}: ${errorText}`);
+    }
+
+    return response.json() as Promise<T>;
+  } catch (err) {
+    // Transformer le timeout en message lisible
+    if (err instanceof Error && err.name === 'AbortError') {
+      if (options.signal?.aborted) {
+        // L'abort vient du composant (cleanup) — on le propage tel quel
+        throw err;
+      }
+      // L'abort vient du timeout
+      throw new Error(`Timeout après ${timeoutMs / 1000}s: ${endpoint}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -337,6 +369,25 @@ export async function getHistoryIntegrity(
   const timeframe = params.timeframe || '1d';
   const endpoint = `/backtest/history/integrity?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`;
   return apiFetch<HistoryIntegrityResponse>(endpoint, options);
+}
+
+export async function getInterestingDates(
+  params: {
+    symbol?: string;
+    timeframe?: string;
+    min_strength?: number;
+    max_results?: number;
+    step_days?: number;
+  } = {},
+  options: FetchOptions = {}
+): Promise<InterestingDatesResponse> {
+  const symbol = params.symbol || 'BTC/USD';
+  const timeframe = params.timeframe || '1d';
+  const minStrength = params.min_strength ?? 0.7;
+  const maxResults = params.max_results ?? 20;
+  const stepDays = params.step_days ?? 3.0;
+  const endpoint = `/backtest/interesting-dates?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&min_strength=${minStrength}&max_results=${maxResults}&step_days=${stepDays}`;
+  return apiFetch<InterestingDatesResponse>(endpoint, options);
 }
 
 export async function verifyAtDate(

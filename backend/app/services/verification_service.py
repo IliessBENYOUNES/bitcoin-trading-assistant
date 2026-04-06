@@ -114,16 +114,16 @@ class VerificationService:
         if candle:
             return candle[0]
 
-        window_start = target_date - timedelta(days=2)
-        window_end = target_date + timedelta(days=2)
+        # Fenêtre de recherche adaptée au timeframe
+        window = self._adaptive_search_window(timeframe)
 
         candles = (
             self.db.query(Candle.close_price, Candle.timestamp)
             .filter(
                 Candle.symbol == symbol,
                 Candle.timeframe == timeframe,
-                Candle.timestamp >= window_start,
-                Candle.timestamp <= window_end,
+                Candle.timestamp >= target_date - window,
+                Candle.timestamp <= target_date + window,
             )
             .all()
         )
@@ -137,16 +137,16 @@ class VerificationService:
         self, symbol: str, timeframe: str, target_date: datetime
     ) -> tuple[Optional[float], Optional[str]]:
         """Recupere le prix et la date exacte de la candle la plus proche."""
-        window_start = target_date - timedelta(days=3)
-        window_end = target_date + timedelta(days=3)
+        # Fenêtre de recherche adaptée au timeframe
+        window = self._adaptive_search_window(timeframe)
 
         candles = (
             self.db.query(Candle.close_price, Candle.timestamp)
             .filter(
                 Candle.symbol == symbol,
                 Candle.timeframe == timeframe,
-                Candle.timestamp >= window_start,
-                Candle.timestamp <= window_end,
+                Candle.timestamp >= target_date - window,
+                Candle.timestamp <= target_date + window,
             )
             .all()
         )
@@ -156,6 +156,23 @@ class VerificationService:
         closest = min(candles, key=lambda c: abs((self._ensure_aware(c[1]) - target_date).total_seconds()))
         ts = closest[1]
         return closest[0], (ts.isoformat() if isinstance(ts, datetime) else str(ts))
+
+    @staticmethod
+    def _adaptive_search_window(timeframe: str) -> timedelta:
+        """
+        Fenêtre de recherche adaptée au timeframe.
+        Pour les petits timeframes (1m, 5m, 15m), la fenêtre est réduite
+        pour ne pas sauter trop loin dans le temps.
+        """
+        mapping = {
+            "1m": timedelta(minutes=5),
+            "5m": timedelta(minutes=30),
+            "15m": timedelta(hours=2),
+            "30m": timedelta(hours=4),
+            "1h": timedelta(hours=8),
+            "4h": timedelta(days=1),
+        }
+        return mapping.get(timeframe, timedelta(days=3))
 
     # ================================================================
     # VOLATILITE ADAPTATIVE
@@ -208,7 +225,7 @@ class VerificationService:
         return round(volatility, 4)
 
     def _get_adaptive_thresholds(
-        self, horizon_days: int, daily_volatility: Optional[float]
+        self, horizon_days: float, daily_volatility: Optional[float]
     ) -> tuple[float, float]:
         """
         Calcule les seuils adaptatifs hausse/baisse et le seuil neutre
@@ -218,27 +235,30 @@ class VerificationService:
         - direction_threshold : seuil pour classifier hausse/baisse
         - neutral_threshold : seuil pour le "attendre" neutre
 
-        La logique : pour un horizon de H jours, le mouvement attendu
-        est environ volatilite_quotidienne * sqrt(H) (marche aleatoire).
-        On utilise 0.5x ce mouvement comme seuil de direction,
-        et 1.5x comme seuil neutre (mouvement "trop fort" pour ignorer).
+        Supporte les horizons fractionnaires (ex: 0.0035j = 5min).
+        Pour les horizons très courts (< 1j), on utilise un plancher
+        de seuil plus bas adapté au scalping.
         """
         if daily_volatility is None or daily_volatility <= 0:
             # Fallback sur les seuils par defaut (volatilite typique BTC ~3%)
             daily_volatility = 3.0
 
         # Mouvement attendu sous marche aleatoire : vol * sqrt(horizon)
-        expected_move = daily_volatility * math.sqrt(horizon_days)
+        expected_move = daily_volatility * math.sqrt(max(horizon_days, 0.0001))
 
         # Seuil de direction : 40% du mouvement attendu
-        # (un mouvement < 40% de la norme est "stable")
-        direction_threshold = max(1.5, expected_move * 0.4)
+        # Pour les horizons très courts (< 1j), on réduit le plancher minimum
+        if horizon_days < 1:
+            min_dir = max(0.05, expected_move * 0.3)  # Plancher 0.05% pour scalping
+            min_neutral = max(0.2, expected_move * 1.5)
+        else:
+            min_dir = 1.5
+            min_neutral = 5.0
 
-        # Seuil neutre : 1.8x du mouvement attendu
-        # (si le modele dit "neutre" et le marche bouge > 1.8x la norme, c'est incorrect)
-        neutral_threshold = max(5.0, expected_move * 1.8)
+        direction_threshold = max(min_dir, expected_move * 0.4)
+        neutral_threshold = max(min_neutral, expected_move * 1.8)
 
-        return round(direction_threshold, 2), round(neutral_threshold, 2)
+        return round(direction_threshold, 4), round(neutral_threshold, 4)
 
     # ================================================================
     # VERIFICATION PONCTUELLE
@@ -442,7 +462,7 @@ class VerificationService:
 
     def _is_prediction_correct(
         self, predicted_action: str, actual_direction: str, actual_change_pct: float,
-        predicted_score: int = 0, horizon_days: int = 7,
+        predicted_score: int = 0, horizon_days: float = 7,
         volatility: Optional[float] = None,
     ) -> bool:
         """
@@ -477,7 +497,7 @@ class VerificationService:
         score: int,
         actual_change_pct: float,
         actual_direction: str,
-        horizon_days: int,
+        horizon_days: float,
         volatility: Optional[float] = None,
     ) -> bool:
         """
@@ -516,7 +536,7 @@ class VerificationService:
             return abs(actual_change_pct) < neutral_threshold
 
     def _get_adaptive_hold_tolerance(
-        self, horizon_days: int, volatility: Optional[float] = None
+        self, horizon_days: float, volatility: Optional[float] = None
     ) -> float:
         """
         Marge d'erreur pour un penchant "attendre" — ADAPTATIVE.
@@ -528,14 +548,16 @@ class VerificationService:
             volatility = 3.0  # Fallback BTC typique
 
         # Mouvement attendu sur l'horizon
-        expected_move = volatility * math.sqrt(horizon_days)
+        expected_move = volatility * math.sqrt(max(horizon_days, 0.0001))
 
         # On tolere 1.0x le mouvement attendu quand le modele dit "attendre"
         # mais a un penchant directionnel
-        return max(5.0, round(expected_move * 1.0, 2))
+        # Pour les horizons très courts (< 1j), on réduit le plancher
+        min_tolerance = 0.1 if horizon_days < 1 else 5.0
+        return max(min_tolerance, round(expected_move * 1.0, 4))
 
     def _get_adaptive_neutral_threshold(
-        self, horizon_days: int, volatility: Optional[float] = None
+        self, horizon_days: float, volatility: Optional[float] = None
     ) -> float:
         """
         Seuil de mouvement acceptable quand le modele est neutre (~score 0).
@@ -547,11 +569,12 @@ class VerificationService:
         if volatility is None or volatility <= 0:
             volatility = 3.0
 
-        expected_move = volatility * math.sqrt(horizon_days)
+        expected_move = volatility * math.sqrt(max(horizon_days, 0.0001))
 
         # On tolere 1.8x le mouvement attendu pour un score neutre
         # Au-dela, le modele aurait du donner un signal
-        return max(8.0, round(expected_move * 1.8, 2))
+        min_threshold = 0.3 if horizon_days < 1 else 8.0
+        return max(min_threshold, round(expected_move * 1.8, 4))
 
     # ================================================================
     # SCORE DE QUALITE — 0 a 100
@@ -562,7 +585,7 @@ class VerificationService:
         predicted_action: str,
         score: int,
         actual_change_pct: float,
-        horizon_days: int = 7,
+        horizon_days: float = 7,
         volatility: Optional[float] = None,
     ) -> float:
         """
@@ -585,7 +608,7 @@ class VerificationService:
         if volatility is None or volatility <= 0:
             volatility = 3.0
 
-        expected_move = volatility * math.sqrt(horizon_days)
+        expected_move = volatility * math.sqrt(max(horizon_days, 0.0001))
         if expected_move <= 0:
             expected_move = 5.0
 
@@ -671,7 +694,7 @@ class VerificationService:
         score: int,
         actual_direction: str,
         actual_change: float,
-        horizon: int,
+        horizon: float,
         correct: bool,
         quality_score: float,
         dir_threshold: float = 2.0,
@@ -696,11 +719,35 @@ class VerificationService:
             lean_dir = "haussier" if score > 0 else "baissier"
             lean = f", penchant {lean_dir}"
 
+        # Affichage lisible de l'horizon (minutes/heures/jours)
+        horizon_label = self._format_horizon_label(horizon)
+
         return (
             f"Prediction: {action_label} (score {score:+d}{lean}) → "
-            f"Realite a {horizon}j: {actual_direction} ({actual_change:+.1f}%, seuil ±{dir_threshold:.1f}%) "
+            f"Realite a {horizon_label}: {actual_direction} ({actual_change:+.1f}%, seuil ±{dir_threshold:.2f}%) "
             f"— {verdict} (qualite: {quality_score:.0f}/100 = {quality_label})"
         )
+
+    @staticmethod
+    def _format_horizon_label(horizon_days: float) -> str:
+        """
+        Formatte un horizon fractionnaire en label lisible.
+        Ex: 0.00347 → "5min", 0.04167 → "1h", 7 → "7j"
+        """
+        minutes = horizon_days * 24 * 60
+        if minutes < 60:
+            m = round(minutes)
+            return f"{m}min"
+        elif minutes < 1440:  # < 24h
+            h = minutes / 60
+            if h == int(h):
+                return f"{int(h)}h"
+            return f"{h:.1f}h"
+        else:
+            d = horizon_days
+            if d == int(d):
+                return f"{int(d)}j"
+            return f"{d:.1f}j"
 
     # ================================================================
     # INTÉGRITÉ DE L'HISTORIQUE
@@ -875,6 +922,245 @@ class VerificationService:
         ))
 
         return gaps
+
+    # ================================================================
+    # FIND INTERESTING DATES — Scan pour dates a signaux forts
+    # ================================================================
+
+    def find_interesting_dates(
+        self,
+        symbol: str = "BTC/USD",
+        timeframe: str = "1d",
+        min_strength: float = 0.7,
+        max_results: int = 20,
+        step_days: float = 3.0,
+    ) -> "InterestingDatesResponse":
+        """
+        Scanne l'historique charge et identifie les dates ou les indicateurs
+        techniques montrent des signaux forts (RSI extreme, croisement MACD,
+        prix hors Bollinger, etc.).
+
+        Approche performante : charge TOUS les candles en une passe, calcule
+        les indicateurs sur le DataFrame complet, puis scanne chaque point
+        avec un pas configurable.
+
+        Args:
+            symbol: Paire de trading
+            timeframe: Timeframe des candles
+            min_strength: Force minimum pour considerer un signal (0-1)
+            max_results: Nombre max de dates a retourner
+            step_days: Pas de scan en jours (fractionnel pour petits TF)
+
+        Returns:
+            InterestingDatesResponse avec les top N dates triees par score
+        """
+        from app.services.indicator_service import IndicatorService
+        from app.services.signal_service import (
+            interpret_rsi, interpret_macd, interpret_sma, interpret_bollinger,
+        )
+        from app.schemas.verification import (
+            InterestingDatesResponse,
+            InterestingDateItem,
+            InterestingSignalDetail,
+        )
+
+        t0 = time.time()
+
+        # 1. Charger toutes les candles en base pour ce symbol/timeframe
+        indicator_service = IndicatorService(self.db)
+        candles = (
+            self.db.query(Candle)
+            .filter(
+                Candle.symbol == symbol,
+                Candle.timeframe == timeframe,
+            )
+            .order_by(Candle.timestamp.asc())
+            .all()
+        )
+
+        if not candles or len(candles) < 200:
+            # Pas assez de données pour des indicateurs fiables
+            return InterestingDatesResponse(
+                dates=[],
+                total_scanned=len(candles) if candles else 0,
+                total_found=0,
+                timeframe=timeframe,
+                min_strength=min_strength,
+                duration_seconds=round(time.time() - t0, 2),
+            )
+
+        # 2. Convertir en DataFrame et calculer les indicateurs
+        df = indicator_service._candles_to_dataframe(candles)
+        df = indicator_service._calculate_indicators(df)
+
+        # 3. Determiner le pas en nombre de lignes
+        # Pour 1d, step_days=3 → toutes les 3 lignes
+        # Pour 1h, step_days=3 → toutes les 72 lignes
+        # Pour 1m, step_days=0.5 → toutes les 720 lignes
+        tf_hours = self._get_timeframe_hours(timeframe)
+        step_rows = max(1, int((step_days * 24) / tf_hours))
+
+        # 4. Scanner chaque point avec le pas défini
+        # On commence apres 200 lignes pour avoir assez de warmup (SMA200)
+        start_idx = min(200, len(df) - 1)
+        candidates: list[InterestingDateItem] = []
+        total_scanned = 0
+
+        for idx in range(start_idx, len(df), step_rows):
+            row = df.iloc[idx]
+            total_scanned += 1
+
+            close = row.get("close")
+            if close is None or (hasattr(close, '__class__') and close != close):  # NaN check
+                continue
+
+            # Interpreter chaque indicateur
+            signals: list[InterestingSignalDetail] = []
+
+            # RSI
+            rsi_signal = interpret_rsi(
+                self._safe_float(row.get("rsi_14"))
+            )
+            if rsi_signal and rsi_signal.strength >= min_strength:
+                signals.append(InterestingSignalDetail(
+                    indicator="rsi",
+                    direction=rsi_signal.direction.value,
+                    strength=rsi_signal.strength,
+                    message=rsi_signal.message,
+                    value=rsi_signal.value,
+                ))
+
+            # MACD
+            macd_signal = interpret_macd(
+                self._safe_float(row.get("macd")),
+                self._safe_float(row.get("macd_signal")),
+                self._safe_float(row.get("macd_hist")),
+                close=close,
+            )
+            if macd_signal and macd_signal.strength >= min_strength:
+                signals.append(InterestingSignalDetail(
+                    indicator="macd",
+                    direction=macd_signal.direction.value,
+                    strength=macd_signal.strength,
+                    message=macd_signal.message,
+                    value=macd_signal.value,
+                ))
+
+            # SMA
+            sma_signal = interpret_sma(
+                close,
+                self._safe_float(row.get("sma_20")),
+                self._safe_float(row.get("sma_50")),
+                self._safe_float(row.get("sma_200")),
+            )
+            if sma_signal and sma_signal.strength >= min_strength:
+                signals.append(InterestingSignalDetail(
+                    indicator="sma",
+                    direction=sma_signal.direction.value,
+                    strength=sma_signal.strength,
+                    message=sma_signal.message,
+                    value=sma_signal.value,
+                ))
+
+            # Bollinger
+            bb_signal = interpret_bollinger(
+                close,
+                self._safe_float(row.get("bb_upper")),
+                self._safe_float(row.get("bb_mid")),
+                self._safe_float(row.get("bb_lower")),
+            )
+            if bb_signal and bb_signal.strength >= min_strength:
+                signals.append(InterestingSignalDetail(
+                    indicator="bollinger",
+                    direction=bb_signal.direction.value,
+                    strength=bb_signal.strength,
+                    message=bb_signal.message,
+                    value=bb_signal.value,
+                ))
+
+            # Pas de signal fort → skip
+            if not signals:
+                continue
+
+            # 5. Calculer le score d'interet (0-100)
+            # Base: somme des strengths normalisée
+            total_strength = sum(s.strength for s in signals)
+            # Plus de signaux forts = plus interessant (bonus x nombre)
+            raw_score = (total_strength / max(len(signals), 1)) * 60 + len(signals) * 15
+            interest_score = min(100.0, round(raw_score, 1))
+
+            # 6. Direction dominante
+            bullish_count = sum(1 for s in signals if s.direction == "bullish")
+            bearish_count = sum(1 for s in signals if s.direction == "bearish")
+            if bullish_count > bearish_count:
+                dominant = "bullish"
+            elif bearish_count > bullish_count:
+                dominant = "bearish"
+            else:
+                dominant = "mixed"
+
+            # 7. Label court
+            signal_names = []
+            for s in signals:
+                if s.indicator == "rsi":
+                    val = s.value or 0
+                    signal_names.append(f"RSI {'survendu' if val < 50 else 'suracheté'} ({val:.0f})")
+                elif s.indicator == "macd":
+                    signal_names.append(f"MACD {'↑' if s.direction == 'bullish' else '↓'}")
+                elif s.indicator == "sma":
+                    signal_names.append(f"SMA {'↑' if s.direction == 'bullish' else '↓'}")
+                elif s.indicator == "bollinger":
+                    signal_names.append(f"BB {'percée haute' if s.direction == 'bearish' else 'percée basse'}")
+            label = " + ".join(signal_names)
+
+            # Formater la date
+            ts = row.get("timestamp")
+            date_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+
+            candidates.append(InterestingDateItem(
+                date=date_str[:10] if len(date_str) >= 10 else date_str,
+                price=round(float(close), 2),
+                interest_score=interest_score,
+                dominant_direction=dominant,
+                signals=signals,
+                label=label,
+            ))
+
+        # 8. Trier par score decroissant et limiter
+        candidates.sort(key=lambda x: x.interest_score, reverse=True)
+        top_dates = candidates[:max_results]
+
+        return InterestingDatesResponse(
+            dates=top_dates,
+            total_scanned=total_scanned,
+            total_found=len(candidates),
+            timeframe=timeframe,
+            min_strength=min_strength,
+            duration_seconds=round(time.time() - t0, 2),
+        )
+
+    @staticmethod
+    def _safe_float(val) -> Optional[float]:
+        """Convertit une valeur en float, retourne None si NaN ou None."""
+        if val is None:
+            return None
+        try:
+            f = float(val)
+            if f != f:  # NaN check
+                return None
+            return f
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _get_timeframe_hours(timeframe: str) -> float:
+        """Retourne le nombre d'heures pour un timeframe."""
+        mapping = {
+            "1m": 1 / 60, "5m": 5 / 60, "15m": 0.25,
+            "30m": 0.5, "1h": 1, "4h": 4,
+            "1d": 24, "1w": 168,
+        }
+        return mapping.get(timeframe, 24)
 
     # ================================================================
     # WALK-FORWARD
@@ -1232,7 +1518,7 @@ class VerificationService:
         )
 
     def _compute_accuracy(
-        self, points: list[VerificationResult], horizons: list[int]
+        self, points: list[VerificationResult], horizons: list[float]
     ) -> list[HorizonAccuracy]:
         """Calcule la precision par horizon avec metriques avancees v1.2."""
         results: list[HorizonAccuracy] = []
@@ -1345,8 +1631,9 @@ class VerificationService:
 
         for acc in accuracy_by_horizon:
             if acc.total_points > 0:
+                h_label = self._format_horizon_label(acc.horizon_days)
                 parts.append(
-                    f"Horizon {acc.horizon_days}j: {acc.accuracy_pct:.0f}% correct "
+                    f"Horizon {h_label}: {acc.accuracy_pct:.0f}% correct "
                     f"({acc.correct}/{acc.total_points}), "
                     f"dir. {acc.directional_accuracy_pct:.0f}%, "
                     f"qualite {acc.avg_quality_score:.0f}/100"

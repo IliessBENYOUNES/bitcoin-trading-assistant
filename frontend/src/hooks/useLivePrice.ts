@@ -46,19 +46,30 @@ const BINANCE_WS_URL = 'wss://stream.binance.com:9443/ws/btcusdt@ticker';
 const RECONNECT_DELAY_MS = 3000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
+// Throttle : ne déclencher un re-render que toutes les N ms
+// Le WebSocket envoie ~1 update/sec, on limite à 1 re-render/2s
+// pour éviter de re-render le Dashboard trop souvent
+const THROTTLE_MS = 2000;
+
 export function useLivePrice(): LivePriceData {
-  const [price, setPrice] = useState<number | null>(null);
-  const [previousPrice, setPreviousPrice] = useState<number | null>(null);
-  const [change24h, setChange24h] = useState<number | null>(null);
-  const [high24h, setHigh24h] = useState<number | null>(null);
-  const [low24h, setLow24h] = useState<number | null>(null);
-  const [volume24h, setVolume24h] = useState<number | null>(null);
-  const [connected, setConnected] = useState(false);
+  // Un seul state objet pour batcher les updates en un seul re-render
+  const [state, setState] = useState<LivePriceData>({
+    price: null,
+    previousPrice: null,
+    change24h: null,
+    high24h: null,
+    low24h: null,
+    volume24h: null,
+    connected: false,
+  });
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempts = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPriceRef = useRef<number | null>(null);
+  // Throttle : stocker le dernier update et l'appliquer périodiquement
+  const pendingUpdateRef = useRef<Partial<LivePriceData> | null>(null);
+  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const connect = useCallback(() => {
     // Éviter les connexions multiples
@@ -71,7 +82,7 @@ export function useLivePrice(): LivePriceData {
       const ws = new WebSocket(BINANCE_WS_URL);
 
       ws.onopen = () => {
-        setConnected(true);
+        setState(prev => ({ ...prev, connected: true }));
         reconnectAttempts.current = 0;
         console.log('[useLivePrice] WebSocket connected to Binance');
       };
@@ -81,33 +92,47 @@ export function useLivePrice(): LivePriceData {
           const data: BinanceTickerEvent = JSON.parse(event.data);
 
           const newPrice = parseFloat(data.c);
+          const pct = parseFloat(data.P);
+          const h = parseFloat(data.h);
+          const l = parseFloat(data.l);
+          const v = parseFloat(data.v);
+
+          // Construire l'update en attente
+          const update: Partial<LivePriceData> = {};
+
           if (!isNaN(newPrice) && newPrice > 0) {
-            // Stocker l'ancien prix pour l'animation flash
             if (lastPriceRef.current !== null && lastPriceRef.current !== newPrice) {
-              setPreviousPrice(lastPriceRef.current);
+              update.previousPrice = lastPriceRef.current;
             }
             lastPriceRef.current = newPrice;
-            setPrice(newPrice);
+            update.price = newPrice;
           }
+          if (!isNaN(pct)) update.change24h = pct;
+          if (!isNaN(h)) update.high24h = h;
+          if (!isNaN(l)) update.low24h = l;
+          if (!isNaN(v)) update.volume24h = v;
 
-          const pct = parseFloat(data.P);
-          if (!isNaN(pct)) setChange24h(pct);
+          // Accumuler l'update (throttle)
+          pendingUpdateRef.current = { ...pendingUpdateRef.current, ...update };
 
-          const h = parseFloat(data.h);
-          if (!isNaN(h)) setHigh24h(h);
-
-          const l = parseFloat(data.l);
-          if (!isNaN(l)) setLow24h(l);
-
-          const v = parseFloat(data.v);
-          if (!isNaN(v)) setVolume24h(v);
+          // Déclencher un re-render throttlé
+          if (!throttleTimerRef.current) {
+            throttleTimerRef.current = setTimeout(() => {
+              const pending = pendingUpdateRef.current;
+              if (pending) {
+                setState(prev => ({ ...prev, ...pending }));
+                pendingUpdateRef.current = null;
+              }
+              throttleTimerRef.current = null;
+            }, THROTTLE_MS);
+          }
         } catch {
           // Ignorer les messages invalides
         }
       };
 
       ws.onclose = () => {
-        setConnected(false);
+        setState(prev => ({ ...prev, connected: false }));
         wsRef.current = null;
 
         // Auto-reconnexion avec backoff
@@ -138,6 +163,9 @@ export function useLivePrice(): LivePriceData {
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
       }
+      if (throttleTimerRef.current) {
+        clearTimeout(throttleTimerRef.current);
+      }
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -145,14 +173,6 @@ export function useLivePrice(): LivePriceData {
     };
   }, [connect]);
 
-  return {
-    price,
-    previousPrice,
-    change24h,
-    high24h,
-    low24h,
-    volume24h,
-    connected,
-  };
+  return state;
 }
 

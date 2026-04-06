@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.5] - 2026-04-06
+
+### Added
+- **Scanner de dates intéressantes** : Nouveau endpoint `GET /backtest/interesting-dates` qui scanne l'historique et identifie les dates avec des signaux techniques forts (RSI extrêmes, croisements MACD marqués, prix hors Bollinger, etc.)
+  - Approche performante : calcul en une passe DataFrame sur tout l'historique
+  - Score d'intérêt 0-100 basé sur la force et le nombre de signaux
+  - Label court (ex: "RSI survendu + MACD ↑") et direction dominante
+  - Paramètres configurables : `min_strength`, `max_results`, `step_days`
+- **Chips cliquables dans la vérification** : Les dates intéressantes s'affichent comme des chips colorés (bullish ↑ vert, bearish ↓ rouge) avec tooltips détaillés. Clic → auto-remplissage de la date.
+- **Walk-forward fractionnaire** : Le pas (`step_days`) est maintenant un float, permettant des pas de 0.25j (6h) en mode Scalping, 0.04j (1h) en mode Intraday
+  - Le pas par défaut s'adapte automatiquement au mode (Scalping: 0.25, Intraday: 1, Swing: 30)
+- **Guides visuels d'aide utilisateur** : 3 encadrés d'aide ajoutés aux sections 1, 2 et 3 du panneau de vérification
+  - Section 1 : explication des modes (Scalping/Intraday/Swing) et des horizons
+  - Section 2 : principe du time-travel, utilisation des dates intéressantes, conseils qualité
+  - Section 3 : explication du walk-forward, valeurs de pas, mode comparaison, durée estimée
+- **Légendes des métriques** : Deux légendes explicatives ajoutées (après les résultats de vérification et après le walk-forward)
+  - Explication de Q (qualité), DIR (directionnel), HC (high confidence), 💰 (profitabilité)
+- **10 tests backend** pour le scanner de dates intéressantes (service + endpoint)
+- **Schémas Pydantic** : `InterestingSignalDetail`, `InterestingDateItem`, `InterestingDatesResponse`
+- **Types TypeScript** : 3 interfaces correspondantes + barrel export
+
+### Changed
+- `WalkForwardConfig.step_days` : `int` → `float` (ge=0.01) pour supporter les pas fractionnaires
+- `WalkForwardResult.step_days` : `int` → `float` pour cohérence
+- Frontend : minimum du pas adapté au mode (0.01 en scalping, 0.04 en intraday, 1 en swing)
+- Meilleur message d'erreur "aucune donnée" avec plage de dates en gras
+- État vide redessiné avec icône et étapes numérotées
+
+### Technical
+- Tests : 681 → 722, all passing
+- TypeScript : tsc --noEmit sans erreur
+- Nouveau endpoint : `GET /backtest/interesting-dates`
+- Nouveau service : `VerificationService.find_interesting_dates()`
+- Nouveau API client : `getInterestingDates()`
+
 ## [1.2.4] - 2026-04-06
 
 ### Added
