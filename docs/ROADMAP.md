@@ -38,7 +38,7 @@
 │  ├── Backtesting engine                 ✅ Livré (v1.1)             │
 │  ├── Vérification historique            ✅ Livré (v1.1.1)           │
 │  ├── Sentiment historique + ML          🔄 En cours (v1.2.1-1.2.4 livrés)  │
-│  ├── Risk management engine             ⬜ Planifié (v1.3)         │
+│  ├── Risk management engine             ✅ Livré (v1.3)                    │
 │  ├── Paper trading                      ⬜ Planifié (v1.4)         │
 │  ├── Production (Docker, CI/CD, Auth)   ⬜ Planifié (v1.5)         │
 │  └── Multi-assets (ETH, SOL...)         ⬜ Planifié (v1.6)         │
@@ -62,7 +62,7 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v1.2.4 — Sentiment combiné dans walk-forward (Livré) ✅
+### État actuel : v1.3.0 — Risk Management Engine (Livré) ✅
 
 | Composant | Status |
 |-----------|--------|
@@ -87,7 +87,9 @@
 | **Intégrité données (complétude, gaps, grade qualité)** | **✅ Complet (v1.2.2)** |
 | **Mode comparaison walk-forward (technique vs technique+sentiment)** | **✅ Complet (v1.2.2)** |
 | **Persistance news RSS en DB (modèle + service + endpoints + 33 tests)** | **✅ Complet (v1.2.3a)** |
-| 620 tests backend | ✅ Tous passing |
+| **Risk Management Engine (SL/TP, daily loss, kill switch, position sizing)** | **✅ Complet (v1.3)** |
+| **RiskPanel (dashboard risque, kill switch, config, perte journalière)** | **✅ Complet (v1.3)** |
+| 777 tests backend | ✅ Tous passing |
 
 ### ✅ LIVRÉ : v0.7 — Moteur de Signaux (Niveau 2)
 
@@ -333,14 +335,16 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 | 12.9 Normalisation multi-sources | 🟡 Moyenne | 4h | Harmoniser Fear&Greed (0-100) + CryptoPanic (votes) + Santiment (score) → score unifié -100/+100 |
 | 12.10 Tests et validation | 🔴 Haute | 4h | Comparer accuracy avec/sans sentiment historique, A/B walk-forward |
 
-### Phase v1.3 — Risk Management
+### Phase v1.3 — Risk Management ✅ LIVRÉ
 
-| Tâche | Priorité | Effort | Description |
-|-------|----------|--------|-------------|
-| 13.1 Stop-loss / Take-profit | 🔴 Haute | 4h | Configurables par position |
-| 13.2 Limite d'exposition | 🔴 Haute | 3h | % max du portefeuille |
-| 13.3 Limite perte journalière | 🔴 Haute | 3h | Kill switch si dépassé |
-| 13.4 Dashboard risque | 🟡 Moyenne | 4h | Visualisation exposition |
+| Tâche | Priorité | Effort | Description | Status |
+|-------|----------|--------|-------------|--------|
+| 13.1 Stop-loss / Take-profit | 🔴 Haute | 4h | 3 types : fixe, trailing, ATR — calculés par position | ✅ |
+| 13.2 Limite d'exposition | 🔴 Haute | 3h | % max du portefeuille par position + ajustement auto | ✅ |
+| 13.3 Limite perte journalière | 🔴 Haute | 3h | Compteur avec reset auto, kill switch si dépassé | ✅ |
+| 13.4 Dashboard risque | 🟡 Moyenne | 4h | RiskPanel : jauge, kill switch, config, niveaux de risque | ✅ |
+| 13.5 API Risk | 🔴 Haute | 3h | 7 endpoints : config CRUD, status, evaluate, kill-switch, record-loss | ✅ |
+| 13.6 55 tests backend | 🔴 Haute | 3h | Config, évaluation, ATR, daily loss, kill switch, endpoints, edge cases | ✅ |
 
 ### Phase v1.4 — Paper Trading
 
@@ -1510,11 +1514,12 @@ Trois règles simples :
 │   ├── [✅] v1.2.3a — Persistance News RSS en DB (33 tests) — 620 tests total
 │   ├── [✅] v1.2.3b — CryptoCompare News historique (30 tests) — 661 tests total
 │   ├── [✅] v1.2.4 — Intégration news historique dans walk-forward (20 tests) — 681 tests total
+│   ├── [✅] v1.3.0 — Risk Management Engine (55 tests) — 777 tests total
 │   └── [ ] v1.2b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
 │
 ├── Juin
 │   ├── [ ] v1.2b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
-│   └── [ ] v1.3.0 — Risk Engine
+│   └── [ ] v1.4.0 — Paper Trading
 │
 ├── Juillet
 │   └── [ ] v1.4.0 — Paper Trading

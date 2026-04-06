@@ -82,6 +82,15 @@ from app.schemas.sentiment import (
     SentimentCoverageResponse,
 )
 
+from app.schemas.risk import (
+    StopLossType,
+    RiskConfigCreate,
+    RiskConfigUpdate,
+    RiskConfigResponse,
+    RiskEvaluation,
+    RiskStatus,
+)
+
 __all__ = [
     "CandleBase",
     "CandleCreate",
@@ -137,4 +146,10 @@ __all__ = [
     "SentimentAtDateResponse",
     "SentimentHistoryPoint",
     "SentimentCoverageResponse",
+    "StopLossType",
+    "RiskConfigCreate",
+    "RiskConfigUpdate",
+    "RiskConfigResponse",
+    "RiskEvaluation",
+    "RiskStatus",
 ]

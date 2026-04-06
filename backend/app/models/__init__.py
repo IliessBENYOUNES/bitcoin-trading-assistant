@@ -12,5 +12,6 @@ from app.models.candle import Candle
 from app.models.alert import Alert
 from app.models.sentiment_history import SentimentHistory
 from app.models.news_history import NewsHistory
+from app.models.risk_config import RiskConfig
 
-__all__ = ["Candle", "Alert", "SentimentHistory", "NewsHistory"]
+__all__ = ["Candle", "Alert", "SentimentHistory", "NewsHistory", "RiskConfig"]

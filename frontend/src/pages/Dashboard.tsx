@@ -50,6 +50,7 @@ import { DecisionPanel } from '../components/DecisionPanel';
 import { BacktestPanel } from '../components/BacktestPanel';
 import { VerificationPanel } from '../components/VerificationPanel';
 import { QuickMetricsBar } from '../components/QuickMetricsBar';
+import RiskPanel from '../components/RiskPanel';
 import CandlestickChart from '../components/CandlestickChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
 import { PriceTicker } from '../components/PriceTicker';
@@ -724,11 +725,11 @@ const Dashboard: React.FC = () => {
         {/* ================================================================= */}
         {/* ZONE 2 — ANALYSE RAPIDE (grid 2×2 équilibré)                      */}
         {/* ================================================================= */}
-        <SectionHeader icon="📊" title="Analyse du marché" subtitle="Décision • Signaux • News • Backtest" accentColor="#7C4DFF" delay={0.1} />
+        <SectionHeader icon="📊" title="Analyse du marché" subtitle="Décision • Signaux • Risque • News • Backtest" accentColor="#7C4DFF" delay={0.1} />
 
         <Grid container spacing={2.5} sx={{ mb: 3 }}>
-          {/* Row 1: Décision + Signaux */}
-          <Grid item xs={12} md={6}>
+          {/* Row 1: Décision + Signaux + Risk */}
+          <Grid item xs={12} md={4}>
             <DecisionPanel
               data={decision.data}
               loading={decision.loading}
@@ -739,7 +740,7 @@ const Dashboard: React.FC = () => {
             />
           </Grid>
 
-          <Grid item xs={12} md={6}>
+          <Grid item xs={12} md={4}>
             <SignalPanel
               data={signals.data}
               loading={signals.loading}
@@ -748,6 +749,18 @@ const Dashboard: React.FC = () => {
               timeframe={timeframe}
               historyDays={effectiveDays}
             />
+          </Grid>
+
+          <Grid item xs={12} md={4}>
+            <Box sx={{
+              bgcolor: 'rgba(255,255,255,0.03)',
+              borderRadius: 2,
+              p: 2,
+              border: '1px solid rgba(255,255,255,0.06)',
+              height: '100%',
+            }}>
+              <RiskPanel />
+            </Box>
           </Grid>
 
           {/* Row 2: News + Backtest */}

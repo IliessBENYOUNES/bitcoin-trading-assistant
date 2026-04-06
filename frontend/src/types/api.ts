@@ -585,3 +585,68 @@ export interface SentimentCoverageResponse {
   earliest_date: string | null;
   latest_date: string | null;
 }
+
+// -----------------------------------------------------------------------------
+// Risk Management (/risk)
+// -----------------------------------------------------------------------------
+
+export type StopLossType = 'fixed' | 'trailing' | 'atr';
+export type RiskLevel = 'safe' | 'caution' | 'danger' | 'blocked';
+
+export interface RiskConfigItem {
+  id: number;
+  stop_loss_type: StopLossType;
+  stop_loss_pct: number;
+  take_profit_pct: number;
+  max_position_pct: number;
+  total_portfolio_value: number;
+  max_daily_loss_pct: number;
+  daily_loss_current: number;
+  kill_switch_active: boolean;
+  kill_switch_triggered_at: string | null;
+  kill_switch_reason: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface RiskConfigCreate {
+  stop_loss_type?: StopLossType;
+  stop_loss_pct?: number;
+  take_profit_pct?: number;
+  max_position_pct?: number;
+  total_portfolio_value?: number;
+  max_daily_loss_pct?: number;
+}
+
+export interface RiskEvaluation {
+  allowed: boolean;
+  original_action: string;
+  adjusted_action: string;
+  stop_loss_price: number | null;
+  take_profit_price: number | null;
+  max_position_size_usd: number | null;
+  risk_reward_ratio: number | null;
+  reasons: string[];
+  warnings: string[];
+}
+
+export interface RiskStatus {
+  config: RiskConfigItem;
+  kill_switch_active: boolean;
+  daily_loss_current: number;
+  daily_loss_limit_usd: number;
+  daily_loss_pct: number;
+  daily_loss_remaining_usd: number;
+  max_position_size_usd: number;
+  risk_level: RiskLevel;
+  detail: string;
+}
+
+export interface RecordLossResponse {
+  recorded: number;
+  daily_loss_current: number;
+  daily_limit_usd: number;
+  limit_reached: boolean;
+  kill_switch_active: boolean;
+}
+

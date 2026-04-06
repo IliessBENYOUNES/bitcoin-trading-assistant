@@ -78,6 +78,14 @@ export type {
   SentimentRangeResponse,
   SentimentAtDateResponse,
   SentimentCoverageResponse,
+  // Risk Management
+  StopLossType,
+  RiskLevel,
+  RiskConfigItem,
+  RiskConfigCreate,
+  RiskEvaluation,
+  RiskStatus,
+  RecordLossResponse,
 } from './api';
 
 // Représente un chandelier (bougie) OHLCV

@@ -32,6 +32,11 @@ import type {
   SentimentRangeResponse,
   SentimentAtDateResponse,
   SentimentCoverageResponse,
+  RiskConfigItem,
+  RiskConfigCreate,
+  RiskEvaluation,
+  RiskStatus,
+  RecordLossResponse,
 } from '../types';
 
 // -----------------------------------------------------------------------------
@@ -471,3 +476,107 @@ export async function getSentimentAtDate(
   const endpoint = `/sentiment/history/at-date?date=${encodeURIComponent(params.date)}&source=${encodeURIComponent(source)}`;
   return apiFetch<SentimentAtDateResponse>(endpoint, options);
 }
+
+// -----------------------------------------------------------------------------
+// Risk Management
+// -----------------------------------------------------------------------------
+
+export async function getRiskConfig(
+  options: FetchOptions = {}
+): Promise<RiskConfigItem> {
+  return apiFetch<RiskConfigItem>('/risk/config', options);
+}
+
+export async function updateRiskConfig(
+  data: RiskConfigCreate,
+  options: FetchOptions = {}
+): Promise<RiskConfigItem> {
+  const url = `${BASE_URL}/risk/config`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(data),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<RiskConfigItem>;
+}
+
+export async function getRiskStatus(
+  options: FetchOptions = {}
+): Promise<RiskStatus> {
+  return apiFetch<RiskStatus>('/risk/status', options);
+}
+
+export async function evaluateRisk(
+  params: { action: string; price: number; atr?: number },
+  options: FetchOptions = {}
+): Promise<RiskEvaluation> {
+  let endpoint = `/risk/evaluate?action=${encodeURIComponent(params.action)}&price=${params.price}`;
+  if (params.atr) endpoint += `&atr=${params.atr}`;
+  const url = `${BASE_URL}${endpoint}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<RiskEvaluation>;
+}
+
+export async function activateKillSwitch(
+  reason: string = 'Activation manuelle',
+  options: FetchOptions = {}
+): Promise<RiskConfigItem> {
+  const url = `${BASE_URL}/risk/kill-switch/activate?reason=${encodeURIComponent(reason)}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<RiskConfigItem>;
+}
+
+export async function deactivateKillSwitch(
+  options: FetchOptions = {}
+): Promise<RiskConfigItem> {
+  const url = `${BASE_URL}/risk/kill-switch/deactivate`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<RiskConfigItem>;
+}
+
+export async function recordLoss(
+  amount: number,
+  options: FetchOptions = {}
+): Promise<RecordLossResponse> {
+  const url = `${BASE_URL}/risk/record-loss?amount=${amount}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<RecordLossResponse>;
+}
+

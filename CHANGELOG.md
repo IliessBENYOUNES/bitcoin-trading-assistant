@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-04-06
+
+### Added
+- **Risk Management Engine (v1.3)** : Système complet de gestion du risque
+  - **Modèle `RiskConfig`** : Table SQLAlchemy singleton avec stop-loss, take-profit, position sizing, daily loss, kill switch
+  - **Service `RiskService`** : Logique métier complète (évaluation trades, calcul SL/TP, suivi perte journalière, kill switch)
+  - **3 types de stop-loss** : Fixe (%), Trailing (suiveur), ATR (basé sur la volatilité)
+  - **Position sizing** : % max du portefeuille par position, ajustement automatique selon le risque restant
+  - **Perte journalière** : Compteur avec reset automatique à minuit, déclenchement kill switch si limite atteinte
+  - **Kill switch** : Arrêt d'urgence (activation/désactivation manuelle ou automatique), bloque tous les trades
+  - **Ratio risque/récompense** : Calculé pour chaque trade, warning si < 1.0
+  - **7 endpoints API** : GET/POST/PUT `/risk/config`, GET `/risk/status`, POST `/risk/evaluate`, POST `/risk/kill-switch/activate`, POST `/risk/kill-switch/deactivate`, POST `/risk/record-loss`
+- **RiskPanel frontend** : Composant complet de gestion du risque
+  - Jauge de perte journalière avec barre de progression colorée
+  - Bouton Kill Switch avec animation pulse quand actif
+  - Indicateurs rapides (SL, TP, Position max)
+  - Formulaire de configuration éditable (type SL, %, portefeuille)
+  - État en temps réel (safe/caution/danger/blocked)
+- **Hook `useRisk`** : Gestion d'état React (config, status, updateConfig, toggleKillSwitch)
+- **Types TypeScript** : `RiskConfigItem`, `RiskConfigCreate`, `RiskEvaluation`, `RiskStatus`, `RecordLossResponse`, `StopLossType`, `RiskLevel`
+- **55 tests backend** pour le risk engine (config CRUD, évaluation trades, ATR, daily loss, kill switch, endpoints, edge cases)
+- **Dashboard intégration** : RiskPanel ajouté dans la zone "Analyse du marché" en grille 3 colonnes
+
+### Technical
+- 777 tests backend, tous passing ✅
+- `tsc --noEmit` sans erreur ✅
+- Nouveau modèle SQLAlchemy `RiskConfig` avec 15 colonnes
+- Nouveau router FastAPI `/risk/*` avec 7 endpoints
+
 ## [1.2.5] - 2026-04-06
 
 ### Added

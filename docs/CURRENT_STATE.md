@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 6 avril 2026
-> **Version :** v1.2.5
+> **Version :** v1.3.0
 > **Branche :** `master`
-> **Dernier commit :** feat(verification): add interesting dates scanner, fractional walk-forward step, UI guides (v1.2.5)
+> **Dernier commit :** feat(risk): add risk management engine with SL/TP, daily loss, kill switch (v1.3.0)
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.2.5** |
+| Version courante | **v1.3.0** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **722 tests**, tous passing ✅ |
+| Tests backend | **777 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -42,12 +42,14 @@ bitcoin-trading-assistant/
 │   │   │   ├── sentiment.py    # ← NOUVEAU v1.2.1 — /sentiment/history/load, range, coverage, at-date
 │   │   │   ├── alerts.py       # CRUD /alerts + POST /alerts/check
 │   │   │   ├── news.py         # GET /news, GET /news/sentiment
+│   │   │   ├── risk.py         # ← NOUVEAU v1.3 — /risk/config, status, evaluate, kill-switch, record-loss
 │   │   │   └── scheduler.py    # GET /scheduler/status, POST trigger
 │   │   ├── models/
 │   │   │   ├── candle.py       # Modèle Candle (OHLCV + timeframe)
 │   │   │   ├── alert.py        # Modèle Alert (conditions + status)
 │   │   │   └── sentiment_history.py # ← NOUVEAU v1.2.1 — Modèle SentimentHistory (sentiment quotidien)
 │   │   │   └── news_history.py     # ← NOUVEAU v1.2.3a — Modèle NewsHistory (articles RSS persistés)
+│   │   │   └── risk_config.py     # ← NOUVEAU v1.3 — Modèle RiskConfig (SL/TP, position sizing, kill switch)
 │   │   ├── schemas/
 │   │   │   ├── candle.py       # Schémas Pydantic candle
 │   │   │   ├── signal.py       # Schémas SignalItem, CompositeScore, SignalResponse
@@ -63,6 +65,7 @@ bitcoin-trading-assistant/
 │   │   │   ├── sentiment_history_service.py # ← NOUVEAU v1.2.1 — Fear & Greed historique + requête par date
 │   │   │   ├── news_history_service.py  # ← NOUVEAU v1.2.3a — Persistance news RSS en DB
 │   │   │   ├── cryptocompare_service.py # ← NOUVEAU v1.2.3b — Client CryptoCompare News API (historique depuis 2015)
+│   │   │   ├── risk_service.py        # ← NOUVEAU v1.3 — Risk Management (SL/TP, daily loss, kill switch, trade eval)
 │   │   │   ├── backtest_service.py    # Moteur de replay historique
 │   │   │   ├── decision_service.py    # Moteur de décision (règles + scénarios)
 │   │   │   ├── binance_service.py     # Client HTTP Binance (14 intervalles natifs)
@@ -190,6 +193,14 @@ bitcoin-trading-assistant/
 | **GET** | **`/news/history/range`** | **Plage de dates des news en base** | **✅ NOUVEAU v1.2.3a** |
 | **GET** | **`/news/history/coverage`** | **Couverture news par source** | **✅ NOUVEAU v1.2.3a** |
 | **GET** | **`/news/history/at-date`** | **Articles et sentiment agrégé à une date** | **✅ NOUVEAU v1.2.3a** |
+| **GET** | **`/risk/config`** | **Configuration de risque courante** | **✅ NOUVEAU v1.3** |
+| **POST** | **`/risk/config`** | **Créer/mettre à jour la config risque** | **✅ NOUVEAU v1.3** |
+| **PUT** | **`/risk/config`** | **Mise à jour partielle config risque** | **✅ NOUVEAU v1.3** |
+| **GET** | **`/risk/status`** | **État temps réel (exposition, perte, kill switch)** | **✅ NOUVEAU v1.3** |
+| **POST** | **`/risk/evaluate`** | **Évaluer un trade proposé (SL/TP/sizing)** | **✅ NOUVEAU v1.3** |
+| **POST** | **`/risk/kill-switch/activate`** | **Activer le kill switch** | **✅ NOUVEAU v1.3** |
+| **POST** | **`/risk/kill-switch/deactivate`** | **Désactiver le kill switch** | **✅ NOUVEAU v1.3** |
+| **POST** | **`/risk/record-loss`** | **Enregistrer une perte + vérifier limite** | **✅ NOUVEAU v1.3** |
 
 ### 3.2 Backend — Services
 
@@ -199,6 +210,7 @@ bitcoin-trading-assistant/
 | **History Loader Service** | **Chargement historique profond Binance 2017→now, pagination, upsert idempotent** | **✅ NOUVEAU v1.1.1** |
 | **News History Service** | **Persistance news RSS en DB, scoring par article, sentiment agrégé quotidien** | **✅ NOUVEAU v1.2.3a** |
 | **CryptoCompare Service** | **Client API CryptoCompare News (free tier, historique depuis 2015, pagination, parsing → NewsItem)** | **✅ NOUVEAU v1.2.3b** |
+| **Risk Service** | **Gestion du risque : SL/TP (fixed/trailing/ATR), position sizing, daily loss, kill switch** | **✅ NOUVEAU v1.3** |
 | **Backtest Service** | **Replay historique des décisions + simulation de trades + métriques** | **✅ v1.1** |
 | **Decision Service** | Moteur de décision combinant signaux techniques + sentiment → scénarios + recommandation | ✅ |
 | **Binance Service** | Client HTTP async Binance, **14 intervalles natifs** | ✅ |
@@ -335,6 +347,7 @@ bitcoin-trading-assistant/
 | Composant | Description | Status |
 |-----------|-------------|--------|
 | **VerificationPanel** | **Charger historique + intégrité données + vérifier date + walk-forward + mode comparaison** | **✅ v1.1.1 + MAJ v1.2.2** |
+| **RiskPanel** | **Dashboard risque : kill switch, perte journalière, SL/TP, config, niveaux de risque** | **✅ NOUVEAU v1.3** |
 | **BacktestPanel** | **Config + métriques (PnL, Sharpe, DD, Win Rate) + journal trades** | **✅ v1.1** |
 | **DecisionPanel** | Scénarios visuels + recommandation + règles collapsibles | ✅ |
 | **QuickMetricsBar** | **Barre KPIs rapides (Décision, Score, Tendance, Signaux, Sentiment)** | **✅ NOUVEAU** |
@@ -374,8 +387,9 @@ bitcoin-trading-assistant/
 | **test_verification.py** | **84** | **Range, verify, walk-forward, correctness v1.2, directional match, quality score, seuils adapatifs, integrity, compare mode, technical_only dual patch v1.2.4, endpoints** |
 | test_binance_and_router.py | 89 | Binance 14 intervalles, DataSourceRouter, combinaisons |
 | **test_news_history.py** | **33** | **Modèle, scoring, persist idempotent, queries, range, coverage, endpoints** |
+| **test_risk.py** | **55** | **Config CRUD, évaluation trades, ATR SL, daily loss, kill switch, endpoints, edge cases** |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **681** | **Tous passing ✅** |
+| **TOTAL** | **777** | **Tous passing ✅** |
 
 ---
 
@@ -440,13 +454,13 @@ python -m pytest tests/ -v
 | **2** | INFINI v1 | v1.0 → v1.6 | Assistant intelligent, décisionnel (BTC-first) | 🔄 **En cours (v1.1.1 livré)** |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + **Sentiment combiné dans walk-forward (v1.2.4)** livrés, prochaine étape : CryptoPanic + Santiment (v1.2b) ou Risk Engine (v1.3)
+**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + Sentiment combiné dans walk-forward (v1.2.4) + **Risk Management Engine (v1.3)** livrés, prochaine étape : Paper Trading (v1.4)
 
 ---
 
-## 8. Prochaine étape : v1.2b — CryptoPanic + Santiment (ou v1.3 Risk Engine)
+## 8. Prochaine étape : v1.4 — Paper Trading
 
-> **Objectif** : Enrichir le sentiment historique avec des sources payantes (CryptoPanic, Santiment ~100€/mois) ou passer au Risk Engine (gestion de risque).
+> **Objectif** : Simuler le trading en conditions réelles sans argent réel, en utilisant le moteur de décision + risk engine.
 
 ---
 
@@ -465,8 +479,8 @@ python -m pytest tests/ -v
 | ~~Persistance news RSS en DB~~ | ~~v1.2.3a~~ | ✅ **Livré** |
 | ~~CryptoCompare News historique~~ | ~~v1.2.3b~~ | ✅ **Livré** |
 | ~~Intégration news historique dans walk-forward~~ | ~~v1.2.4~~ | ✅ **Livré** |
+| ~~Risk management engine~~ | ~~v1.3~~ | ✅ **Livré** |
 | CryptoPanic + Santiment (sentiment payant) | v1.2b | ❌ Non commencé |
-| Risk management engine | v1.3 | ❌ Non commencé |
 | Paper trading | v1.4 | ❌ Non commencé |
 | Docker Compose | v1.5 | ❌ Non commencé |
 | CI/CD GitHub Actions | v1.5 | ❌ Non commencé |
