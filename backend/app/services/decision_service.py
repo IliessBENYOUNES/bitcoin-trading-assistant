@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.services.signal_service import SignalService
 from app.services.news_service import NewsService
 from app.services.sentiment_history_service import SentimentHistoryService
+from app.services.news_history_service import NewsHistoryService
 from app.schemas.signal import SignalDirection, ConfidenceLevel
 from app.schemas.decision import (
     Scenario,
@@ -46,6 +47,12 @@ logger = logging.getLogger(__name__)
 # Pondération par défaut (technique vs sentiment)
 TECHNICAL_WEIGHT = 0.70
 SENTIMENT_WEIGHT = 0.30
+
+# Pondération pour la combinaison des sources de sentiment historique
+# Fear & Greed Index : indice agrégé (marché global), disponible depuis 2018
+# News History : articles individuels (granulaire mais bruité), disponible quand chargé
+FNG_HIST_WEIGHT = 0.60
+NEWS_HIST_WEIGHT = 0.40
 
 
 # ============================================================
@@ -220,6 +227,7 @@ class DecisionService:
         self.signal_service = SignalService(db)
         self.news_service = NewsService()
         self.sentiment_history_service = SentimentHistoryService(db)
+        self.news_history_service = NewsHistoryService(db)
 
     def evaluate_rules(
         self,
@@ -575,6 +583,7 @@ class DecisionService:
                 history_days=history_days,
                 timestamp=now_ts.isoformat(),
                 sentiment_available=sentiment_available,
+                sentiment_source=sentiment_source,
                 technical_weight=TECHNICAL_WEIGHT,
                 sentiment_weight=SENTIMENT_WEIGHT if sentiment_available else 0.0,
             ).model_dump(),
@@ -591,31 +600,66 @@ class DecisionService:
         self, end_ts: datetime
     ) -> tuple[int, bool, str]:
         """
-        Récupère le sentiment historique pour une date donnée.
+        Récupère le sentiment historique combiné pour une date donnée.
 
-        Cherche le Fear & Greed Index le plus proche de end_ts en base.
-        Si aucun sentiment n'est disponible, retourne (0, False, "none").
+        Combine deux sources (si disponibles) :
+        1. Fear & Greed Index (SentimentHistoryService) — indice agrégé marché
+        2. News History (NewsHistoryService) — articles individuels avec sentiment
+
+        Pondération :
+        - Les deux sources disponibles → FNG_HIST_WEIGHT × FGI + NEWS_HIST_WEIGHT × News
+        - Une seule source → utilisée à 100%
+        - Aucune source → (0, False, "none")
 
         Returns:
-            (sentiment_score, sentiment_available, source)
+            (sentiment_score, sentiment_available, source_label)
         """
-        try:
-            date_str = end_ts.strftime("%Y-%m-%d")
-            normalized = self.sentiment_history_service.get_normalized_score_at_date(date_str)
+        date_str = end_ts.strftime("%Y-%m-%d")
 
-            if normalized is not None:
-                # Arrondir à l'entier pour compatibilité avec le moteur existant
-                score = int(round(normalized))
-                score = max(-100, min(100, score))
-                logger.debug(
-                    f"Sentiment historique à {date_str}: Fear&Greed={score}"
-                )
-                return score, True, "fear_and_greed_historical"
-            else:
-                logger.debug(f"Pas de sentiment historique disponible pour {date_str}")
-                return 0, False, "none"
+        # Source 1 : Fear & Greed Index
+        fng_score = None
+        try:
+            fng_score = self.sentiment_history_service.get_normalized_score_at_date(date_str)
         except Exception as e:
-            logger.warning(f"Erreur récupération sentiment historique: {e}")
+            logger.warning(f"Erreur récupération Fear & Greed historique: {e}")
+
+        # Source 2 : News History (articles stockés en base)
+        news_score = None
+        try:
+            news_score = self.news_history_service.get_daily_sentiment(date_str)
+        except Exception as e:
+            logger.warning(f"Erreur récupération news history sentiment: {e}")
+
+        # Combinaison des sources
+        if fng_score is not None and news_score is not None:
+            # Les deux sources disponibles → moyenne pondérée
+            combined = fng_score * FNG_HIST_WEIGHT + news_score * NEWS_HIST_WEIGHT
+            score = int(round(combined))
+            score = max(-100, min(100, score))
+            source = "fear_and_greed+news_history"
+            logger.debug(
+                f"Sentiment historique combiné à {date_str}: "
+                f"FGI={fng_score:.1f} ({FNG_HIST_WEIGHT:.0%}) + "
+                f"News={news_score:.1f} ({NEWS_HIST_WEIGHT:.0%}) → {score}"
+            )
+            return score, True, source
+
+        elif fng_score is not None:
+            # Seulement Fear & Greed
+            score = int(round(fng_score))
+            score = max(-100, min(100, score))
+            logger.debug(f"Sentiment historique à {date_str}: Fear&Greed seul={score}")
+            return score, True, "fear_and_greed_historical"
+
+        elif news_score is not None:
+            # Seulement News History
+            score = int(round(news_score))
+            score = max(-100, min(100, score))
+            logger.debug(f"Sentiment historique à {date_str}: News seul={score}")
+            return score, True, "news_history"
+
+        else:
+            logger.debug(f"Pas de sentiment historique disponible pour {date_str}")
             return 0, False, "none"
 
     def _build_summary(

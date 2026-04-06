@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.4] - 2026-04-06
+
+### Added
+- **Sentiment historique combiné dans le walk-forward** : Le moteur de décision utilise maintenant DEUX sources de sentiment en mode historique (backtest/vérification)
+  - **Fear & Greed Index** (60%) : indice agrégé du marché, disponible depuis février 2018
+  - **News History** (40%) : articles individuels (RSS + CryptoCompare) stockés en base
+  - Si une seule source est disponible → utilisée à 100% (fallback gracieux)
+  - Si aucune source → mode dégradé 100% technique (comportement inchangé)
+  - Gestion des erreurs : si une source lève une exception, l'autre est utilisée seule
+- **Champ `sentiment_source` dans DecisionMeta** : Traçabilité de la source sentiment utilisée
+  - `"fear_and_greed+news_history"` : les deux sources combinées
+  - `"fear_and_greed_historical"` : FGI seul
+  - `"news_history"` : articles seuls
+  - `"live_rss"` : mode temps réel
+  - `"none"` : aucune source disponible
+- **Patch dual dans `_verify_technical_only`** : Le mode compare_mode neutralise maintenant les DEUX services sentiment (FGI + News History) pour isoler la technique pure
+- **15 tests sentiment combiné** (`test_decision.py`) : combinaison, fallbacks, erreurs, bornes, proportionnalité, méta
+- **5 tests dual patch** (`test_verification.py`) : patch FGI, patch News, restauration, exception, compare_mode
+
+### Changed
+- `DecisionService._get_historical_sentiment()` : Réécrit pour combiner FGI + News History avec pondération configurable
+- `DecisionService.__init__()` : Injecte maintenant `NewsHistoryService` en plus de `SentimentHistoryService`
+- `VerificationService._verify_technical_only()` : Patche les deux services sentiment au lieu d'un seul
+- Docstring de `verification_service.py` : Mise à jour (suppression note "sentiment non disponible")
+
+### Technical
+- Constantes `FNG_HIST_WEIGHT = 0.60` et `NEWS_HIST_WEIGHT = 0.40` dans decision_service.py
+- Tests backend : 661 → **681 tests** (tous passing)
+- Frontend : `tsc --noEmit` sans erreur
+
 ## [1.2.3b] - 2026-04-05
 
 ### Fixed

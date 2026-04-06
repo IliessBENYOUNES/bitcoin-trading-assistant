@@ -1,5 +1,5 @@
 """
- Service de verification historique — "Time-Travel Backtest" (v1.2 ameliore).
+ Service de verification historique — "Time-Travel Backtest" (v1.2.4 ameliore).
 
 Ce service :
 1. Se positionne a n'importe quelle date passee
@@ -14,9 +14,10 @@ AMELIORATIONS v1.2 :
 - Metriques detaillees par niveau de confiance
 - Evaluation proportionnelle a la magnitude du mouvement
 
-NOTE IMPORTANTE : Le sentiment (news) n'est pas disponible en historique.
-Le moteur de decision fonctionne en mode degrade (100% technique).
-C'est un test de la qualite des indicateurs techniques uniquement.
+AMELIORATION v1.2.4 :
+- Le sentiment historique combine DEUX sources :
+  Fear & Greed Index (depuis 2018) + News History (articles CryptoCompare/RSS)
+- Le mode compare_mode patche les deux sources pour isoler la technique pure
 """
 
 import time
@@ -1002,13 +1003,17 @@ class VerificationService:
             )
 
         # Exécuter le moteur de décision en forçant le mode sans sentiment
-        # On utilise le DecisionService normal mais on patche temporairement
-        # le sentiment_history_service pour qu'il retourne toujours None
-        original_method = self.decision_service.sentiment_history_service.get_normalized_score_at_date
+        # On patche temporairement les deux services sentiment pour qu'ils
+        # retournent toujours None (FGI + News History)
+        original_fng_method = self.decision_service.sentiment_history_service.get_normalized_score_at_date
+        original_news_method = self.decision_service.news_history_service.get_daily_sentiment
 
         try:
-            # Forcer le mode technique-only en faisant échouer le lookup sentiment
+            # Forcer le mode technique-only en faisant échouer les deux lookups sentiment
             self.decision_service.sentiment_history_service.get_normalized_score_at_date = (
+                lambda *args, **kwargs: None
+            )
+            self.decision_service.news_history_service.get_daily_sentiment = (
                 lambda *args, **kwargs: None
             )
             decision = self.decision_service.analyze(
@@ -1028,8 +1033,9 @@ class VerificationService:
                 meta={"error": str(e)},
             )
         finally:
-            # Restaurer la méthode originale
-            self.decision_service.sentiment_history_service.get_normalized_score_at_date = original_method
+            # Restaurer les méthodes originales
+            self.decision_service.sentiment_history_service.get_normalized_score_at_date = original_fng_method
+            self.decision_service.news_history_service.get_daily_sentiment = original_news_method
 
         # Même logique que verify_at_date pour construire les outcomes
         recommendation = decision.get("recommendation", {})

@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
-> **Dernière mise à jour :** 5 avril 2026
-> **Version :** v1.2.3b
+> **Dernière mise à jour :** 6 avril 2026
+> **Version :** v1.2.4
 > **Branche :** `master`
-> **Dernier commit :** test(cryptocompare): add 30 tests for CryptoCompare news client + integration + fix scheduler_news mock
+> **Dernier commit :** feat(decision): integrate news history into walk-forward — combined FGI + News sentiment (v1.2.4)
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.2.3b** |
+| Version courante | **v1.2.4** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **661 tests**, tous passing ✅ |
+| Tests backend | **681 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -243,6 +243,9 @@ bitcoin-trading-assistant/
 | **Mode 100% technique** | En historique, sentiment non dispo → mode dégradé documenté | ✅ |
 | **Intégrité des données** | **Détection des gaps, complétude %, grade qualité (EXCELLENT/GOOD/WARNING/CRITICAL)** | **✅ NOUVEAU v1.2.2** |
 | **Mode comparaison** | **Walk-forward : technique seul vs technique + sentiment, delta accuracy/qualité, verdict** | **✅ NOUVEAU v1.2.2** |
+| **Sentiment historique combiné** | **Combine Fear & Greed Index (60%) + News History articles (40%) pour le walk-forward** | **✅ NOUVEAU v1.2.4** |
+| **Fallback multi-source** | **Si une source manque, l'autre est utilisée à 100%. Si aucune → mode dégradé** | **✅ NOUVEAU v1.2.4** |
+| **Traçabilité source** | **Le meta inclut sentiment_source (fear_and_greed+news_history, live_rss, etc.)** | **✅ NOUVEAU v1.2.4** |
 
 ### 3.4 Backend — Moteur de Décision (v1.0)
 
@@ -366,13 +369,13 @@ bitcoin-trading-assistant/
 | test_signals.py | **71** | **RSI/MACD/SMA/Bollinger/ADX/Volume interpréteurs, MACD relatif, composite v1.2, résumé** |
 | test_alerts.py | 48 | CRUD, évaluation, récurrence, endpoints |
 | test_news.py | 43 | Sentiment, impact, RSS, résumé, résilience, endpoints |
-| test_decision.py | 75 | Règles, scénarios, recommandation, intégration, endpoint |
+| test_decision.py | **90** | Règles, scénarios, recommandation, intégration, endpoint, **sentiment historique combiné v1.2.4** |
 | test_backtest.py | 31 | Schémas, métriques, intégration DB, endpoints, edge cases |
-| **test_verification.py** | **82** | **Range, verify, walk-forward, correctness v1.2, directional match, quality score, seuils adapatifs, integrity, compare mode, endpoints** |
+| **test_verification.py** | **84** | **Range, verify, walk-forward, correctness v1.2, directional match, quality score, seuils adapatifs, integrity, compare mode, technical_only dual patch v1.2.4, endpoints** |
 | test_binance_and_router.py | 89 | Binance 14 intervalles, DataSourceRouter, combinaisons |
 | **test_news_history.py** | **33** | **Modèle, scoring, persist idempotent, queries, range, coverage, endpoints** |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **661** | **Tous passing ✅** |
+| **TOTAL** | **681** | **Tous passing ✅** |
 
 ---
 
@@ -437,21 +440,13 @@ python -m pytest tests/ -v
 | **2** | INFINI v1 | v1.0 → v1.6 | Assistant intelligent, décisionnel (BTC-first) | 🔄 **En cours (v1.1.1 livré)** |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) livrés, prochaine étape : CryptoCompare News historique (v1.2.3b)
+**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + **Sentiment combiné dans walk-forward (v1.2.4)** livrés, prochaine étape : CryptoPanic + Santiment (v1.2b) ou Risk Engine (v1.3)
 
 ---
 
-## 8. Prochaine étape : v1.2.3b — CryptoCompare News historique
+## 8. Prochaine étape : v1.2b — CryptoPanic + Santiment (ou v1.3 Risk Engine)
 
-> **Objectif** : Ajouter CryptoCompare comme 4ᵉ source de news historiques (depuis 2015, gratuit) pour enrichir le corpus de sentiment en DB.
-
-Le système enrichit son moteur de décision avec des news historiques :
-
-| Fonctionnalité | Description |
-|-----------------|-------------|
-| CryptoCompare News API | Client pour récupérer les news crypto historiques depuis 2015 (gratuit) |
-| Intégration sentiment multi-source | Combiner Fear & Greed + sentiment news pour un score plus robuste |
-| Walk-forward multi-source | Tester technique seul vs technique + FnG vs technique + FnG + news |
+> **Objectif** : Enrichir le sentiment historique avec des sources payantes (CryptoPanic, Santiment ~100€/mois) ou passer au Risk Engine (gestion de risque).
 
 ---
 
@@ -468,7 +463,9 @@ Le système enrichit son moteur de décision avec des news historiques :
 | ~~Sentiment historique Fear & Greed~~ | ~~v1.2.1~~ | ✅ **Livré** |
 | ~~Intégrité données + mode comparaison~~ | ~~v1.2.2~~ | ✅ **Livré** |
 | ~~Persistance news RSS en DB~~ | ~~v1.2.3a~~ | ✅ **Livré** |
-| CryptoCompare News historique | v1.2.3b | ❌ **Prochaine étape** |
+| ~~CryptoCompare News historique~~ | ~~v1.2.3b~~ | ✅ **Livré** |
+| ~~Intégration news historique dans walk-forward~~ | ~~v1.2.4~~ | ✅ **Livré** |
+| CryptoPanic + Santiment (sentiment payant) | v1.2b | ❌ Non commencé |
 | Risk management engine | v1.3 | ❌ Non commencé |
 | Paper trading | v1.4 | ❌ Non commencé |
 | Docker Compose | v1.5 | ❌ Non commencé |

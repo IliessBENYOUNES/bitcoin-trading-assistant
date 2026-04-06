@@ -1028,3 +1028,119 @@ class TestNewSchemas:
         assert gaps[1].missing_days == 2
 
 
+# =============================================================================
+# Tests v1.2.4 : technical_only patche les deux sources sentiment
+# =============================================================================
+
+class TestTechnicalOnlyPatchesBothSources:
+    """Tests pour vérifier que _verify_technical_only neutralise FGI + News History."""
+
+    def test_technical_only_patches_fng(self, db_session):
+        """Le mode technique-only patche get_normalized_score_at_date → None."""
+        _seed_candles(db_session, days=400)
+        service = VerificationService(db_session)
+
+        # S'assurer que le FGI retournerait normalement une valeur
+        original_fng = service.decision_service.sentiment_history_service.get_normalized_score_at_date
+        service.decision_service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: 50.0
+        )
+
+        request = VerificationRequest(
+            target_date="2019-08-01",
+            horizons=[7],
+        )
+
+        result = service._verify_technical_only(request)
+        # Après exécution, la méthode originale doit être restaurée
+        # Le mode technique-only devait forcer sentiment_available=False
+        assert result.meta.get("mode") == "technical_only"
+        assert result.meta.get("sentiment_available") is False
+
+    def test_technical_only_patches_news_history(self, db_session):
+        """Le mode technique-only patche get_daily_sentiment → None."""
+        _seed_candles(db_session, days=400)
+        service = VerificationService(db_session)
+
+        # S'assurer que le news history retournerait normalement une valeur
+        service.decision_service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: 30.0
+        )
+
+        request = VerificationRequest(
+            target_date="2019-08-01",
+            horizons=[7],
+        )
+
+        result = service._verify_technical_only(request)
+        assert result.meta.get("mode") == "technical_only"
+        assert result.meta.get("sentiment_available") is False
+
+    def test_technical_only_restores_methods_after(self, db_session):
+        """Les méthodes originales sont restaurées après _verify_technical_only."""
+        _seed_candles(db_session, days=400)
+        service = VerificationService(db_session)
+
+        # Définir des sentinelles
+        sentinel_fng = lambda *a, **kw: 42.0
+        sentinel_news = lambda *a, **kw: 33.0
+        service.decision_service.sentiment_history_service.get_normalized_score_at_date = sentinel_fng
+        service.decision_service.news_history_service.get_daily_sentiment = sentinel_news
+
+        request = VerificationRequest(
+            target_date="2019-08-01",
+            horizons=[7],
+        )
+        service._verify_technical_only(request)
+
+        # Après exécution, les méthodes doivent être restaurées aux sentinelles
+        assert service.decision_service.sentiment_history_service.get_normalized_score_at_date is sentinel_fng
+        assert service.decision_service.news_history_service.get_daily_sentiment is sentinel_news
+
+    def test_technical_only_restores_on_exception(self, db_session):
+        """Les méthodes sont restaurées même si l'analyse lève une exception."""
+        service = VerificationService(db_session)
+        # Pas de candles → ça va échouer/retourner une erreur
+
+        sentinel_fng = lambda *a, **kw: 99.0
+        sentinel_news = lambda *a, **kw: 88.0
+        service.decision_service.sentiment_history_service.get_normalized_score_at_date = sentinel_fng
+        service.decision_service.news_history_service.get_daily_sentiment = sentinel_news
+
+        request = VerificationRequest(
+            target_date="2019-08-01",
+            horizons=[7],
+        )
+        # Même si ça échoue, les méthodes doivent être restaurées
+        result = service._verify_technical_only(request)
+
+        assert service.decision_service.sentiment_history_service.get_normalized_score_at_date is sentinel_fng
+        assert service.decision_service.news_history_service.get_daily_sentiment is sentinel_news
+
+    def test_compare_mode_uses_both_patches(self, db_session):
+        """Le compare_mode walk-forward produit des résultats technique-only cohérents."""
+        _seed_candles(db_session, days=400)
+        service = VerificationService(db_session)
+
+        # Injecter du sentiment pour que les deux runs diffèrent
+        service.decision_service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: 80.0  # Très bullish
+        )
+        service.decision_service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: 70.0  # Très bullish
+        )
+
+        result = service.walk_forward(WalkForwardConfig(
+            start_date="2019-08-01",
+            end_date="2019-10-01",
+            step_days=30,
+            horizons=[7],
+            compare_mode=True,
+        ))
+
+        assert result.comparison is not None
+        # Les deux runs doivent avoir des résultats
+        assert result.comparison.technical_only.total_points > 0
+        assert result.comparison.with_sentiment.total_points > 0
+        # Le verdict doit exister
+        assert len(result.comparison.verdict) > 0

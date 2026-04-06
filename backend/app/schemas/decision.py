@@ -90,6 +90,10 @@ class DecisionMeta(BaseModel):
         True,
         description="Le sentiment des news était-il disponible pour cette décision ?"
     )
+    sentiment_source: Optional[str] = Field(
+        None,
+        description="Source(s) du sentiment utilisée(s) (fear_and_greed, news_history, combined, live_rss, none)"
+    )
     technical_weight: float = Field(0.7, description="Poids du score technique (0-1)")
     sentiment_weight: float = Field(0.3, description="Poids du sentiment (0-1)")
 

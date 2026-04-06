@@ -27,6 +27,8 @@ from app.services.decision_service import (
     DEFAULT_RULES,
     TECHNICAL_WEIGHT,
     SENTIMENT_WEIGHT,
+    FNG_HIST_WEIGHT,
+    NEWS_HIST_WEIGHT,
 )
 from app.schemas.decision import (
     Scenario,
@@ -743,4 +745,268 @@ class TestScenarioMathProperties:
         assert len(scenarios) == 3
         labels = {s.label for s in scenarios}
         assert labels == {"Hausse", "Stable", "Baisse"}
+
+
+# ============================================================
+# TESTS : Sentiment historique combiné (v1.2.4)
+# ============================================================
+
+class TestHistoricalSentimentCombined:
+    """Tests pour _get_historical_sentiment avec combinaison FGI + News History."""
+
+    def test_both_sources_combined_score(self, db_session):
+        """Les deux sources disponibles → moyenne pondérée FGI/News."""
+        service = DecisionService(db_session)
+
+        # Mock les deux services
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: 60.0  # FGI = +60
+        )
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: 40.0  # News = +40
+        )
+
+        end_ts = datetime(2024, 6, 15, tzinfo=timezone.utc)
+        score, available, source = service._get_historical_sentiment(end_ts)
+
+        expected = int(round(60.0 * FNG_HIST_WEIGHT + 40.0 * NEWS_HIST_WEIGHT))
+        assert score == expected
+        assert available is True
+        assert source == "fear_and_greed+news_history"
+
+    def test_both_sources_negative(self, db_session):
+        """Deux sources négatives → score combiné négatif."""
+        service = DecisionService(db_session)
+
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: -80.0
+        )
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: -60.0
+        )
+
+        end_ts = datetime(2024, 3, 1, tzinfo=timezone.utc)
+        score, available, source = service._get_historical_sentiment(end_ts)
+
+        expected = int(round(-80.0 * FNG_HIST_WEIGHT + -60.0 * NEWS_HIST_WEIGHT))
+        assert score == expected
+        assert score < 0
+        assert available is True
+        assert source == "fear_and_greed+news_history"
+
+    def test_fng_only_fallback(self, db_session):
+        """Seulement FGI disponible → 100% FGI."""
+        service = DecisionService(db_session)
+
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: 50.0
+        )
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: None  # Pas de news
+        )
+
+        end_ts = datetime(2023, 1, 1, tzinfo=timezone.utc)
+        score, available, source = service._get_historical_sentiment(end_ts)
+
+        assert score == 50
+        assert available is True
+        assert source == "fear_and_greed_historical"
+
+    def test_news_only_fallback(self, db_session):
+        """Seulement News disponible → 100% News."""
+        service = DecisionService(db_session)
+
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: None  # Pas de FGI
+        )
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: -30.0
+        )
+
+        end_ts = datetime(2017, 6, 1, tzinfo=timezone.utc)
+        score, available, source = service._get_historical_sentiment(end_ts)
+
+        assert score == -30
+        assert available is True
+        assert source == "news_history"
+
+    def test_no_source_available(self, db_session):
+        """Aucune source → mode dégradé."""
+        service = DecisionService(db_session)
+
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: None
+        )
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: None
+        )
+
+        end_ts = datetime(2015, 1, 1, tzinfo=timezone.utc)
+        score, available, source = service._get_historical_sentiment(end_ts)
+
+        assert score == 0
+        assert available is False
+        assert source == "none"
+
+    def test_combined_score_clamped_positive(self, db_session):
+        """Le score combiné est plafonné à +100."""
+        service = DecisionService(db_session)
+
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: 100.0
+        )
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: 100.0
+        )
+
+        end_ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        score, available, source = service._get_historical_sentiment(end_ts)
+
+        assert score <= 100
+        assert available is True
+
+    def test_combined_score_clamped_negative(self, db_session):
+        """Le score combiné est plafonné à -100."""
+        service = DecisionService(db_session)
+
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: -100.0
+        )
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: -100.0
+        )
+
+        end_ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        score, available, source = service._get_historical_sentiment(end_ts)
+
+        assert score >= -100
+        assert available is True
+
+    def test_fng_error_falls_through_to_news(self, db_session):
+        """Si FGI lève une exception, utilise News seul."""
+        service = DecisionService(db_session)
+
+        def raise_error(*args, **kwargs):
+            raise RuntimeError("DB error")
+
+        service.sentiment_history_service.get_normalized_score_at_date = raise_error
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: 25.0
+        )
+
+        end_ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        score, available, source = service._get_historical_sentiment(end_ts)
+
+        assert score == 25
+        assert available is True
+        assert source == "news_history"
+
+    def test_news_error_falls_through_to_fng(self, db_session):
+        """Si News lève une exception, utilise FGI seul."""
+        service = DecisionService(db_session)
+
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: -40.0
+        )
+
+        def raise_error(*args, **kwargs):
+            raise RuntimeError("DB error")
+
+        service.news_history_service.get_daily_sentiment = raise_error
+
+        end_ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        score, available, source = service._get_historical_sentiment(end_ts)
+
+        assert score == -40
+        assert available is True
+        assert source == "fear_and_greed_historical"
+
+    def test_both_errors_mode_degrade(self, db_session):
+        """Les deux sources en erreur → mode dégradé."""
+        service = DecisionService(db_session)
+
+        def raise_error(*args, **kwargs):
+            raise RuntimeError("DB error")
+
+        service.sentiment_history_service.get_normalized_score_at_date = raise_error
+        service.news_history_service.get_daily_sentiment = raise_error
+
+        end_ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        score, available, source = service._get_historical_sentiment(end_ts)
+
+        assert score == 0
+        assert available is False
+        assert source == "none"
+
+    def test_sentiment_source_in_meta_live(self, db_session):
+        """En mode live, sentiment_source est 'live_rss' dans le meta."""
+        service = DecisionService(db_session)
+
+        mock_sentiment = MagicMock()
+        mock_sentiment.sentiment_score = 10
+        mock_sentiment.model_dump.return_value = {"sentiment_score": 10}
+        service.news_service = MagicMock()
+        service.news_service.get_sentiment_only.return_value = mock_sentiment
+
+        result = service.analyze(symbol="BTC/USD", timeframe="4h", history_days=7)
+        assert result["meta"]["sentiment_source"] == "live_rss"
+
+    def test_sentiment_source_in_meta_historical(self, db_session):
+        """En mode historique avec FGI + News, sentiment_source est combiné."""
+        _insert_test_candles(db_session, count=50)
+        service = DecisionService(db_session)
+
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: 30.0
+        )
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: 20.0
+        )
+
+        end_ts = datetime.now(timezone.utc) - timedelta(hours=10)
+        result = service.analyze(
+            symbol="BTC/USD", timeframe="4h", history_days=7, end_ts=end_ts
+        )
+        assert result["meta"]["sentiment_source"] == "fear_and_greed+news_history"
+        assert result["meta"]["sentiment_available"] is True
+
+    def test_weights_sum_to_one(self):
+        """Les poids FGI + News somment à 1.0."""
+        assert abs(FNG_HIST_WEIGHT + NEWS_HIST_WEIGHT - 1.0) < 0.001
+
+    def test_combined_proportional(self, db_session):
+        """Le score combiné est bien proportionnel aux poids."""
+        service = DecisionService(db_session)
+
+        # FGI = +100, News = 0 → score = FNG_HIST_WEIGHT * 100
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: 100.0
+        )
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: 0.0
+        )
+
+        end_ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        score, _, _ = service._get_historical_sentiment(end_ts)
+
+        expected = int(round(100.0 * FNG_HIST_WEIGHT))
+        assert score == expected
+
+    def test_symmetric_combination(self, db_session):
+        """FGI = +X, News = -X → le score est bien la différence pondérée."""
+        service = DecisionService(db_session)
+
+        service.sentiment_history_service.get_normalized_score_at_date = (
+            lambda *args, **kwargs: 50.0
+        )
+        service.news_history_service.get_daily_sentiment = (
+            lambda *args, **kwargs: -50.0
+        )
+
+        end_ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        score, available, _ = service._get_historical_sentiment(end_ts)
+
+        expected = int(round(50.0 * FNG_HIST_WEIGHT + (-50.0) * NEWS_HIST_WEIGHT))
+        assert score == expected
+        assert available is True
 
