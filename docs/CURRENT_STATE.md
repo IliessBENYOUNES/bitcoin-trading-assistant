@@ -1,23 +1,23 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
-> **Dernière mise à jour :** 6 avril 2026
-> **Version :** v1.3.0
+> **Dernière mise à jour :** 7 avril 2026
+> **Version :** v1.4.0
 > **Branche :** `master`
-> **Dernier commit :** feat(risk): add risk management engine with SL/TP, daily loss, kill switch (v1.3.0)
+> **Dernier commit :** feat(paper): add paper trading system with real-time simulation (v1.4.0)
 
 ---
 
 ## 1. Vue d'ensemble
 
-Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'aide à la lecture et à la **décision** sur le marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur **14 timeframes**, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, affiche un **prix BTC temps réel via WebSocket Binance**, **produit des recommandations explicables via un moteur de décision combinant analyse technique et sentiment**, **valide empiriquement les décisions via un moteur de backtesting**, et **vérifie les prédictions sur l'historique profond via un système de time-travel backtest + walk-forward**.
+Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'aide à la lecture et à la **décision** sur le marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur **14 timeframes**, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, affiche un **prix BTC temps réel via WebSocket Binance**, **produit des recommandations explicables via un moteur de décision combinant analyse technique et sentiment**, **valide empiriquement les décisions via un moteur de backtesting**, **vérifie les prédictions sur l'historique profond via un système de time-travel backtest + walk-forward**, **applique des garde-fous de risque (SL/TP, daily loss, kill switch)**, et **simule le trading en temps réel via un paper trading automatisé**.
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.3.0** |
+| Version courante | **v1.4.0** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **777 tests**, tous passing ✅ |
+| Tests backend | **841 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -38,109 +38,45 @@ bitcoin-trading-assistant/
 │   │   │   ├── market.py       # GET /market/candles, indicators, gaps, price, signals
 │   │   │   ├── decision.py     # GET /market/decision
 │   │   │   ├── backtest.py     # POST /backtest/run
-│   │   │   ├── verification.py # ← NOUVEAU v1.1.1 — /backtest/history/*, /backtest/verify, /backtest/walk-forward
-│   │   │   ├── sentiment.py    # ← NOUVEAU v1.2.1 — /sentiment/history/load, range, coverage, at-date
+│   │   │   ├── verification.py # /backtest/history/*, /backtest/verify, /backtest/walk-forward
+│   │   │   ├── sentiment.py    # /sentiment/history/load, range, coverage, at-date
 │   │   │   ├── alerts.py       # CRUD /alerts + POST /alerts/check
 │   │   │   ├── news.py         # GET /news, GET /news/sentiment
-│   │   │   ├── risk.py         # ← NOUVEAU v1.3 — /risk/config, status, evaluate, kill-switch, record-loss
+│   │   │   ├── risk.py         # /risk/config, status, evaluate, kill-switch, record-loss
+│   │   │   ├── paper_trading.py # ← NOUVEAU v1.4 — /paper/account, status, tick, trades, metrics, close
 │   │   │   └── scheduler.py    # GET /scheduler/status, POST trigger
 │   │   ├── models/
 │   │   │   ├── candle.py       # Modèle Candle (OHLCV + timeframe)
 │   │   │   ├── alert.py        # Modèle Alert (conditions + status)
-│   │   │   └── sentiment_history.py # ← NOUVEAU v1.2.1 — Modèle SentimentHistory (sentiment quotidien)
-│   │   │   └── news_history.py     # ← NOUVEAU v1.2.3a — Modèle NewsHistory (articles RSS persistés)
-│   │   │   └── risk_config.py     # ← NOUVEAU v1.3 — Modèle RiskConfig (SL/TP, position sizing, kill switch)
+│   │   │   ├── sentiment_history.py # Modèle SentimentHistory
+│   │   │   ├── news_history.py     # Modèle NewsHistory
+│   │   │   ├── risk_config.py      # Modèle RiskConfig
+│   │   │   └── paper_account.py    # ← NOUVEAU v1.4 — PaperAccount + PaperTrade
 │   │   ├── schemas/
-│   │   │   ├── candle.py       # Schémas Pydantic candle
-│   │   │   ├── signal.py       # Schémas SignalItem, CompositeScore, SignalResponse
-│   │   │   ├── decision.py     # Scenario, RuleResult, Recommendation, DecisionResponse
-│   │   │   ├── backtest.py     # BacktestConfig, BacktestMetrics, BacktestResponse
-│   │   │   ├── verification.py # ← NOUVEAU v1.1.1 — HistoryLoadConfig, VerificationResult, WalkForwardResult
-│   │   │   ├── sentiment.py    # ← NOUVEAU v1.2.1 — SentimentLoadConfig, SentimentAtDateResponse, etc.
-│   │   │   ├── alert.py        # AlertCreate, AlertResponse, AlertCheck
-│   │   │   └── news.py         # NewsItem, NewsSentimentSummary, NewsResponse
+│   │   │   ├── paper_trading.py    # ← NOUVEAU v1.4 — PaperAccountCreate/Response, PaperTradeResponse, PaperMetrics, PaperStatus, PaperTickResult
+│   │   │   └── ...
 │   │   ├── services/
-│   │   │   ├── verification_service.py # ← NOUVEAU v1.1.1 — Time-travel + walk-forward
-│   │   │   ├── history_loader_service.py # ← NOUVEAU v1.1.1 — Chargement historique Binance 2017→now
-│   │   │   ├── sentiment_history_service.py # ← NOUVEAU v1.2.1 — Fear & Greed historique + requête par date
-│   │   │   ├── news_history_service.py  # ← NOUVEAU v1.2.3a — Persistance news RSS en DB
-│   │   │   ├── cryptocompare_service.py # ← NOUVEAU v1.2.3b — Client CryptoCompare News API (historique depuis 2015)
-│   │   │   ├── risk_service.py        # ← NOUVEAU v1.3 — Risk Management (SL/TP, daily loss, kill switch, trade eval)
-│   │   │   ├── backtest_service.py    # Moteur de replay historique
-│   │   │   ├── decision_service.py    # Moteur de décision (règles + scénarios)
-│   │   │   ├── binance_service.py     # Client HTTP Binance (14 intervalles natifs)
-│   │   │   ├── data_source_router.py  # Routeur Binance/CoinGecko
-│   │   │   ├── coingecko_service.py   # Client HTTP CoinGecko (fallback)
-│   │   │   ├── indicator_service.py   # RSI, MACD, SMA, Bollinger
-│   │   │   ├── signal_service.py      # Interprétation → signaux + score composite
-│   │   │   ├── alert_service.py       # CRUD alertes + évaluation conditions
-│   │   │   ├── news_service.py        # RSS + sentiment + impact
-│   │   │   └── resample_service.py    # Agrégation multi-timeframe (14 niveaux)
+│   │   │   ├── paper_trading_service.py # ← NOUVEAU v1.4 — Tick engine, SL/TP check, métriques, buy & hold
+│   │   │   └── ...
 │   │   ├── tasks/
-│   │   │   └── scheduler.py    # APScheduler triple-jobs (4h + 30m + news RSS) via DataSourceRouter
+│   │   │   └── scheduler.py    # APScheduler quad-jobs (4h + 30m + news + paper)
 │   │   └── utils/
-│   │       ├── time_buckets.py # Alignement UTC 14 timeframes, fenêtres glissantes
-│   │       └── db_upsert.py    # Upsert dialect-aware
-│   └── tests/                  # 481 tests pytest
-│       ├── test_health.py
-│       ├── test_indicators.py
-│       ├── test_market.py
-│       ├── test_scheduler.py
-│       ├── test_scheduler_dual_jobs.py
-│       ├── test_scheduler_resample_1d.py
-│       ├── test_scheduler_resample_1h.py
-│       ├── test_scheduler_news.py         # ← NOUVEAU v1.2.3b — 11 tests job news RSS
-│       ├── test_cryptocompare.py          # ← NOUVEAU v1.2.3b — 30 tests CryptoCompare (parsing, fetch, history, endpoints)
-│       ├── test_signals.py
-│       ├── test_alerts.py
-│       ├── test_news.py
-│       ├── test_decision.py
-│       ├── test_backtest.py            # 31 tests backtesting
-│       ├── test_verification.py        # ← NOUVEAU v1.1.1 — 33 tests vérification historique
-│       ├── test_binance_and_router.py
-│       └── test_time_buckets.py
+│   └── tests/
+│       ├── test_paper_trading.py   # ← NOUVEAU v1.4 — 64 tests
+│       └── ...
 │
-├── frontend/                   # React SPA
+├── frontend/
 │   └── src/
-│       ├── App.tsx
-│       ├── pages/
-│       │   └── Dashboard.tsx   # Page principale (14 TF + 15 durées + live price + décision + backtest)
 │       ├── components/
-│       │   ├── BacktestPanel.tsx        # Métriques + journal trades + config
-│       │   ├── VerificationPanel.tsx    # ← NOUVEAU v1.1.1 — Charger historique + vérifier + walk-forward
-│       │   ├── DecisionPanel.tsx        # Scénarios + recommandation + règles
-│       │   ├── CandlestickChart.tsx
-│       │   ├── IndicatorPanel.tsx
-│       │   ├── SignalPanel.tsx
-│       │   ├── AlertPanel.tsx
-│       │   ├── AlertPresets.tsx
-│       │   ├── NewsPanel.tsx
-│       │   ├── GlowingCard.tsx
-│       │   ├── SectionHeader.tsx
-│       │   ├── PriceTicker.tsx
-│       │   ├── StatusRow.tsx
-│       │   ├── StatusBar.tsx
-│       │   ├── DataFreshnessChip.tsx
-│       │   ├── SchedulerChip.tsx
-│       │   ├── PriceCard.tsx
-│       │   └── ErrorBoundary.tsx
+│       │   ├── PaperTradingPanel.tsx # ← NOUVEAU v1.4 — Dashboard paper trading
+│       │   └── ...
 │       ├── hooks/
-│       │   ├── useBacktest.ts           # Hook backtesting
-│       │   ├── useDecision.ts
-│       │   ├── useCandles.ts
-│       │   ├── useIndicators.ts
-│       │   ├── useMarketGaps.ts
-│       │   ├── useSchedulerStatus.ts
-│       │   ├── useSignals.ts
-│       │   ├── useAlerts.ts
-│       │   ├── useNews.ts
-│       │   └── useLivePrice.ts
+│       │   ├── usePaperTrading.ts   # ← NOUVEAU v1.4 — Hook paper trading
+│       │   └── ...
 │       ├── api/
-│       │   ├── client.ts
-│       │   └── marketApi.ts          # + runBacktest()
+│       │   └── marketApi.ts         # + 7 fonctions paper trading
 │       └── types/
-│           ├── api.ts               # + Backtest types
-│           └── index.ts
+│           └── api.ts               # + Paper Trading types
 │
 └── docs/
     ├── CURRENT_STATE.md        # ← CE FICHIER
@@ -201,6 +137,14 @@ bitcoin-trading-assistant/
 | **POST** | **`/risk/kill-switch/activate`** | **Activer le kill switch** | **✅ NOUVEAU v1.3** |
 | **POST** | **`/risk/kill-switch/deactivate`** | **Désactiver le kill switch** | **✅ NOUVEAU v1.3** |
 | **POST** | **`/risk/record-loss`** | **Enregistrer une perte + vérifier limite** | **✅ NOUVEAU v1.3** |
+| **GET** | **`/paper/account`** | **Compte paper trading (crée par défaut si absent)** | **✅ NOUVEAU v1.4** |
+| **POST** | **`/paper/account`** | **Créer/activer le compte paper** | **✅ NOUVEAU v1.4** |
+| **POST** | **`/paper/account/reset`** | **Reset complet (supprime trades, remet capital)** | **✅ NOUVEAU v1.4** |
+| **GET** | **`/paper/status`** | **Statut complet (compte + position + métriques + prix BTC)** | **✅ NOUVEAU v1.4** |
+| **POST** | **`/paper/tick`** | **Exécuter un tick manuellement (debug/test)** | **✅ NOUVEAU v1.4** |
+| **GET** | **`/paper/trades`** | **Journal des trades (filtres: status, pagination)** | **✅ NOUVEAU v1.4** |
+| **GET** | **`/paper/metrics`** | **Métriques de performance + buy & hold** | **✅ NOUVEAU v1.4** |
+| **POST** | **`/paper/close`** | **Fermeture manuelle de la position ouverte** | **✅ NOUVEAU v1.4** |
 
 ### 3.2 Backend — Services
 
@@ -222,6 +166,7 @@ bitcoin-trading-assistant/
 | **News Service** | Collecte RSS + classification sentiment + score d'impact | ✅ |
 | **Resample Service** | Agrégation OHLCV 14 timeframes, idempotent | ✅ |
 | **Scheduler Dual-Jobs** | Job 4h + Job 30m via DataSourceRouter | ✅ |
+| **Paper Trading Service** | Moteur de paper trading : exécution temps réel, SL/TP, métriques | ✅ **NOUVEAU v1.4** |
 
 ### 3.3 Backend — Moteur de Backtesting (v1.1)
 
@@ -341,6 +286,7 @@ bitcoin-trading-assistant/
 - Panel news avec jauge sentiment, liste articles, filtres, liens cliquables
 - **Panel backtesting avec config, métriques, journal de trades** ← v1.1
 - **Panel vérification historique avec chargement, date picker, walk-forward** ← NOUVEAU v1.1.1
+- **Panel paper trading avec statut, exécution manuelle de ticks, journal de trades, métriques** ← NOUVEAU v1.4
 
 ### 3.10 Frontend — Composants (v1.1.1)
 
@@ -363,6 +309,7 @@ bitcoin-trading-assistant/
 | **StatusRow** | Barre de statut (fraîcheur + scheduler) | ✅ |
 | **SchedulerChip** | Chip scheduler ON / OFF | ✅ |
 | **ErrorBoundary** | Protection crash graphique | ✅ |
+| **PaperTradingPanel** | **Dashboard paper trading : statut, exécution manuelle de ticks, journal de trades, métriques** | **✅ NOUVEAU v1.4** |
 
 ---
 
@@ -389,7 +336,8 @@ bitcoin-trading-assistant/
 | **test_news_history.py** | **33** | **Modèle, scoring, persist idempotent, queries, range, coverage, endpoints** |
 | **test_risk.py** | **55** | **Config CRUD, évaluation trades, ATR SL, daily loss, kill switch, endpoints, edge cases** |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **TOTAL** | **777** | **Tous passing ✅** |
+| **test_paper_trading.py** | **64** | **Paper trading : création compte, exécution ticks, journal, métriques, réinitialisation** |
+| **TOTAL** | **841** | **Tous passing ✅** |
 
 ---
 
@@ -454,13 +402,13 @@ python -m pytest tests/ -v
 | **2** | INFINI v1 | v1.0 → v1.6 | Assistant intelligent, décisionnel (BTC-first) | 🔄 **En cours (v1.1.1 livré)** |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + Sentiment combiné dans walk-forward (v1.2.4) + **Risk Management Engine (v1.3)** livrés, prochaine étape : Paper Trading (v1.4)
+**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + Sentiment combiné dans walk-forward (v1.2.4) + **Risk Management Engine (v1.3)** + **Paper Trading System (v1.4)** livrés, prochaine étape : Robot autonome (v2.0)
 
 ---
 
-## 8. Prochaine étape : v1.4 — Paper Trading
+## 8. Prochaine étape : v1.5 — Robot autonome
 
-> **Objectif** : Simuler le trading en conditions réelles sans argent réel, en utilisant le moteur de décision + risk engine.
+> **Objectif** : Développer un robot de trading autonome, capable de prendre des décisions et d'exécuter des ordres sans intervention humaine, en s'appuyant sur le moteur de décision et le système de gestion des risques.
 
 ---
 
@@ -480,8 +428,8 @@ python -m pytest tests/ -v
 | ~~CryptoCompare News historique~~ | ~~v1.2.3b~~ | ✅ **Livré** |
 | ~~Intégration news historique dans walk-forward~~ | ~~v1.2.4~~ | ✅ **Livré** |
 | ~~Risk management engine~~ | ~~v1.3~~ | ✅ **Livré** |
+| ~~Paper trading~~ | ~~v1.4~~ | ✅ **Livré** |
 | CryptoPanic + Santiment (sentiment payant) | v1.2b | ❌ Non commencé |
-| Paper trading | v1.4 | ❌ Non commencé |
 | Docker Compose | v1.5 | ❌ Non commencé |
 | CI/CD GitHub Actions | v1.5 | ❌ Non commencé |
 | Auth JWT | v1.5 | ❌ Non commencé |

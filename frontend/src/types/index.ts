@@ -87,6 +87,13 @@ export type {
   RiskEvaluation,
   RiskStatus,
   RecordLossResponse,
+  // Paper Trading
+  PaperTradeItem,
+  PaperAccountItem,
+  PaperMetrics,
+  PaperStatus,
+  PaperTickResult,
+  PaperTradeListResponse,
 } from './api';
 
 // Représente un chandelier (bougie) OHLCV

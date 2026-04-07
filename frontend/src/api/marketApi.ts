@@ -37,6 +37,11 @@ import type {
   RiskEvaluation,
   RiskStatus,
   RecordLossResponse,
+  PaperAccountItem,
+  PaperStatus,
+  PaperTickResult,
+  PaperTradeListResponse,
+  PaperMetrics,
 } from '../types';
 
 // -----------------------------------------------------------------------------
@@ -580,3 +585,105 @@ export async function recordLoss(
   return response.json() as Promise<RecordLossResponse>;
 }
 
+// -----------------------------------------------------------------------------
+// Paper Trading
+// -----------------------------------------------------------------------------
+
+export async function getPaperAccount(
+  options: FetchOptions = {}
+): Promise<PaperAccountItem> {
+  return apiFetch<PaperAccountItem>('/paper/account', options);
+}
+
+export async function createPaperAccount(
+  config: { initial_capital?: number; max_open_duration_hours?: number } = {},
+  options: FetchOptions = {}
+): Promise<PaperAccountItem> {
+  const url = `${BASE_URL}/paper/account`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(config),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<PaperAccountItem>;
+}
+
+export async function resetPaperAccount(
+  config: { initial_capital?: number; max_open_duration_hours?: number } = {},
+  options: FetchOptions = {}
+): Promise<PaperAccountItem> {
+  const url = `${BASE_URL}/paper/account/reset`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(config),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<PaperAccountItem>;
+}
+
+export async function getPaperStatus(
+  options: FetchOptions = {}
+): Promise<PaperStatus> {
+  return apiFetch<PaperStatus>('/paper/status', options);
+}
+
+export async function paperTick(
+  options: FetchOptions = {}
+): Promise<PaperTickResult> {
+  const url = `${BASE_URL}/paper/tick`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<PaperTickResult>;
+}
+
+export async function getPaperTrades(
+  params: { limit?: number; offset?: number; status?: string } = {},
+  options: FetchOptions = {}
+): Promise<PaperTradeListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.limit) searchParams.set('limit', String(params.limit));
+  if (params.offset) searchParams.set('offset', String(params.offset));
+  if (params.status) searchParams.set('status', params.status);
+  const qs = searchParams.toString();
+  return apiFetch<PaperTradeListResponse>(`/paper/trades${qs ? `?${qs}` : ''}`, options);
+}
+
+export async function getPaperMetrics(
+  options: FetchOptions = {}
+): Promise<PaperMetrics> {
+  return apiFetch<PaperMetrics>('/paper/metrics', options);
+}
+
+export async function closePaperPosition(
+  reason: string = 'Fermeture manuelle',
+  options: FetchOptions = {}
+): Promise<unknown> {
+  const url = `${BASE_URL}/paper/close?reason=${encodeURIComponent(reason)}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json();
+}

@@ -650,3 +650,94 @@ export interface RecordLossResponse {
   kill_switch_active: boolean;
 }
 
+// -----------------------------------------------------------------------------
+// Paper Trading (/paper)
+// -----------------------------------------------------------------------------
+
+export interface PaperTradeItem {
+  id: number;
+  account_id: number;
+  status: string; // open, closed_tp, closed_sl, closed_signal, closed_expired, closed_manual
+  direction: string; // long, short
+  entry_price: number;
+  exit_price: number | null;
+  stop_loss_price: number;
+  take_profit_price: number;
+  highest_price_since_entry: number | null;
+  position_size_usd: number;
+  pnl: number | null;
+  pnl_pct: number | null;
+  entry_reason: string;
+  exit_reason: string | null;
+  decision_score: number | null;
+  entry_ts: string;
+  exit_ts: string | null;
+  duration_hours: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PaperAccountItem {
+  id: number;
+  initial_capital: number;
+  current_capital: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  max_drawdown_pct: number;
+  sharpe_ratio: number | null;
+  is_active: boolean;
+  max_open_duration_hours: number;
+  btc_price_at_start: number | null;
+  peak_capital: number;
+  created_at: string | null;
+  updated_at: string | null;
+  open_position: PaperTradeItem | null;
+}
+
+export interface PaperMetrics {
+  total_trades: number;
+  winning_trades: number;
+  losing_trades: number;
+  win_rate: number;
+  net_pnl: number;
+  net_pnl_pct: number;
+  sharpe_ratio: number | null;
+  max_drawdown_pct: number;
+  avg_trade_pnl: number;
+  avg_trade_duration_hours: number;
+  best_trade_pnl: number;
+  worst_trade_pnl: number;
+  profit_factor: number;
+  buy_hold_pnl_pct: number;
+}
+
+export interface PaperStatus {
+  account: PaperAccountItem;
+  open_position: PaperTradeItem | null;
+  metrics: PaperMetrics;
+  is_running: boolean;
+  last_check_ts: string | null;
+  current_btc_price: number | null;
+  unrealized_pnl: number | null;
+}
+
+export interface PaperTickResult {
+  action_taken: string;
+  detail: string;
+  position_opened: PaperTradeItem | null;
+  position_closed: PaperTradeItem | null;
+  current_price: number;
+  timestamp: string;
+  decision_score: number | null;
+  decision_action: string | null;
+  risk_allowed: boolean | null;
+}
+
+export interface PaperTradeListResponse {
+  trades: PaperTradeItem[];
+  total: number;
+}

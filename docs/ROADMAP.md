@@ -39,7 +39,7 @@
 │  ├── Vérification historique            ✅ Livré (v1.1.1)           │
 │  ├── Sentiment historique + ML          🔄 En cours (v1.2.1-1.2.4 livrés)  │
 │  ├── Risk management engine             ✅ Livré (v1.3)                    │
-│  ├── Paper trading                      ⬜ Planifié (v1.4)         │
+│  ├── Paper trading                      ✅ Livré (v1.4)             │
 │  ├── Production (Docker, CI/CD, Auth)   ⬜ Planifié (v1.5)         │
 │  └── Multi-assets (ETH, SOL...)         ⬜ Planifié (v1.6)         │
 │                                                                      │
@@ -62,7 +62,7 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v1.3.0 — Risk Management Engine (Livré) ✅
+### État actuel : v1.4.0 — Paper Trading System (Livré) ✅
 
 | Composant | Status |
 |-----------|--------|
@@ -89,7 +89,9 @@
 | **Persistance news RSS en DB (modèle + service + endpoints + 33 tests)** | **✅ Complet (v1.2.3a)** |
 | **Risk Management Engine (SL/TP, daily loss, kill switch, position sizing)** | **✅ Complet (v1.3)** |
 | **RiskPanel (dashboard risque, kill switch, config, perte journalière)** | **✅ Complet (v1.3)** |
-| 777 tests backend | ✅ Tous passing |
+| **Paper Trading System (tick engine, SL/TP, métriques, journal, scheduler)** | **✅ Complet (v1.4)** |
+| **PaperTradingPanel (statut, tick manuel, positions, métriques)** | **✅ Complet (v1.4)** |
+| 841 tests backend | ✅ Tous passing |
 
 ### ✅ LIVRÉ : v0.7 — Moteur de Signaux (Niveau 2)
 
@@ -346,14 +348,16 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 | 13.5 API Risk | 🔴 Haute | 3h | 7 endpoints : config CRUD, status, evaluate, kill-switch, record-loss | ✅ |
 | 13.6 55 tests backend | 🔴 Haute | 3h | Config, évaluation, ATR, daily loss, kill switch, endpoints, edge cases | ✅ |
 
-### Phase v1.4 — Paper Trading
+### Phase v1.4 — Paper Trading ✅ LIVRÉ
 
-| Tâche | Priorité | Effort | Description |
-|-------|----------|--------|-------------|
-| 14.1 Carnet d'ordres fictif | 🔴 Haute | 6h | Market/Limit simulés |
-| 14.2 Suivi positions | 🔴 Haute | 4h | PnL temps réel simulé |
-| 14.3 Journal de trading | 🔴 Haute | 3h | Log toutes les décisions |
-| 14.4 Mode fantôme | 🟡 Moyenne | 2h | Observer sans agir |
+| Tâche | Priorité | Effort | Description | Status |
+|-------|----------|--------|-------------|--------|
+| 14.1 Modèle PaperAccount + PaperTrade | 🔴 Haute | 3h | Tables SQLAlchemy (compte singleton + journal trades) | ✅ |
+| 14.2 Service Paper Trading | 🔴 Haute | 8h | Tick engine, SL/TP check, ouverture/fermeture, métriques, buy & hold | ✅ |
+| 14.3 Routes API Paper Trading | 🔴 Haute | 3h | 8 endpoints : account, status, tick, trades, metrics, close | ✅ |
+| 14.4 Scheduler Paper Trading | 🟡 Moyenne | 2h | Job APScheduler toutes les 5 minutes | ✅ |
+| 14.5 Frontend PaperTradingPanel | 🟡 Moyenne | 4h | Statut, tick manuel, positions, journal, métriques | ✅ |
+| 14.6 64 tests backend | 🔴 Haute | 3h | Modèles, service, SL/TP, métriques, tick, endpoints | ✅ |
 
 ### Phase v1.5 — Production Ready
 
@@ -737,8 +741,8 @@ Les types TypeScript sont bien définis pour `SchedulerStatus`, `MarketGapsRespo
 | Tests frontend | ❌ Non commencé | — | Aucun test E2E ni unitaire côté front |
 | Backtesting | ✅ Livré | v1.1 | Replay historique, métriques, equity curve, journal trades |
 | Multi-assets | ❌ Non commencé | — | Déplacé en v1.6 (après validation BTC) |
-| Risk engine | ❌ Non commencé | — | — |
-| Paper trading | ❌ Non commencé | — | — |
+| Risk engine | ✅ Livré | v1.3 | SL/TP, daily loss, kill switch, position sizing |
+| Paper trading | ✅ Livré | v1.4 | Tick engine, SL/TP check, métriques, journal, scheduler |
 | Exécution automatisée | ❌ Non commencé | — | — |
 | CI/CD | ❌ Non commencé | — | — |
 | Docker / déploiement | ❌ Non commencé | — | — |
@@ -1515,14 +1519,15 @@ Trois règles simples :
 │   ├── [✅] v1.2.3b — CryptoCompare News historique (30 tests) — 661 tests total
 │   ├── [✅] v1.2.4 — Intégration news historique dans walk-forward (20 tests) — 681 tests total
 │   ├── [✅] v1.3.0 — Risk Management Engine (55 tests) — 777 tests total
+│   ├── [✅] v1.4.0 — Paper Trading System (64 tests) — 841 tests total
 │   └── [ ] v1.2b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
 │
 ├── Juin
 │   ├── [ ] v1.2b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
-│   └── [ ] v1.4.0 — Paper Trading
+│   └── [ ] v1.5.0 — Production Ready (Docker, CI/CD, Auth)
 │
 ├── Juillet
-│   └── [ ] v1.4.0 — Paper Trading
+│   └── [ ] v1.5.0 — Production Ready (Docker, CI/CD, Auth)
 │
 ├── Août
 │   ├── [ ] v1.2c — Modèle ML sentiment basique (classification titres news)

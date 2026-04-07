@@ -51,6 +51,7 @@ import { BacktestPanel } from '../components/BacktestPanel';
 import { VerificationPanel } from '../components/VerificationPanel';
 import { QuickMetricsBar } from '../components/QuickMetricsBar';
 import RiskPanel from '../components/RiskPanel';
+import PaperTradingPanel from '../components/PaperTradingPanel';
 import CandlestickChart from '../components/CandlestickChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
 import { PriceTicker } from '../components/PriceTicker';
@@ -760,6 +761,18 @@ const Dashboard: React.FC = () => {
               height: '100%',
             }}>
               <RiskPanel />
+            </Box>
+          </Grid>
+
+          {/* Row: Paper Trading */}
+          <Grid item xs={12}>
+            <Box sx={{
+              bgcolor: 'rgba(255,255,255,0.03)',
+              borderRadius: 2,
+              p: 2,
+              border: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              <PaperTradingPanel />
             </Box>
           </Grid>
 

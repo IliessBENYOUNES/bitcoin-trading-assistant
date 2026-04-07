@@ -1,8 +1,8 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v1.1.1
-## Date: 2026-04-05
+## Version: v1.4.0
+## Date: 2026-04-07
 
 ---
 
@@ -50,6 +50,16 @@
 | **FR-VER-004** | **Comparaison prédiction/réalité** | **Outcomes 7j/30j/90j avec correct=true/false** | **✅ PASS** | **test_buy_hausse_is_correct, test_sell_baisse_is_correct** |
 | **FR-VER-005** | **Walk-forward analysis** | **POST /backtest/walk-forward retourne accuracy par horizon** | **✅ PASS** | **test_walk_forward_accuracy_structure** |
 | **FR-VER-006** | **VerificationPanel UI** | **Charger historique + date picker + résultats + walk-forward** | **✅ PASS** | **tsc --noEmit clean** |
+| **FR-RSK-001** | **Risk Config CRUD** | **GET/POST /risk/config retourne config** | **✅ PASS** | **55 tests passing** |
+| **FR-RSK-002** | **Risk Evaluate** | **POST /risk/evaluate retourne allowed + SL/TP** | **✅ PASS** | **test_evaluate_acheter** |
+| **FR-RSK-003** | **Kill Switch** | **POST /risk/kill-switch/activate bloque les trades** | **✅ PASS** | **test_kill_switch_blocks** |
+| **FR-PAP-001** | **Paper Account CRUD** | **GET/POST /paper/account crée et retourne le compte** | **✅ PASS** | **64 tests passing** |
+| **FR-PAP-002** | **Paper Tick Engine** | **POST /paper/tick exécute un tick (SL/TP/décision/risk)** | **✅ PASS** | **test_tick_opens_position_on_buy_signal** |
+| **FR-PAP-003** | **Paper SL/TP Check** | **SL et TP déclenchés correctement pour long et short** | **✅ PASS** | **test_check_sl_long_hit, test_check_tp_short_hit** |
+| **FR-PAP-004** | **Paper Metrics** | **GET /paper/metrics retourne win rate, Sharpe, drawdown, profit factor** | **✅ PASS** | **test_metrics_with_trades** |
+| **FR-PAP-005** | **Paper Trades Journal** | **GET /paper/trades retourne liste paginée + filtres status** | **✅ PASS** | **test_get_trades_with_filter** |
+| **FR-PAP-006** | **Paper Close Manual** | **POST /paper/close ferme la position ouverte** | **✅ PASS** | **test_close_with_position** |
+| **FR-PAP-007** | **PaperTradingPanel UI** | **Statut + tick + métriques + journal + position ouverte** | **✅ PASS** | **tsc --noEmit clean** |
 
 ---
 
@@ -59,7 +69,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 481 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 841 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 
@@ -132,4 +142,10 @@
 | **test_backtest.py** | **31** | **✅** |
 | **test_verification.py** | **33** | **✅** |
 | **test_binance_and_router.py** | **89** | **✅** |
-| **Total** | **481** | ✅ |
+| **test_news_history.py** | **33** | **✅** |
+| **test_cryptocompare.py** | **30** | **✅** |
+| **test_sentiment_history.py** | **17** | **✅** |
+| **test_scheduler_news.py** | **11** | **✅** |
+| **test_risk.py** | **55** | **✅** |
+| **test_paper_trading.py** | **64** | **✅** |
+| **Total** | **841** | ✅ |

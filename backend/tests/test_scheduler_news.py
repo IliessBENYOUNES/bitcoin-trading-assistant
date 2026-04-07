@@ -184,6 +184,7 @@ class TestSchedulerStartWithNews:
             "days_30m": 1,
             "dual_jobs": True,
             "interval_minutes_news": 10,
+            "interval_minutes_paper": 5,
         }
 
         try:
@@ -212,6 +213,7 @@ class TestSchedulerStartWithNews:
             "days_30m": 1,
             "dual_jobs": True,
             "interval_minutes_news": 15,
+            "interval_minutes_paper": 5,
         }
 
         try:

@@ -51,6 +51,7 @@ JOB_ID_LEGACY = "fetch_candles_job"
 JOB_ID_4H = "fetch_candles_4h_job"
 JOB_ID_30M = "fetch_candles_30m_job"
 JOB_ID_NEWS = "fetch_news_job"
+JOB_ID_PAPER = "paper_trading_job"
 
 # =========================
 # State thread-safe
@@ -86,6 +87,12 @@ scheduler_state: dict[str, Any] = {
             "last_result": None,
         },
         "news": {
+            "interval_minutes": None,
+            "last_run_time": None,
+            "next_run_time": None,
+            "last_result": None,
+        },
+        "paper": {
             "interval_minutes": None,
             "last_run_time": None,
             "next_run_time": None,
@@ -159,6 +166,12 @@ def _read_config() -> dict[str, Any]:
     if interval_minutes_news < 1:
         interval_minutes_news = 1
 
+    # Paper trading job interval
+    raw_paper = getattr(settings, "scheduler_interval_paper_minutes", None)
+    interval_minutes_paper = _as_int(raw_paper, 5)
+    if interval_minutes_paper < 1:
+        interval_minutes_paper = 1
+
     return {
         # legacy
         "enabled": enabled,
@@ -173,6 +186,8 @@ def _read_config() -> dict[str, Any]:
         "dual_jobs": raw_30m is not None,            # if the setting exists, we enable dual scheduling
         # news job
         "interval_minutes_news": interval_minutes_news,
+        # paper trading job
+        "interval_minutes_paper": interval_minutes_paper,
     }
 
 
@@ -230,6 +245,7 @@ def get_status() -> dict[str, Any]:
                 "4h": format_job(scheduler_state["jobs"]["4h"]),
                 "30m": format_job(scheduler_state["jobs"]["30m"]),
                 "news": format_job(scheduler_state["jobs"]["news"]),
+                "paper": format_job(scheduler_state["jobs"]["paper"]),
             },
         }
 
@@ -620,6 +636,64 @@ def fetch_news_job() -> None:
 
 
 # =========================
+# Paper trading job
+# =========================
+def paper_trading_job() -> None:
+    """
+    Exécute un tick du paper trading.
+
+    Vérifie d'abord que le PaperAccount existe et est actif.
+    Si oui, exécute un tick (vérifie SL/TP, ouvre/ferme positions).
+    """
+    start = time.perf_counter()
+    now = datetime.now(timezone.utc)
+    db = None
+
+    try:
+        db = SessionLocal()
+
+        from app.services.paper_trading_service import PaperTradingService
+        service = PaperTradingService(db)
+
+        # Vérifier que le compte existe et est actif
+        account = service.get_or_create_account()
+        if not account.is_active:
+            result = {
+                "status": "skipped",
+                "reason": "Paper trading inactif",
+                "duration_seconds": round(time.perf_counter() - start, 3),
+            }
+            _set_job_state("paper", last_run_time=now, last_result=result)
+            return
+
+        tick_result = service.tick()
+        result = {
+            "status": "success",
+            "action_taken": tick_result.action_taken,
+            "detail": tick_result.detail,
+            "current_price": tick_result.current_price,
+            "duration_seconds": round(time.perf_counter() - start, 3),
+        }
+        _set_job_state("paper", last_run_time=now, last_result=result)
+        logger.info(f"Paper tick: {tick_result.action_taken} — {tick_result.detail}")
+
+    except Exception as e:
+        if db is not None:
+            db.rollback()
+        err = {
+            "status": "error",
+            "error": str(e),
+            "duration_seconds": round(time.perf_counter() - start, 3),
+        }
+        _set_job_state("paper", last_run_time=now, last_result=err)
+        logger.error(f"Paper trading job error: {e}")
+    finally:
+        if db is not None:
+            db.close()
+        _update_next_run_time("paper", JOB_ID_PAPER)
+
+
+# =========================
 # Lifecycle control
 # =========================
 def start_scheduler() -> None:
@@ -640,6 +714,7 @@ def start_scheduler() -> None:
     _set_job_state("4h", interval_minutes=cfg["interval_minutes_4h"], days=cfg["days_4h"])
     _set_job_state("30m", interval_minutes=cfg["interval_minutes_30m"], days=cfg["days_30m"])
     _set_job_state("news", interval_minutes=cfg["interval_minutes_news"])
+    _set_job_state("paper", interval_minutes=cfg["interval_minutes_paper"])
 
     if not cfg["enabled"]:
         return
@@ -692,6 +767,18 @@ def start_scheduler() -> None:
         misfire_grace_time=60,
     )
 
+    # Job Paper Trading — tick toutes les N minutes
+    # Le job vérifie lui-même si le paper trading est actif
+    scheduler.add_job(
+        paper_trading_job,
+        trigger=IntervalTrigger(minutes=cfg["interval_minutes_paper"]),
+        id=JOB_ID_PAPER,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=60,
+    )
+
     scheduler.start()
     _scheduler = scheduler
     _set_state(running=True)
@@ -708,6 +795,7 @@ def start_scheduler() -> None:
         _update_next_run_time_legacy()
 
     _update_next_run_time("news", JOB_ID_NEWS)
+    _update_next_run_time("paper", JOB_ID_PAPER)
 
 
 def stop_scheduler() -> None:
@@ -723,3 +811,4 @@ def stop_scheduler() -> None:
         _set_job_state("4h", next_run_time=None)
         _set_job_state("30m", next_run_time=None)
         _set_job_state("news", next_run_time=None)
+        _set_job_state("paper", next_run_time=None)

@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     scheduler_interval_minutes: int = 240  # 4h job interval
     scheduler_interval_30m_minutes: int = 30  # 30m job interval (nouveau)
     scheduler_interval_news_minutes: int = 10  # News RSS persist interval
+    scheduler_interval_paper_minutes: int = 5  # Paper trading tick interval
     scheduler_symbol: str = "BTC/USD"
     scheduler_days: int = 7  # Legacy, non utilisé directement
 

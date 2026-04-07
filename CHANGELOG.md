@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-04-07
+
+### Added
+- **Paper Trading System (v1.4)** : Simulation de trading en temps réel
+  - **Modèle `PaperAccount`** : Compte paper singleton (capital, PnL cumulé, win rate, drawdown, peak capital)
+  - **Modèle `PaperTrade`** : Journal de trades (entry/exit prix, SL/TP, PnL, durée, direction long/short)
+  - **Service `PaperTradingService`** : Moteur de paper trading complet
+    - Tick engine : à chaque tick, interroge DecisionService + RiskService
+    - Ouverture/fermeture automatique de positions
+    - Vérification SL/TP/expiration à chaque tick
+    - Signal contraire : ferme la position si score < -20
+    - Trailing stop : mise à jour du highest_price_since_entry
+    - Métriques : win rate, Sharpe ratio, max drawdown, profit factor, buy & hold
+    - Buy & hold comparison : calcul PnL si on avait simplement acheté du BTC
+  - **8 endpoints API** :
+    - `GET /paper/account` — État du compte (crée par défaut si absent)
+    - `POST /paper/account` — Créer/activer le compte paper
+    - `POST /paper/account/reset` — Reset complet (supprime trades, remet capital)
+    - `GET /paper/status` — Statut complet (compte + position + métriques + prix BTC)
+    - `POST /paper/tick` — Exécuter un tick manuellement (debug/test)
+    - `GET /paper/trades` — Journal des trades (filtres: status, pagination)
+    - `GET /paper/metrics` — Métriques de performance + buy & hold
+    - `POST /paper/close` — Fermeture manuelle de la position ouverte
+  - **Scheduler intégré** : Job APScheduler toutes les 5 minutes (configurable via `SCHEDULER_INTERVAL_PAPER_MINUTES`)
+- **PaperTradingPanel frontend** : Dashboard complet de paper trading
+  - Grille de métriques : capital, PnL, win rate, Sharpe, drawdown, profit factor, buy & hold
+  - Position ouverte : direction, prix entrée/SL/TP, PnL latent
+  - Contrôles : Activer, Reset, Tick manuel, Fermer position, Actualiser
+  - Journal des trades : table avec status, direction, PnL, durée, raisons
+  - Dernière action : alerte contextuelle du dernier tick
+- **Hook `usePaperTrading`** : Gestion d'état React (status, trades, tick, activate, reset, close)
+- **Types TypeScript** : `PaperTradeItem`, `PaperAccountItem`, `PaperMetrics`, `PaperStatus`, `PaperTickResult`, `PaperTradeListResponse`
+- **7 fonctions API client** : `getPaperAccount`, `createPaperAccount`, `resetPaperAccount`, `getPaperStatus`, `paperTick`, `getPaperTrades`, `getPaperMetrics`, `closePaperPosition`
+- **64 tests backend** pour le paper trading (modèles, service, SL/TP, métriques, tick engine, endpoints)
+
+### Technical
+- 841 tests backend, tous passing ✅
+- `tsc --noEmit` sans erreur ✅
+- Nouveau modèle SQLAlchemy `PaperAccount` + `PaperTrade` (2 tables)
+- Nouveau router FastAPI `/paper/*` avec 8 endpoints
+- Configuration : `SCHEDULER_INTERVAL_PAPER_MINUTES` (défaut: 5)
+
 ## [1.3.0] - 2026-04-06
 
 ### Added

@@ -91,6 +91,16 @@ from app.schemas.risk import (
     RiskStatus,
 )
 
+from app.schemas.paper_trading import (
+    PaperAccountCreate,
+    PaperAccountResponse,
+    PaperTradeResponse,
+    PaperTradeListResponse,
+    PaperMetrics,
+    PaperStatus,
+    PaperTickResult,
+)
+
 __all__ = [
     "CandleBase",
     "CandleCreate",
@@ -152,4 +162,11 @@ __all__ = [
     "RiskConfigResponse",
     "RiskEvaluation",
     "RiskStatus",
+    "PaperAccountCreate",
+    "PaperAccountResponse",
+    "PaperTradeResponse",
+    "PaperTradeListResponse",
+    "PaperMetrics",
+    "PaperStatus",
+    "PaperTickResult",
 ]
