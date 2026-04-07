@@ -18,6 +18,8 @@ interface CandlestickChartProps {
   symbol: string;
   timeframe: string;
   loading: boolean;
+  /** Prix live (WebSocket) pour mettre à jour le dernier chandelier en temps réel */
+  livePrice?: number | null;
 }
 
 // ---------- Helpers ----------
@@ -91,6 +93,7 @@ export default function CandlestickChart({
   symbol,
   timeframe,
   loading,
+  livePrice,
 }: CandlestickChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -99,6 +102,12 @@ export default function CandlestickChart({
   const [error, setError] = useState<string | null>(null);
 
   const chartData = useMemo(() => buildChartData(candles), [candles]);
+
+  // Ref pour stocker le dernier candle d'origine (avant update live)
+  const lastCandleBaseRef = useRef<ChartCandle | null>(null);
+
+  // Prix affiché = livePrice si disponible, sinon close du dernier candle
+  const [displayPrice, setDisplayPrice] = useState<number | null>(null);
 
   useEffect(() => {
     setError(null);
@@ -163,6 +172,12 @@ export default function CandlestickChart({
 
       series.setData(chartData as CandlestickData<Time>[]);
 
+      // Stocker le dernier candle d'origine pour les updates live
+      if (chartData.length > 0) {
+        lastCandleBaseRef.current = { ...chartData[chartData.length - 1] };
+        setDisplayPrice(chartData[chartData.length - 1].close);
+      }
+
       // Volume histogram overlay
       const hasVolume = chartData.some(c => c.volume != null && c.volume > 0);
       if (hasVolume) {
@@ -205,6 +220,33 @@ export default function CandlestickChart({
       setError(msg);
     }
   }, [chartData, loading, timeframe]);
+
+  // ---------- Live price update ----------
+  // Met à jour le dernier chandelier du graphique en temps réel
+  useEffect(() => {
+    if (
+      livePrice == null ||
+      !seriesRef.current ||
+      !lastCandleBaseRef.current
+    ) return;
+
+    const base = lastCandleBaseRef.current;
+    const updatedCandle: CandlestickData<Time> = {
+      time: base.time as Time,
+      open: base.open,
+      high: Math.max(base.high, livePrice),
+      low: Math.min(base.low, livePrice),
+      close: livePrice,
+    };
+
+    try {
+      seriesRef.current.update(updatedCandle);
+    } catch {
+      // Ignorer si la série n'est plus disponible
+    }
+
+    setDisplayPrice(livePrice);
+  }, [livePrice]);
 
   // ---------- Render ----------
 
@@ -261,7 +303,8 @@ export default function CandlestickChart({
 
   const lastCandle = chartData[chartData.length - 1];
   const firstCandle = chartData[0];
-  const priceChange = lastCandle && firstCandle ? lastCandle.close - firstCandle.open : 0;
+  const effectiveClose = displayPrice ?? lastCandle?.close ?? 0;
+  const priceChange = lastCandle && firstCandle ? effectiveClose - firstCandle.open : 0;
   const isUp = priceChange >= 0;
 
   return (
@@ -341,7 +384,7 @@ export default function CandlestickChart({
                     color: isUp ? '#00E676' : '#FF1744',
                   }}
                 >
-                  ${lastCandle.close.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  ${effectiveClose.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </Typography>
               )}
             </Box>

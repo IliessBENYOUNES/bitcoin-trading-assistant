@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 7 avril 2026
-> **Version :** v1.4.1
+> **Version :** v1.4.2
 > **Branche :** `master`
-> **Dernier commit :** feat(decision+paper): enable short positions — lower SELL threshold, add confluence-based SELL, fix short tracking
+> **Dernier commit :** feat(price): unified PriceService (Binance→CoinGecko→DB) + live candlestick update
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.4.1** |
+| Version courante | **v1.4.2** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **851 tests**, tous passing ✅ |
+| Tests backend | **866 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -57,12 +57,14 @@ bitcoin-trading-assistant/
 │   │   │   └── ...
 │   │   ├── services/
 │   │   │   ├── paper_trading_service.py # ← NOUVEAU v1.4 — Tick engine, SL/TP check, métriques, buy & hold
+│   │   │   ├── price_service.py    # ← NOUVEAU v1.4.2 — Prix unifié Binance→CoinGecko→DB
 │   │   │   └── ...
 │   │   ├── tasks/
 │   │   │   └── scheduler.py    # APScheduler quad-jobs (4h + 30m + news + paper)
 │   │   └── utils/
 │   └── tests/
 │       ├── test_paper_trading.py   # ← NOUVEAU v1.4 — 64 tests
+│       ├── test_price_service.py  # ← NOUVEAU v1.4.2 — 13 tests
 │       └── ...
 │
 ├── frontend/
@@ -107,7 +109,7 @@ bitcoin-trading-assistant/
 | **POST** | **`/backtest/verify`** | **Vérification ponctuelle à une date (time-travel)** | **✅ NOUVEAU v1.1.1** |
 | **POST** | **`/backtest/walk-forward`** | **Analyse walk-forward complète (précision globale) + mode comparaison** | **✅ v1.1.1 + MAJ v1.2.2** |
 | **GET** | **`/backtest/history/integrity`** | **Vérification intégrité données (complétude, gaps, grade qualité)** | **✅ NOUVEAU v1.2.2** |
-| GET | `/market/price` | Prix courant | ✅ |
+| GET | `/market/price` | **Prix courant unifié (Binance REST → CoinGecko → DB) + stats 24h** | **✅ MAJ v1.4.2** |
 | GET | `/market/info` | Info marché | ✅ |
 | GET | `/alerts` | Lister les alertes | ✅ |
 | POST | `/alerts` | Créer une alerte | ✅ |
@@ -158,6 +160,7 @@ bitcoin-trading-assistant/
 | **Backtest Service** | **Replay historique des décisions + simulation de trades + métriques** | **✅ v1.1** |
 | **Decision Service** | Moteur de décision combinant signaux techniques + sentiment → scénarios + recommandation | ✅ |
 | **Binance Service** | Client HTTP async Binance, **14 intervalles natifs** | ✅ |
+| **PriceService** | **Service de prix unifié : Binance REST → CoinGecko → DB fallback + ticker 24h** | **✅ NOUVEAU v1.4.2** |
 | **DataSource Router** | Routeur intelligent Binance / CoinGecko | ✅ |
 | **CoinGecko Service** | Client HTTP async (fallback) | ✅ |
 | **Indicator Service** | RSI(14), MACD(12,26,9), SMA(20,50,200), Bollinger(20,2) | ✅ |
@@ -298,7 +301,7 @@ bitcoin-trading-assistant/
 | **DecisionPanel** | Scénarios visuels + recommandation + règles collapsibles | ✅ |
 | **QuickMetricsBar** | **Barre KPIs rapides (Décision, Score, Tendance, Signaux, Sentiment)** | **✅ NOUVEAU** |
 | **Dashboard** | Page principale avec 14 TF + 15 durées + live price + décision + backtest + vérification + FAB + raccourcis clavier + footer | ✅ **MAJ** |
-| **CandlestickChart** | Graphique chandeliers (Lightweight Charts) | ✅ |
+| **CandlestickChart** | Graphique chandeliers (Lightweight Charts) + **mise à jour temps réel via livePrice** | ✅ **MAJ v1.4.2** |
 | **IndicatorPanel** | Affichage RSI, MACD, SMA, Bollinger avec couleurs | ✅ |
 | **SignalPanel** | Jauge score composite, liste signaux, consensus | ✅ |
 | **AlertPanel** | Formulaire création + liste alertes + notifications | ✅ |
@@ -337,7 +340,8 @@ bitcoin-trading-assistant/
 | **test_risk.py** | **55** | **Config CRUD, évaluation trades, ATR SL, daily loss, kill switch, endpoints, edge cases** |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
 | **test_paper_trading.py** | **64** | **Paper trading : création compte, exécution ticks, journal, métriques, réinitialisation** |
-| **TOTAL** | **841** | **Tous passing ✅** |
+| **test_price_service.py** | **13** | **PriceService : chaîne fallback Binance→CoinGecko→DB, ticker 24h, endpoint** |
+| **TOTAL** | **866** | **Tous passing ✅** |
 
 ---
 

@@ -812,6 +812,7 @@ const Dashboard: React.FC = () => {
                   symbol={symbol}
                   timeframe={timeframe}
                   loading={candles.loading}
+                  livePrice={currentPrice}
                 />
               </ChartErrorBoundary>
             </Box>

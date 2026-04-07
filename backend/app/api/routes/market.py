@@ -42,6 +42,7 @@ from app.models import Candle
 from app.schemas import CandleResponse, CandleListResponse
 from app.services.coingecko_service import CoinGeckoService
 from app.services.data_source_router import DataSourceRouter
+from app.services.price_service import PriceService
 from app.services.resample_service import resample_30m_to_1h, resample_30m_to_4h, resample_4h_to_1d
 from app.utils.time_buckets import align_to_bucket as utils_align_to_bucket
 import httpx
@@ -52,8 +53,12 @@ router = APIRouter(
     tags=["Market Data"]
 )
 
-# Instance du service CoinGecko (réutilisée)
+# Instance du service CoinGecko (réutilisée pour OHLC fallback uniquement)
 coingecko_service = CoinGeckoService()
+
+# Service de prix unifié (Binance prioritaire, CoinGecko fallback)
+# Cohérent avec le WebSocket frontend et les données candles
+price_service = PriceService()
 
 @router.get(
     "/indicators",
@@ -640,24 +645,42 @@ async def fetch_candles(
 @router.get(
     "/price",
     response_model=dict,
-    summary="Prix actuel"
+    summary="Prix actuel (Binance temps réel)"
 )
 async def get_current_price(
-        symbol: str = Query(default="BTC/USD", description="Paire de trading")
+        symbol: str = Query(default="BTC/USD", description="Paire de trading"),
+        db: Session = Depends(get_db),
 ) -> dict:
-    price = await coingecko_service.get_current_price(symbol)
+    """
+    Prix actuel via Binance REST API (même source que le WebSocket frontend).
+    Fallback CoinGecko puis DB si Binance indisponible.
+    """
+    price = await price_service.get_price(symbol=symbol, db=db)
 
     if price is None:
         raise HTTPException(
             status_code=502,
-            detail="Impossible de récupérer le prix depuis CoinGecko"
+            detail="Impossible de récupérer le prix (Binance + CoinGecko indisponibles)"
         )
 
-    return {
+    # Essayer d'obtenir les stats 24h de Binance
+    ticker = await price_service.get_ticker_24h(symbol=symbol)
+
+    result = {
         "symbol": symbol,
         "price": price,
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "source": "binance",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+    # Ajouter les stats 24h si disponibles
+    if ticker:
+        result["change_24h_pct"] = ticker["change_24h_pct"]
+        result["high_24h"] = ticker["high_24h"]
+        result["low_24h"] = ticker["low_24h"]
+        result["volume_24h"] = ticker["volume_24h"]
+
+    return result
 
 
 @router.get(
