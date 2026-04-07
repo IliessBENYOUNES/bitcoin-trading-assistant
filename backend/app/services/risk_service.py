@@ -128,6 +128,24 @@ class RiskService:
             self.db.commit()
             logger.info(f"Reset perte journalière (nouveau jour: {today})")
 
+    def reset_daily_loss(self) -> RiskConfig:
+        """
+        Remet le compteur de perte journalière à zéro.
+        Désactive aussi le kill switch s'il avait été déclenché par la limite.
+        """
+        config = self.get_config()
+        config.daily_loss_current = 0.0
+        config.daily_loss_reset_date = date.today()
+        # Désactiver le kill switch si déclenché par la perte journalière
+        if config.kill_switch_active and config.kill_switch_reason and "Perte journalière" in config.kill_switch_reason:
+            config.kill_switch_active = False
+            config.kill_switch_reason = None
+        config.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(config)
+        logger.info("🔄 Compteur de perte journalière remis à zéro")
+        return config
+
     def record_loss(self, loss_usd: float) -> bool:
         """
         Enregistre une perte et vérifie si la limite journalière est atteinte.

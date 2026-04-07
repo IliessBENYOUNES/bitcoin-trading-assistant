@@ -90,6 +90,8 @@ class PaperTrade(Base):
 
     # Pour le trailing stop : plus haut prix atteint depuis l'entrée (long)
     highest_price_since_entry: Mapped[float] = mapped_column(Float, nullable=True)
+    # Pour le trailing stop : plus bas prix atteint depuis l'entrée (short)
+    lowest_price_since_entry: Mapped[float] = mapped_column(Float, nullable=True)
 
     # --- Sizing ---
     position_size_usd: Mapped[float] = mapped_column(Float, nullable=False)

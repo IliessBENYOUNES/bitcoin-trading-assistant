@@ -25,6 +25,24 @@ from app.schemas.paper_trading import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _disable_live_binance_price(monkeypatch):
+    """
+    Désactive l'appel HTTP live Binance dans _get_current_price
+    pour que les tests utilisent toujours le prix des candles en DB.
+    Cela évite que le prix réel (~68K) override les données de test.
+    """
+    import httpx
+    original_get = httpx.get
+
+    def _mock_binance_get(url, **kwargs):
+        if "binance.com" in str(url):
+            raise ConnectionError("Binance mocked in tests")
+        return original_get(url, **kwargs)
+
+    monkeypatch.setattr("httpx.get", _mock_binance_get)
+
+
 # ============================================================
 # Helper : insérer des candles BTC pour simuler un prix
 # ============================================================
@@ -63,19 +81,24 @@ def _create_active_account(db, capital=10000.0, btc_price=85000.0):
     return account
 
 
-def _create_open_trade(db, account_id, entry_price=85000.0, sl=80750.0, tp=93500.0, size=2500.0):
-    """Crée un trade paper ouvert."""
+def _create_open_trade(db, account_id, entry_price=85000.0, sl=80750.0, tp=93500.0, size=2500.0, direction="long"):
+    """Crée un trade paper ouvert (long ou short)."""
+    # Pour un short, les SL/TP sont inversés par défaut
+    if direction == "short" and sl == 80750.0 and tp == 93500.0:
+        sl = 89250.0   # SL au-dessus pour un short
+        tp = 80750.0   # TP en-dessous pour un short
     trade = PaperTrade(
         account_id=account_id,
         status="open",
-        direction="long",
+        direction=direction,
         entry_price=entry_price,
         stop_loss_price=sl,
         take_profit_price=tp,
-        highest_price_since_entry=entry_price,
+        highest_price_since_entry=entry_price if direction == "long" else None,
+        lowest_price_since_entry=entry_price if direction == "short" else None,
         position_size_usd=size,
-        entry_reason="Test signal acheter",
-        decision_score=35.0,
+        entry_reason=f"Test signal {'acheter' if direction == 'long' else 'vendre'}",
+        decision_score=35.0 if direction == "long" else -35.0,
         entry_ts=datetime.now(timezone.utc) - timedelta(hours=2),
     )
     db.add(trade)
@@ -569,7 +592,7 @@ class TestPaperTradingTick:
         assert result.action_taken == "hold"
 
     def test_tick_opens_position_on_buy_signal(self, db_session):
-        """Tick avec signal 'acheter' ouvre une position."""
+        """Tick avec signal 'acheter' ouvre une position long."""
         _insert_btc_candle(db_session, price=85000.0)
         _create_active_account(db_session)
         service = PaperTradingService(db_session)
@@ -594,6 +617,34 @@ class TestPaperTradingTick:
         assert result.action_taken == "opened_long"
         assert result.position_opened is not None
         assert result.decision_score == 45
+
+    def test_tick_opens_short_position_on_sell_signal(self, db_session):
+        """Tick avec signal 'vendre' ouvre une position short."""
+        _insert_btc_candle(db_session, price=85000.0)
+        _create_active_account(db_session)
+        service = PaperTradingService(db_session)
+
+        mock_decision = {
+            "recommendation": {"action": "vendre", "confidence": "medium"},
+            "combined_score": -30,
+            "summary": "Signal baissier",
+        }
+        mock_evaluation = MagicMock()
+        mock_evaluation.allowed = True
+        mock_evaluation.stop_loss_price = 89250.0  # SL au-dessus pour un short
+        mock_evaluation.take_profit_price = 76500.0  # TP en-dessous
+        mock_evaluation.max_position_size_usd = 2500.0
+        mock_evaluation.reasons = []
+
+        with patch.object(service, "_get_decision", return_value=mock_decision):
+            with patch("app.services.paper_trading_service.RiskService") as MockRisk:
+                MockRisk.return_value.evaluate_trade.return_value = mock_evaluation
+                result = service.tick()
+
+        assert result.action_taken == "opened_short"
+        assert result.position_opened is not None
+        assert result.position_opened.direction == "short"
+        assert result.decision_score == -30
 
     def test_tick_blocked_by_risk(self, db_session):
         """Tick bloqué par le risk engine."""
@@ -642,15 +693,16 @@ class TestPaperTradingTick:
 
     def test_tick_holds_open_position(self, db_session):
         """Tick conserve la position si ni SL ni TP touché et pas de signal contraire."""
-        _insert_btc_candle(db_session, price=87000.0)  # Entre SL et TP
+        _insert_btc_candle(db_session, price=86000.0)  # Entre SL et TP, PnL < 2%
         account = _create_active_account(db_session)
         _create_open_trade(db_session, account.id, entry_price=85000.0, sl=80000.0, tp=93500.0)
         service = PaperTradingService(db_session)
 
-        # Mock le DecisionService pour ne pas avoir de signal contraire
+        # Mock le DecisionService : signal toujours haussier avec score positif
+        # (score > 0 nécessaire pour que la position ne soit pas fermée par "signal affaibli")
         mock_decision = {
-            "recommendation": {"action": "attendre", "confidence": "medium"},
-            "combined_score": 10,
+            "recommendation": {"action": "acheter", "confidence": "medium"},
+            "combined_score": 35,
         }
         with patch.object(service, "_get_decision", return_value=mock_decision):
             result = service.tick()
@@ -721,6 +773,60 @@ class TestPaperTradingTick:
 
         db_session.refresh(account)
         assert account.btc_price_at_start == 85000.0
+
+    def test_tick_tracks_lowest_price_for_short(self, db_session):
+        """Tick met à jour lowest_price_since_entry pour une position short."""
+        _insert_btc_candle(db_session, price=84500.0)  # Légèrement sous l'entrée (PnL < 2%)
+        account = _create_active_account(db_session)
+        trade = _create_open_trade(
+            db_session, account.id, entry_price=85000.0,
+            sl=89000.0, tp=80000.0, direction="short"
+        )
+        service = PaperTradingService(db_session)
+
+        # Mock : signal toujours baissier (score négatif pour conserver le short)
+        mock_decision = {
+            "recommendation": {"action": "vendre", "confidence": "medium"},
+            "combined_score": -30,
+        }
+        with patch.object(service, "_get_decision", return_value=mock_decision):
+            result = service.tick()
+
+        assert result.action_taken == "hold"
+        db_session.refresh(trade)
+        assert trade.lowest_price_since_entry == 84500.0
+
+    def test_tick_closes_short_on_buy_signal(self, db_session):
+        """Tick ferme un short quand signal contraire 'acheter'."""
+        _insert_btc_candle(db_session, price=84000.0)
+        account = _create_active_account(db_session)
+        _create_open_trade(
+            db_session, account.id, entry_price=85000.0,
+            sl=89000.0, tp=80000.0, direction="short"
+        )
+        service = PaperTradingService(db_session)
+
+        mock_decision = {
+            "recommendation": {"action": "acheter", "confidence": "high"},
+            "combined_score": 40,
+        }
+        with patch.object(service, "_get_decision", return_value=mock_decision):
+            result = service.tick()
+
+        assert result.action_taken == "closed_signal"
+
+    def test_close_short_position_profit(self, db_session):
+        """Fermer un short en profit (prix a baissé)."""
+        account = _create_active_account(db_session, capital=10000.0)
+        trade = _create_open_trade(
+            db_session, account.id, entry_price=85000.0,
+            sl=89000.0, tp=80000.0, size=2500.0, direction="short"
+        )
+        service = PaperTradingService(db_session)
+
+        closed = service._close_position(trade, exit_price=80000.0, reason="TP", status="closed_tp")
+        assert closed.pnl > 0  # Profit car prix a baissé
+        assert closed.pnl_pct > 0
 
 
 # ============================================================

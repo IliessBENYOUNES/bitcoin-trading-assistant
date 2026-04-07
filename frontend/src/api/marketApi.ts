@@ -585,6 +585,22 @@ export async function recordLoss(
   return response.json() as Promise<RecordLossResponse>;
 }
 
+export async function resetDailyLoss(
+  options: FetchOptions = {}
+): Promise<{ daily_loss_current: number; daily_limit_usd: number; kill_switch_active: boolean; message: string }> {
+  const url = `${BASE_URL}/risk/reset-daily-loss`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json();
+}
+
 // -----------------------------------------------------------------------------
 // Paper Trading
 // -----------------------------------------------------------------------------

@@ -28,6 +28,7 @@ import {
   Edit as EditIcon,
   Save as SaveIcon,
   Cancel as CancelIcon,
+  RestartAlt as ResetIcon,
 } from '@mui/icons-material';
 import { useRisk } from '../hooks/useRisk';
 import type { RiskConfigCreate, StopLossType } from '../types/api';
@@ -48,7 +49,7 @@ const RISK_LABELS: Record<string, string> = {
 };
 
 export default function RiskPanel() {
-  const { config, status, loading, error, refresh, updateConfig, toggleKillSwitch } = useRisk();
+  const { config, status, loading, error, refresh, updateConfig, toggleKillSwitch, resetDailyLoss } = useRisk();
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -208,13 +209,30 @@ export default function RiskPanel() {
 
       {/* Daily Loss Progress */}
       <Box sx={{ mb: 1.5 }}>
-        <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
           <Typography variant="caption" sx={{ opacity: 0.7 }}>
             Perte journalière
           </Typography>
-          <Typography variant="caption" sx={{ fontWeight: 600 }}>
-            {status.daily_loss_current.toFixed(2)} / {status.daily_loss_limit_usd.toFixed(2)} USD
-          </Typography>
+          <Stack direction="row" alignItems="center" spacing={0.5}>
+            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+              {status.daily_loss_current.toFixed(2)} / {status.daily_loss_limit_usd.toFixed(2)} USD
+            </Typography>
+            {status.daily_loss_current > 0 && (
+              <Tooltip title="Remettre le compteur de perte à zéro">
+                <IconButton
+                  size="small"
+                  onClick={resetDailyLoss}
+                  sx={{
+                    p: 0.3,
+                    color: dailyLossPct > 80 ? '#f44336' : '#ff9800',
+                    '&:hover': { color: '#4caf50', bgcolor: 'rgba(76,175,80,0.1)' },
+                  }}
+                >
+                  <ResetIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Stack>
         </Stack>
         <LinearProgress
           variant="determinate"

@@ -244,6 +244,28 @@ def deactivate_kill_switch(
 # ============================================================
 
 @router.post(
+    "/reset-daily-loss",
+    summary="Réinitialiser le compteur de perte journalière",
+)
+def reset_daily_loss(
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Remet le compteur de perte journalière à zéro.
+    Désactive le kill switch s'il a été déclenché par la limite de perte.
+    """
+    service = RiskService(db)
+    config = service.reset_daily_loss()
+    daily_limit = config.total_portfolio_value * config.max_daily_loss_pct / 100
+    return {
+        "daily_loss_current": 0.0,
+        "daily_limit_usd": round(daily_limit, 2),
+        "kill_switch_active": config.kill_switch_active,
+        "message": "Compteur de perte journalière remis à zéro",
+    }
+
+
+@router.post(
     "/record-loss",
     summary="Enregistrer une perte",
 )

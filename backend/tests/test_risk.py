@@ -537,6 +537,37 @@ class TestRiskEndpoints:
         assert data["allowed"] is False
         assert data["adjusted_action"] == "attendre"
 
+    def test_reset_daily_loss_endpoint(self, client):
+        """POST /risk/reset-daily-loss remet le compteur à zéro."""
+        # D'abord enregistrer une perte
+        client.post("/risk/record-loss?amount=200")
+        # Vérifier que la perte est enregistrée
+        resp = client.get("/risk/config")
+        assert resp.json()["daily_loss_current"] == 200.0
+        # Reset
+        resp = client.post("/risk/reset-daily-loss")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["daily_loss_current"] == 0.0
+        assert "message" in data
+        # Vérifier via config
+        resp = client.get("/risk/config")
+        assert resp.json()["daily_loss_current"] == 0.0
+
+    def test_reset_daily_loss_deactivates_kill_switch(self, client):
+        """POST /risk/reset-daily-loss désactive le kill switch si déclenché par la perte."""
+        # Enregistrer une grosse perte pour déclencher le kill switch
+        client.post("/risk/record-loss?amount=500")
+        resp = client.get("/risk/config")
+        assert resp.json()["kill_switch_active"] is True
+        # Reset daily loss
+        resp = client.post("/risk/reset-daily-loss")
+        assert resp.status_code == 200
+        assert resp.json()["kill_switch_active"] is False
+        # Vérifier que le trading est de nouveau autorisé
+        resp = client.post("/risk/evaluate?action=acheter&price=85000")
+        assert resp.json()["allowed"] is True
+
 
 # ============================================================
 # 8. EDGE CASES

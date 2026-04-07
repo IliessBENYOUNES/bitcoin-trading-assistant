@@ -38,6 +38,7 @@ class PaperTradeResponse(BaseModel):
     stop_loss_price: float
     take_profit_price: float
     highest_price_since_entry: Optional[float] = None
+    lowest_price_since_entry: Optional[float] = None
     position_size_usd: float
     pnl: Optional[float] = None
     pnl_pct: Optional[float] = None

@@ -1,5 +1,5 @@
 // =============================================================================
-// Dashboard.tsx — Premium dark trading dashboard with animations
+// Dashboard.tsx — Premium dark trading dashboard with tabbed navigation
 // =============================================================================
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -23,9 +23,11 @@ import {
   Tooltip,
   Drawer,
   Badge,
-  Fab,
   Snackbar,
   Divider,
+  Tab,
+  Tabs,
+  alpha,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -35,8 +37,12 @@ import {
   NotificationsNone as NotificationsNoneIcon,
   NotificationsActive as NotificationsActiveIcon,
   Close as CloseIcon,
-  KeyboardArrowUp as ScrollTopIcon,
   Keyboard as KeyboardIcon,
+  Dashboard as DashboardIcon,
+  ShowChart as AnalyseIcon,
+  AccountBalance as TradingIcon,
+  Science as BacktestIcon,
+  Newspaper as NewsIcon,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -55,7 +61,6 @@ import PaperTradingPanel from '../components/PaperTradingPanel';
 import CandlestickChart from '../components/CandlestickChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
 import { PriceTicker } from '../components/PriceTicker';
-import { SectionHeader } from '../components/SectionHeader';
 
 // Hooks
 import { useIndicators } from '../hooks/useIndicators';
@@ -73,7 +78,6 @@ import { useBacktest } from '../hooks/useBacktest';
 // -----------------------------------------------------------------------------
 
 type TimeframeOption = '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '6h' | '8h' | '12h' | '1d' | '3d' | '1w';
-// Fractions de jour : 0.0625 = 1h30, 0.125 = 3h, 0.25 = 6h, 0.5 = 12h
 type DaysOption = 0.0625 | 0.125 | 0.25 | 0.5 | 1 | 2 | 3 | 5 | 7 | 14 | 30 | 60 | 90 | 180 | 365;
 
 interface FetchResult {
@@ -94,11 +98,6 @@ function isTimeframeSupported(tf: TimeframeOption): boolean {
   return SUPPORTED_TIMEFRAMES.includes(tf);
 }
 
-
-// Toutes les combinaisons timeframe × jours sont maintenant possibles
-// grâce à Binance comme source de données (pas de contrainte de granularité)
-
-/** Formate un nombre de jours en label lisible (ex: 0.25 → "6h", 7 → "7j") */
 function formatDuration(days: number): string {
   if (days < 1) {
     const hours = days * 24;
@@ -115,26 +114,61 @@ function formatDuration(days: number): string {
 const ALERT_DRAWER_WIDTH = 420;
 
 // -----------------------------------------------------------------------------
+// Tab definitions
+// -----------------------------------------------------------------------------
+
+interface TabDef {
+  label: string;
+  icon: React.ReactElement;
+  shortcut: string;
+  color: string;
+}
+
+const TAB_DEFS: TabDef[] = [
+  { label: 'Dashboard',  icon: <DashboardIcon />, shortcut: '1', color: '#F7931A' },
+  { label: 'Analyse',    icon: <AnalyseIcon />,   shortcut: '2', color: '#448AFF' },
+  { label: 'Trading',    icon: <TradingIcon />,    shortcut: '3', color: '#00E676' },
+  { label: 'Backtest',   icon: <BacktestIcon />,   shortcut: '4', color: '#B388FF' },
+  { label: 'News',       icon: <NewsIcon />,       shortcut: '5', color: '#FFD600' },
+];
+
+// TabPanel — Garde le contenu monté mais caché (pour préserver l'état des hooks)
+const TabPanel: React.FC<{
+  value: number;
+  index: number;
+  children: React.ReactNode;
+}> = ({ value, index, children }) => (
+  <Box
+    role="tabpanel"
+    id={`tab-panel-${index}`}
+    aria-labelledby={`tab-${index}`}
+    sx={{
+      display: value === index ? 'block' : 'none',
+    }}
+  >
+    {children}
+  </Box>
+);
+
+// -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
 
 const Dashboard: React.FC = () => {
+  const [activeTab, setActiveTab] = useState(0);
   const [timeframe, setTimeframe] = useState<TimeframeOption>('4h');
   const [days, setDays] = useState<DaysOption>(7);
   const [fetching, setFetching] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [fetchResult, setFetchResult] = useState<FetchResult | null>(null);
   const [alertDrawerOpen, setAlertDrawerOpen] = useState(false);
-  const [showScrollTop, setShowScrollTop] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState<string | null>(null);
 
   const symbol = 'BTC/USD';
-
-  // Toutes les combinaisons sont directement supportées par Binance
   const effectiveDays = days;
 
   // ---------------------------------------------------------------------------
-  // Hooks
+  // Hooks — Toujours initialisés (indépendamment de l'onglet actif)
   // ---------------------------------------------------------------------------
   const indicators = useIndicators({ timeframe, historyDays: effectiveDays });
   const gaps = useMarketGaps({ timeframe, days: effectiveDays });
@@ -145,13 +179,9 @@ const Dashboard: React.FC = () => {
   const news = useNews({ limit: 20, pollInterval: 300000 });
   const backtest = useBacktest();
 
-  // Prix BTC temps réel via WebSocket Binance (~1 update/seconde)
   const livePrice = useLivePrice();
-
-  // Utilise le prix live si disponible, sinon fallback sur indicators
   const currentPrice = livePrice.price ?? indicators.data?.latest?.close ?? null;
 
-  // Compteur de notifications pour le badge
   const alertNotificationCount = alertsHook.notifications.length;
   const alertActiveCount = alertsHook.alerts.filter(a => a.status === 'active').length;
 
@@ -170,10 +200,10 @@ const Dashboard: React.FC = () => {
     setFetchResult(null);
   };
 
-  // IMPORTANT: n'utiliser que les fonctions .refresh (stables via useCallback)
-  // et non les objets hook entiers, sinon handleRefreshAll est recréé à chaque
-  // render (car les objets changent de référence à chaque render, notamment
-  // à cause du WebSocket prix live qui update ~1x/sec).
+  const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
+    setActiveTab(newValue);
+  };
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleRefreshAll = useCallback(() => {
     indicators.refresh();
@@ -186,25 +216,23 @@ const Dashboard: React.FC = () => {
     setSnackbarMsg('✓ Données rafraîchies');
   }, [indicators.refresh, gaps.refresh, candles.refresh, signals.refresh, decision.refresh, alertsHook.refresh, news.refresh]);
 
-  // Scroll-to-top visibility
-  useEffect(() => {
-    const handleScroll = () => {
-      setShowScrollTop(window.scrollY > 400);
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  // Keyboard shortcuts
-  // Utiliser un ref pour handleFetchCandles pour éviter de le mettre en deps
-  // (déclaré ici, sera assigné après la définition de handleFetchCandles ci-dessous)
+  // Keyboard shortcuts — ref pour éviter deps circulaires
   const handleFetchCandlesRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore events from input/select/textarea
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+
+      // Raccourcis numériques pour les onglets
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        const tabIndex = parseInt(e.key) - 1;
+        if (tabIndex >= 0 && tabIndex < TAB_DEFS.length) {
+          e.preventDefault();
+          setActiveTab(tabIndex);
+          return;
+        }
+      }
 
       switch (e.key.toLowerCase()) {
         case 'r':
@@ -230,10 +258,6 @@ const Dashboard: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleRefreshAll]);
 
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   const handleFetchCandles = async () => {
     setFetchError(null);
     setFetchResult(null);
@@ -248,8 +272,6 @@ const Dashboard: React.FC = () => {
       const baseUrl =
         (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? 'http://localhost:8000';
 
-      // Appel direct à /market/candles/fetch avec le timeframe et les jours sélectionnés
-      // Cela fonctionne pour TOUS les timeframes (1m, 3m, 5m, ... 1w)
       const fetchUrl = `${baseUrl}/market/candles/fetch?timeframe=${encodeURIComponent(timeframe)}&days=${effectiveDays}`;
       const res = await fetch(fetchUrl, { method: 'POST' });
 
@@ -260,7 +282,6 @@ const Dashboard: React.FC = () => {
 
       const result = await res.json();
 
-      // Adapter la réponse au format FetchResult attendu
       setFetchResult({
         status: 'success',
         timeframe: result.timeframe ?? timeframe,
@@ -287,7 +308,6 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  // Mise à jour du ref pour le raccourci clavier (après définition)
   handleFetchCandlesRef.current = handleFetchCandles;
 
   const timeframeNotSupported = !isTimeframeSupported(timeframe);
@@ -302,6 +322,8 @@ const Dashboard: React.FC = () => {
       sx={{
         minHeight: '100vh',
         background: 'linear-gradient(180deg, #0A0E17 0%, #0D1321 40%, #0A0E17 100%)',
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       {/* ================================================================= */}
@@ -314,6 +336,7 @@ const Dashboard: React.FC = () => {
           backgroundColor: 'rgba(10, 14, 23, 0.88)',
           backdropFilter: 'blur(24px)',
           borderBottom: '1px solid rgba(255,255,255,0.04)',
+          zIndex: 1201,
           '&::after': {
             content: '""',
             position: 'absolute',
@@ -380,7 +403,7 @@ const Dashboard: React.FC = () => {
                     textTransform: 'uppercase',
                   }}
                 >
-                  Trading Assistant v1.2
+                  Trading Assistant v1.4
                 </Typography>
               </Box>
             </Box>
@@ -492,7 +515,7 @@ const Dashboard: React.FC = () => {
               </IconButton>
             </Tooltip>
 
-            <Tooltip title="Actualiser toutes les données">
+            <Tooltip title="Actualiser toutes les données (R)">
               <IconButton
                 onClick={handleRefreshAll}
                 disabled={indicators.loading || gaps.loading || candles.loading || signals.loading}
@@ -508,7 +531,7 @@ const Dashboard: React.FC = () => {
             </Tooltip>
 
             {/* Bouton Alertes — ouvre le panneau latéral droit */}
-            <Tooltip title={`Alertes${alertActiveCount > 0 ? ` (${alertActiveCount} actives)` : ''}`}>
+            <Tooltip title={`Alertes${alertActiveCount > 0 ? ` (${alertActiveCount} actives)` : ''} (A)`}>
               <IconButton
                 onClick={() => setAlertDrawerOpen(true)}
                 size="small"
@@ -544,6 +567,90 @@ const Dashboard: React.FC = () => {
             </Tooltip>
           </Box>
         </Toolbar>
+
+        {/* ================================================================= */}
+        {/* TABS NAVIGATION — Sous la toolbar                                  */}
+        {/* ================================================================= */}
+        <Box
+          sx={{
+            px: { xs: 1, sm: 2 },
+            backgroundColor: 'rgba(10, 14, 23, 0.5)',
+            borderTop: '1px solid rgba(255,255,255,0.03)',
+          }}
+        >
+          <Tabs
+            value={activeTab}
+            onChange={handleTabChange}
+            variant="scrollable"
+            scrollButtons="auto"
+            allowScrollButtonsMobile
+            sx={{
+              minHeight: 44,
+              '& .MuiTabs-indicator': {
+                height: 3,
+                borderRadius: '3px 3px 0 0',
+                background: `linear-gradient(90deg, ${TAB_DEFS[activeTab].color}, ${alpha(TAB_DEFS[activeTab].color, 0.5)})`,
+                boxShadow: `0 0 12px ${alpha(TAB_DEFS[activeTab].color, 0.4)}`,
+              },
+              '& .MuiTabs-scrollButtons': {
+                color: 'text.secondary',
+                '&.Mui-disabled': { opacity: 0.2 },
+              },
+            }}
+          >
+            {TAB_DEFS.map((tab, i) => (
+              <Tab
+                key={tab.label}
+                icon={tab.icon}
+                iconPosition="start"
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <span>{tab.label}</span>
+                    <Typography
+                      component="span"
+                      sx={{
+                        display: { xs: 'none', sm: 'inline' },
+                        fontSize: '0.55rem',
+                        color: 'text.secondary',
+                        opacity: 0.5,
+                        fontFamily: 'monospace',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: '3px',
+                        px: 0.5,
+                        py: '1px',
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      {tab.shortcut}
+                    </Typography>
+                  </Box>
+                }
+                id={`tab-${i}`}
+                aria-controls={`tab-panel-${i}`}
+                sx={{
+                  minHeight: 44,
+                  textTransform: 'none',
+                  fontWeight: activeTab === i ? 700 : 500,
+                  fontSize: { xs: '0.75rem', sm: '0.82rem' },
+                  color: activeTab === i ? tab.color : 'text.secondary',
+                  px: { xs: 1.5, sm: 2 },
+                  transition: 'all 0.25s ease',
+                  '&:hover': {
+                    color: tab.color,
+                    backgroundColor: alpha(tab.color, 0.06),
+                  },
+                  '&.Mui-selected': {
+                    color: tab.color,
+                  },
+                  '& .MuiSvgIcon-root': {
+                    fontSize: '1.1rem',
+                    mr: 0.5,
+                  },
+                }}
+              />
+            ))}
+          </Tabs>
+        </Box>
       </AppBar>
 
       {/* ================================================================= */}
@@ -563,7 +670,6 @@ const Dashboard: React.FC = () => {
           },
         }}
       >
-        {/* Header du drawer */}
         <Box
           sx={{
             display: 'flex',
@@ -597,7 +703,6 @@ const Dashboard: React.FC = () => {
           </IconButton>
         </Box>
 
-        {/* Contenu : AlertPanel */}
         <Box sx={{ overflow: 'auto', flex: 1 }}>
           <AlertPanel
             alerts={alertsHook.alerts}
@@ -614,217 +719,239 @@ const Dashboard: React.FC = () => {
         </Box>
       </Drawer>
 
-      <Container maxWidth="xl" sx={{ pt: { xs: 1.5, sm: 2.5 }, pb: 4, px: { xs: 1.5, sm: 3 } }}>
-        {/* Mobile Price Ticker */}
-        <Box sx={{ display: { xs: 'block', md: 'none' }, mb: 1.5 }}>
-          <PriceTicker
-            price={currentPrice}
-            previousPrice={livePrice.previousPrice}
-            change24h={livePrice.change24h}
-            high24h={livePrice.high24h}
-            low24h={livePrice.low24h}
-            volume24h={livePrice.volume24h}
-            connected={livePrice.connected}
-            loading={!livePrice.connected && indicators.loading}
-          />
-        </Box>
+      {/* ================================================================= */}
+      {/* MAIN CONTENT — Onglets                                             */}
+      {/* ================================================================= */}
+      <Box sx={{ flex: 1 }}>
+        <Container maxWidth="xl" sx={{ pt: { xs: 1.5, sm: 2 }, pb: 4, px: { xs: 1.5, sm: 3 } }}>
+          {/* Mobile Price Ticker */}
+          <Box sx={{ display: { xs: 'block', md: 'none' }, mb: 1.5 }}>
+            <PriceTicker
+              price={currentPrice}
+              previousPrice={livePrice.previousPrice}
+              change24h={livePrice.change24h}
+              high24h={livePrice.high24h}
+              low24h={livePrice.low24h}
+              volume24h={livePrice.volume24h}
+              connected={livePrice.connected}
+              loading={!livePrice.connected && indicators.loading}
+            />
+          </Box>
 
-        {/* ================================================================= */}
-        {/* FETCH RESULT INFO */}
-        {/* ================================================================= */}
-        <AnimatePresence>
-          {fetchResult && fetchResult.status === 'success' && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Alert
-                severity="success"
-                icon={<SuccessIcon />}
-                sx={{ mb: 2 }}
-                onClose={() => setFetchResult(null)}
+          {/* Fetch Result / Errors — Toujours visible */}
+          <AnimatePresence>
+            {fetchResult && fetchResult.status === 'success' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
               >
-                <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-                  <Typography variant="body2" fontWeight={600}>
-                    Fetch réussi ({fetchResult.duration_seconds?.toFixed(2)}s)
-                  </Typography>
-                  <Chip label={`${fetchResult.timeframe}`} size="small" color="primary" variant="outlined" />
-                  <Chip label={`${fetchResult.fetched ?? 0} fetched`} size="small" variant="outlined" />
-                  <Chip label={`${fetchResult.inserted ?? 0} inserted`} size="small" color="success" variant="outlined" />
-                  <Chip label={`${fetchResult.updated ?? 0} updated`} size="small" color="info" variant="outlined" />
-                  {fetchResult.resample && (
-                    <>
-                      {fetchResult.resample['1h'] > 0 && <Chip label={`1h: ${fetchResult.resample['1h']}`} size="small" color="secondary" />}
-                      {fetchResult.resample['1d'] > 0 && <Chip label={`1d: ${fetchResult.resample['1d']}`} size="small" color="secondary" />}
-                    </>
-                  )}
-                </Stack>
-              </Alert>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                <Alert
+                  severity="success"
+                  icon={<SuccessIcon />}
+                  sx={{ mb: 2 }}
+                  onClose={() => setFetchResult(null)}
+                >
+                  <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+                    <Typography variant="body2" fontWeight={600}>
+                      Fetch réussi ({fetchResult.duration_seconds?.toFixed(2)}s)
+                    </Typography>
+                    <Chip label={`${fetchResult.timeframe}`} size="small" color="primary" variant="outlined" />
+                    <Chip label={`${fetchResult.fetched ?? 0} fetched`} size="small" variant="outlined" />
+                    <Chip label={`${fetchResult.inserted ?? 0} inserted`} size="small" color="success" variant="outlined" />
+                    <Chip label={`${fetchResult.updated ?? 0} updated`} size="small" color="info" variant="outlined" />
+                    {fetchResult.resample && (
+                      <>
+                        {fetchResult.resample['1h'] > 0 && <Chip label={`1h: ${fetchResult.resample['1h']}`} size="small" color="secondary" />}
+                        {fetchResult.resample['1d'] > 0 && <Chip label={`1d: ${fetchResult.resample['1d']}`} size="small" color="secondary" />}
+                      </>
+                    )}
+                  </Stack>
+                </Alert>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        {fetchResult && fetchResult.status === 'error' && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setFetchResult(null)}>
-            Erreur lors du fetch: {fetchResult.error}
-          </Alert>
-        )}
-
-        {/* Warnings */}
-        {timeframeNotSupported && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            Le timeframe "{timeframe}" n'est pas supporté.
-          </Alert>
-        )}
-        {fetchError && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setFetchError(null)}>
-            {fetchError}
-          </Alert>
-        )}
-
-        {/* ================================================================= */}
-        {/* STATUS ROW */}
-        {/* ================================================================= */}
-        <Box sx={{ mb: 2.5 }}>
-          <StatusRowConnected timeframe={timeframe} days={effectiveDays} />
-        </Box>
-
-        {/* ================================================================= */}
-        {/* ZONE 1 — CHART HERO                                               */}
-        {/* ================================================================= */}
-        <Box sx={{ mb: 2 }}>
-          {candles.error && <Alert severity="error" sx={{ mb: 2 }}>{candles.error}</Alert>}
-          {noData && !candles.error && (
-            <Alert severity="info" sx={{ mb: 2 }}>
-              Aucune donnée pour {timeframe} / {formatDuration(effectiveDays)}. Cliquez sur "Fetch API".
+          {fetchResult && fetchResult.status === 'error' && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setFetchResult(null)}>
+              Erreur lors du fetch: {fetchResult.error}
             </Alert>
           )}
-          <ChartErrorBoundary fallbackMessage="Le graphique a rencontré une erreur.">
-            <CandlestickChart
-              candles={candles.candles}
-              symbol={symbol}
-              timeframe={timeframe}
-              loading={candles.loading}
-            />
-          </ChartErrorBoundary>
-        </Box>
+          {timeframeNotSupported && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Le timeframe "{timeframe}" n'est pas supporté.
+            </Alert>
+          )}
+          {fetchError && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setFetchError(null)}>
+              {fetchError}
+            </Alert>
+          )}
 
-        {/* ================================================================= */}
-        {/* QUICK METRICS BAR — KPIs résumés en un coup d'œil                 */}
-        {/* ================================================================= */}
-        <Box sx={{ mb: 3 }}>
-          <QuickMetricsBar
-            decision={decision.data}
-            signals={signals.data}
-            news={news.data}
-            loading={decision.loading || signals.loading}
-          />
-        </Box>
+          {/* ============================================================= */}
+          {/* TAB 0 — DASHBOARD (Chart + Quick Metrics + Décision)           */}
+          {/* ============================================================= */}
+          <TabPanel value={activeTab} index={0}>
+            {/* Status Row */}
+            <Box sx={{ mb: 2 }}>
+              <StatusRowConnected timeframe={timeframe} days={effectiveDays} />
+            </Box>
 
-        {/* ================================================================= */}
-        {/* ZONE 2 — ANALYSE RAPIDE (grid 2×2 équilibré)                      */}
-        {/* ================================================================= */}
-        <SectionHeader icon="📊" title="Analyse du marché" subtitle="Décision • Signaux • Risque • News • Backtest" accentColor="#7C4DFF" delay={0.1} />
+            {/* Chart Hero */}
+            <Box sx={{ mb: 2 }}>
+              {candles.error && <Alert severity="error" sx={{ mb: 2 }}>{candles.error}</Alert>}
+              {noData && !candles.error && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Aucune donnée pour {timeframe} / {formatDuration(effectiveDays)}. Cliquez sur "Fetch API".
+                </Alert>
+              )}
+              <ChartErrorBoundary fallbackMessage="Le graphique a rencontré une erreur.">
+                <CandlestickChart
+                  candles={candles.candles}
+                  symbol={symbol}
+                  timeframe={timeframe}
+                  loading={candles.loading}
+                />
+              </ChartErrorBoundary>
+            </Box>
 
-        <Grid container spacing={2.5} sx={{ mb: 3 }}>
-          {/* Row 1: Décision + Signaux + Risk */}
-          <Grid item xs={12} md={4}>
-            <DecisionPanel
-              data={decision.data}
-              loading={decision.loading}
-              error={decision.error}
-              onRefresh={decision.refresh}
+            {/* Quick Metrics */}
+            <Box sx={{ mb: 3 }}>
+              <QuickMetricsBar
+                decision={decision.data}
+                signals={signals.data}
+                news={news.data}
+                loading={decision.loading || signals.loading}
+              />
+            </Box>
+
+            {/* Décision + Signaux résumé */}
+            <Grid container spacing={2.5}>
+              <Grid item xs={12} md={6}>
+                <DecisionPanel
+                  data={decision.data}
+                  loading={decision.loading}
+                  error={decision.error}
+                  onRefresh={decision.refresh}
+                  timeframe={timeframe}
+                  historyDays={effectiveDays}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <SignalPanel
+                  data={signals.data}
+                  loading={signals.loading}
+                  error={signals.error}
+                  onRefresh={signals.refresh}
+                  timeframe={timeframe}
+                  historyDays={effectiveDays}
+                />
+              </Grid>
+            </Grid>
+          </TabPanel>
+
+          {/* ============================================================= */}
+          {/* TAB 1 — ANALYSE (Signaux + Indicateurs détaillés)              */}
+          {/* ============================================================= */}
+          <TabPanel value={activeTab} index={1}>
+            <Grid container spacing={2.5} sx={{ mb: 3 }}>
+              <Grid item xs={12} md={6}>
+                <SignalPanel
+                  data={signals.data}
+                  loading={signals.loading}
+                  error={signals.error}
+                  onRefresh={signals.refresh}
+                  timeframe={timeframe}
+                  historyDays={effectiveDays}
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <DecisionPanel
+                  data={decision.data}
+                  loading={decision.loading}
+                  error={decision.error}
+                  onRefresh={decision.refresh}
+                  timeframe={timeframe}
+                  historyDays={effectiveDays}
+                />
+              </Grid>
+            </Grid>
+
+            <IndicatorPanel
+              data={indicators.data}
+              loading={indicators.loading}
+              error={indicators.error}
+              onRefresh={indicators.refresh}
               timeframe={timeframe}
               historyDays={effectiveDays}
             />
-          </Grid>
+          </TabPanel>
 
-          <Grid item xs={12} md={4}>
-            <SignalPanel
-              data={signals.data}
-              loading={signals.loading}
-              error={signals.error}
-              onRefresh={signals.refresh}
-              timeframe={timeframe}
-              historyDays={effectiveDays}
-            />
-          </Grid>
+          {/* ============================================================= */}
+          {/* TAB 2 — TRADING (Risk + Paper Trading)                         */}
+          {/* ============================================================= */}
+          <TabPanel value={activeTab} index={2}>
+            <Grid container spacing={2.5}>
+              <Grid item xs={12} lg={5}>
+                <Box sx={{
+                  bgcolor: 'rgba(255,255,255,0.03)',
+                  borderRadius: 2,
+                  p: 2,
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  height: '100%',
+                }}>
+                  <RiskPanel />
+                </Box>
+              </Grid>
+              <Grid item xs={12} lg={7}>
+                <Box sx={{
+                  bgcolor: 'rgba(255,255,255,0.03)',
+                  borderRadius: 2,
+                  p: 2,
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}>
+                  <PaperTradingPanel />
+                </Box>
+              </Grid>
+            </Grid>
+          </TabPanel>
 
-          <Grid item xs={12} md={4}>
-            <Box sx={{
-              bgcolor: 'rgba(255,255,255,0.03)',
-              borderRadius: 2,
-              p: 2,
-              border: '1px solid rgba(255,255,255,0.06)',
-              height: '100%',
-            }}>
-              <RiskPanel />
-            </Box>
-          </Grid>
+          {/* ============================================================= */}
+          {/* TAB 3 — BACKTEST (Backtest + Vérification historique)           */}
+          {/* ============================================================= */}
+          <TabPanel value={activeTab} index={3}>
+            <Grid container spacing={2.5} sx={{ mb: 3 }}>
+              <Grid item xs={12}>
+                <BacktestPanel
+                  data={backtest.data}
+                  loading={backtest.loading}
+                  error={backtest.error}
+                  onLaunch={(config) => backtest.launch({
+                    ...config,
+                    symbol: symbol,
+                  })}
+                  timeframe={timeframe}
+                />
+              </Grid>
+            </Grid>
 
-          {/* Row: Paper Trading */}
-          <Grid item xs={12}>
-            <Box sx={{
-              bgcolor: 'rgba(255,255,255,0.03)',
-              borderRadius: 2,
-              p: 2,
-              border: '1px solid rgba(255,255,255,0.06)',
-            }}>
-              <PaperTradingPanel />
-            </Box>
-          </Grid>
+            <VerificationPanel />
+          </TabPanel>
 
-          {/* Row 2: News + Backtest */}
-          <Grid item xs={12} md={6}>
+          {/* ============================================================= */}
+          {/* TAB 4 — NEWS                                                    */}
+          {/* ============================================================= */}
+          <TabPanel value={activeTab} index={4}>
             <NewsPanel
               data={news.data}
               loading={news.loading}
               error={news.error}
               onRefresh={news.refresh}
             />
-          </Grid>
-
-          <Grid item xs={12} md={6}>
-            <BacktestPanel
-              data={backtest.data}
-              loading={backtest.loading}
-              error={backtest.error}
-              onLaunch={(config) => backtest.launch({
-                ...config,
-                symbol: symbol,
-              })}
-              timeframe={timeframe}
-            />
-          </Grid>
-        </Grid>
-
-        {/* ================================================================= */}
-        {/* ZONE 2.5 — VÉRIFICATION HISTORIQUE (TIME-TRAVEL BACKTEST)          */}
-        {/* ================================================================= */}
-        <SectionHeader icon="🕰️" title="Vérification Historique" subtitle="Time-travel backtest • Walk-forward analysis" accentColor="#B388FF" delay={0.15} />
-
-        <Grid container sx={{ mb: 3 }}>
-          <Grid item xs={12}>
-            <VerificationPanel />
-          </Grid>
-        </Grid>
-
-        {/* ================================================================= */}
-        {/* ZONE 3 — DONNÉES TECHNIQUES                                       */}
-        {/* ================================================================= */}
-        <SectionHeader icon="🔬" title="Données techniques détaillées" subtitle="RSI • MACD • SMA • Bollinger • Qualité" accentColor="#448AFF" delay={0.2} />
-
-        <IndicatorPanel
-          data={indicators.data}
-          loading={indicators.loading}
-          error={indicators.error}
-          onRefresh={indicators.refresh}
-          timeframe={timeframe}
-          historyDays={effectiveDays}
-        />
-      </Container>
+          </TabPanel>
+        </Container>
+      </Box>
 
       {/* ================================================================= */}
       {/* FOOTER                                                              */}
@@ -832,8 +959,7 @@ const Dashboard: React.FC = () => {
       <Box
         component="footer"
         sx={{
-          mt: 6,
-          py: 2.5,
+          py: 2,
           px: 3,
           borderTop: '1px solid rgba(255,255,255,0.04)',
           background: 'rgba(10, 14, 23, 0.6)',
@@ -873,7 +999,7 @@ const Dashboard: React.FC = () => {
                   WebkitTextFillColor: 'transparent',
                 }}
               >
-                BTC Insight v1.2.0
+                BTC Insight v1.4.0
               </Typography>
               <Divider orientation="vertical" flexItem sx={{ mx: 0.5, borderColor: 'rgba(255,255,255,0.08)' }} />
               <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem' }}>
@@ -888,6 +1014,7 @@ const Dashboard: React.FC = () => {
                   <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
                     Raccourcis clavier
                   </Typography>
+                  <Typography variant="caption" sx={{ display: 'block' }}>1-5 — Changer d'onglet</Typography>
                   <Typography variant="caption" sx={{ display: 'block' }}>R — Rafraîchir les données</Typography>
                   <Typography variant="caption" sx={{ display: 'block' }}>F — Fetch API</Typography>
                   <Typography variant="caption" sx={{ display: 'block' }}>A — Ouvrir/Fermer les alertes</Typography>
@@ -906,7 +1033,7 @@ const Dashboard: React.FC = () => {
               >
                 <KeyboardIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
                 <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem' }}>
-                  R Rafraîchir • F Fetch • A Alertes
+                  1-5 Onglets • R Rafraîchir • F Fetch • A Alertes
                 </Typography>
               </Box>
             </Tooltip>
@@ -930,42 +1057,6 @@ const Dashboard: React.FC = () => {
         </Container>
       </Box>
 
-      {/* ================================================================= */}
-      {/* FAB: Scroll to top                                                  */}
-      {/* ================================================================= */}
-      <AnimatePresence>
-        {showScrollTop && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.5 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.5 }}
-            transition={{ duration: 0.2 }}
-            style={{
-              position: 'fixed',
-              bottom: 24,
-              right: 24,
-              zIndex: 1200,
-            }}
-          >
-            <Fab
-              size="small"
-              onClick={scrollToTop}
-              sx={{
-                background: 'linear-gradient(135deg, rgba(247, 147, 26, 0.9), rgba(230, 81, 0, 0.9))',
-                color: '#fff',
-                backdropFilter: 'blur(10px)',
-                boxShadow: '0 4px 20px rgba(247, 147, 26, 0.3)',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #FFB74D, #F7931A)',
-                  boxShadow: '0 6px 30px rgba(247, 147, 26, 0.5)',
-                },
-              }}
-            >
-              <ScrollTopIcon />
-            </Fab>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ================================================================= */}
       {/* SNACKBAR: Feedback actions                                          */}

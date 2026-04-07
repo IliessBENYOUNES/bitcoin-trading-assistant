@@ -48,6 +48,18 @@ logger = logging.getLogger(__name__)
 TECHNICAL_WEIGHT = 0.70
 SENTIMENT_WEIGHT = 0.30
 
+# Seuils de déclenchement des actions BUY/SELL
+# Asymétriques volontairement : le marché Bitcoin a un biais haussier structurel,
+# ce qui rend les signaux bearish plus rares. Un seuil SELL plus bas compense
+# ce biais et permet d'ouvrir des shorts quand les conditions le justifient.
+BUY_THRESHOLD = 25
+SELL_THRESHOLD = 20  # en valeur absolue (score < -20 → SELL)
+
+# Nombre minimum de règles bearish satisfaites pour forcer un SELL par confluence
+# Même si le score absolu ne franchit pas SELL_THRESHOLD, une forte convergence
+# des indicateurs baissiers justifie une position short.
+SELL_CONFLUENCE_MIN = 3
+
 # Pondération pour la combinaison des sources de sentiment historique
 # Fear & Greed Index : indice agrégé (marché global), disponible depuis 2018
 # News History : articles individuels (granulaire mais bruité), disponible quand chargé
@@ -518,12 +530,19 @@ class DecisionService:
         total_satisfied = bullish_satisfied + bearish_satisfied
 
         # Déterminer l'action
-        # Seuils rétablis à ±25 : le passage à ±20 (v1.3) générait trop de
-        # faux signaux. Les nouveaux indicateurs (StochRSI, EMA cross) améliorent
-        # la qualité du score, mais un seuil trop bas reste contre-productif.
-        if combined_score > 25 and dominant and dominant.direction == SignalDirection.BULLISH:
+        # Seuils asymétriques BUY=+25 / SELL=-20 : le biais haussier structurel
+        # de Bitcoin rend les signaux bearish plus rares. Un seuil SELL plus bas
+        # compense ce biais et permet d'ouvrir des shorts.
+        # Chemin additionnel par confluence : ≥3 règles bearish + score négatif → SELL
+        # même si le seuil -20 n'est pas atteint, la convergence des indicateurs
+        # est un signal fiable pour shorter.
+        if combined_score > BUY_THRESHOLD and dominant and dominant.direction == SignalDirection.BULLISH:
             action = ActionType.BUY
-        elif combined_score < -25 and dominant and dominant.direction == SignalDirection.BEARISH:
+        elif combined_score < -SELL_THRESHOLD and dominant and dominant.direction == SignalDirection.BEARISH:
+            action = ActionType.SELL
+        elif bearish_satisfied >= SELL_CONFLUENCE_MIN and combined_score < 0:
+            # Confluence bearish forte : plusieurs indicateurs convergent
+            # vers une baisse même si le score absolu est modéré
             action = ActionType.SELL
         else:
             action = ActionType.HOLD

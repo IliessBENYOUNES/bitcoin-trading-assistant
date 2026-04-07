@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] - 2026-04-07
+
+### Added
+- **Support complet des positions SHORT** dans le paper trading
+  - Seuil SELL abaissé de -25 à -20 (asymétrique BUY=+25 / SELL=-20 pour compenser le biais haussier Bitcoin)
+  - Nouveau chemin SELL par confluence : ≥3 règles bearish satisfaites + score négatif → ouvre un short
+  - Constantes exportées : `BUY_THRESHOLD`, `SELL_THRESHOLD`, `SELL_CONFLUENCE_MIN`
+  - Tracking `lowest_price_since_entry` pour les positions short (trailing stop symétrique)
+  - Initialisation correcte des prix extrêmes : `highest_price_since_entry` (long) / `lowest_price_since_entry` (short)
+  - 10 nouveaux tests : ouverture short, fermeture short par signal, tracking prix short, profit short, confluence SELL
+
+### Changed
+- **Seuils de fermeture signal-based moins agressifs** :
+  - Long : ferme si score ≤ 0 (avant : ≤ 10) — ne ferme plus une position sur un signal faiblement haussier
+  - Short : ferme si score ≥ 0 (avant : ≥ -10) — symétrique
+  - Suppression des conditions redondantes "score devenu positif/négatif"
+
+### Technical
+- `decision_service.py` : constantes `BUY_THRESHOLD=25`, `SELL_THRESHOLD=20`, `SELL_CONFLUENCE_MIN=3`
+- `paper_account.py` : ajout colonne `lowest_price_since_entry` (nullable Float)
+- `paper_trading_service.py` : tracking bidirectionnel + seuils de fermeture ajustés
+- `paper_trading.py` (schema) : ajout `lowest_price_since_entry` dans `PaperTradeResponse`
+- `api.ts` (frontend) : ajout `lowest_price_since_entry` dans `PaperTradeItem`
+- Migration PostgreSQL : `ALTER TABLE paper_trade ADD COLUMN IF NOT EXISTS lowest_price_since_entry FLOAT`
+- 851 tests backend (avant : 841), tous passing ✅
+
 ## [1.4.0] - 2026-04-07
 
 ### Added

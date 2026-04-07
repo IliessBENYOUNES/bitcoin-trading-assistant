@@ -11,6 +11,7 @@ import {
   getRiskStatus,
   activateKillSwitch,
   deactivateKillSwitch,
+  resetDailyLoss,
 } from '../api/marketApi';
 
 export interface UseRiskReturn {
@@ -21,6 +22,7 @@ export interface UseRiskReturn {
   refresh: () => void;
   updateConfig: (data: RiskConfigCreate) => Promise<void>;
   toggleKillSwitch: (activate: boolean, reason?: string) => Promise<void>;
+  resetDailyLoss: () => Promise<void>;
 }
 
 export function useRisk(): UseRiskReturn {
@@ -86,6 +88,17 @@ export function useRisk(): UseRiskReturn {
     }
   }, [refresh]);
 
+  const resetDailyLossHandler = useCallback(async () => {
+    try {
+      await resetDailyLoss();
+      refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erreur reset perte journalière';
+      setError(message);
+      throw err;
+    }
+  }, [refresh]);
+
   // Initial fetch
   useEffect(() => {
     const controller = new AbortController();
@@ -103,6 +116,6 @@ export function useRisk(): UseRiskReturn {
     refresh,
     updateConfig: updateConfigHandler,
     toggleKillSwitch,
+    resetDailyLoss: resetDailyLossHandler,
   };
 }
-

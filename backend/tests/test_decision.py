@@ -35,6 +35,9 @@ from app.services.decision_service import (
     SENTIMENT_WEIGHT,
     FNG_HIST_WEIGHT,
     NEWS_HIST_WEIGHT,
+    BUY_THRESHOLD,
+    SELL_THRESHOLD,
+    SELL_CONFLUENCE_MIN,
 )
 from app.schemas.decision import (
     Scenario,
@@ -361,7 +364,7 @@ class TestRuleEvaluators:
             assert satisfied is False
 
     def test_lowered_threshold_score_21_buys(self, db_session):
-        """Score 26 + scénario Hausse dominant → Acheter (seuil rétabli à 25)."""
+        """Score 26 + scénario Hausse dominant → Acheter (seuil BUY à 25)."""
         service = DecisionService(db_session)
         scenarios = [
             Scenario(label="Hausse", probability=0.55, direction=SignalDirection.BULLISH, description=""),
@@ -375,7 +378,7 @@ class TestRuleEvaluators:
         assert rec.action == ActionType.BUY
 
     def test_lowered_threshold_score_minus_21_sells(self, db_session):
-        """Score -26 + scénario Baisse dominant → Vendre (seuil rétabli à -25)."""
+        """Score -21 + scénario Baisse dominant → Vendre (seuil SELL abaissé à -20)."""
         service = DecisionService(db_session)
         scenarios = [
             Scenario(label="Baisse", probability=0.55, direction=SignalDirection.BEARISH, description=""),
@@ -385,8 +388,45 @@ class TestRuleEvaluators:
         rules = [
             RuleResult(rule_name="r1", condition="", satisfied=True, weight=0.7, detail="", direction=SignalDirection.BEARISH),
         ]
-        rec = service.generate_recommendation(scenarios, rules, combined_score=-26)
+        rec = service.generate_recommendation(scenarios, rules, combined_score=-21)
         assert rec.action == ActionType.SELL
+
+    def test_sell_by_confluence_bearish(self, db_session):
+        """Score faiblement négatif mais ≥3 règles bearish → Vendre par confluence."""
+        service = DecisionService(db_session)
+        scenarios = [
+            Scenario(label="Stable", probability=0.40, direction=SignalDirection.NEUTRAL, description=""),
+            Scenario(label="Baisse", probability=0.35, direction=SignalDirection.BEARISH, description=""),
+            Scenario(label="Hausse", probability=0.25, direction=SignalDirection.BULLISH, description=""),
+        ]
+        rules = [
+            RuleResult(rule_name="r1", condition="", satisfied=True, weight=0.7, detail="RSI surachat", direction=SignalDirection.BEARISH),
+            RuleResult(rule_name="r2", condition="", satisfied=True, weight=0.6, detail="MACD baissier", direction=SignalDirection.BEARISH),
+            RuleResult(rule_name="r3", condition="", satisfied=True, weight=0.5, detail="SMA baissier", direction=SignalDirection.BEARISH),
+        ]
+        rec = service.generate_recommendation(scenarios, rules, combined_score=-10)
+        assert rec.action == ActionType.SELL
+
+    def test_no_sell_by_confluence_when_score_positive(self, db_session):
+        """Score positif avec 3 règles bearish → Attendre (score > 0)."""
+        service = DecisionService(db_session)
+        scenarios = [
+            Scenario(label="Stable", probability=0.40, direction=SignalDirection.NEUTRAL, description=""),
+            Scenario(label="Baisse", probability=0.35, direction=SignalDirection.BEARISH, description=""),
+            Scenario(label="Hausse", probability=0.25, direction=SignalDirection.BULLISH, description=""),
+        ]
+        rules = [
+            RuleResult(rule_name="r1", condition="", satisfied=True, weight=0.7, detail="", direction=SignalDirection.BEARISH),
+            RuleResult(rule_name="r2", condition="", satisfied=True, weight=0.6, detail="", direction=SignalDirection.BEARISH),
+            RuleResult(rule_name="r3", condition="", satisfied=True, weight=0.5, detail="", direction=SignalDirection.BEARISH),
+        ]
+        rec = service.generate_recommendation(scenarios, rules, combined_score=5)
+        assert rec.action == ActionType.HOLD
+
+    def test_sell_threshold_constant(self):
+        """Vérifie que le seuil SELL est bien à 20 (valeur absolue)."""
+        assert SELL_THRESHOLD == 20
+        assert BUY_THRESHOLD == 25
 
     def test_default_rules_count_v13(self):
         """Vérifie que DEFAULT_RULES contient 14 règles (v1.3)."""
@@ -1311,7 +1351,7 @@ class TestNewRulesV13:
             assert satisfied is False
 
     def test_lowered_threshold_score_21_buys(self, db_session):
-        """Score 26 + scénario Hausse dominant → Acheter (seuil rétabli à 25)."""
+        """Score 26 + scénario Hausse dominant → Acheter (seuil BUY à 25)."""
         service = DecisionService(db_session)
         scenarios = [
             Scenario(label="Hausse", probability=0.55, direction=SignalDirection.BULLISH, description=""),
@@ -1325,7 +1365,7 @@ class TestNewRulesV13:
         assert rec.action == ActionType.BUY
 
     def test_lowered_threshold_score_minus_21_sells(self, db_session):
-        """Score -26 + scénario Baisse dominant → Vendre (seuil rétabli à -25)."""
+        """Score -21 + scénario Baisse dominant → Vendre (seuil SELL abaissé à -20)."""
         service = DecisionService(db_session)
         scenarios = [
             Scenario(label="Baisse", probability=0.55, direction=SignalDirection.BEARISH, description=""),
@@ -1335,8 +1375,12 @@ class TestNewRulesV13:
         rules = [
             RuleResult(rule_name="r1", condition="", satisfied=True, weight=0.7, detail="", direction=SignalDirection.BEARISH),
         ]
-        rec = service.generate_recommendation(scenarios, rules, combined_score=-26)
+        rec = service.generate_recommendation(scenarios, rules, combined_score=-21)
         assert rec.action == ActionType.SELL
+
+    def test_sell_confluence_min_constant(self):
+        """Vérifie que le minimum de confluence SELL est à 3."""
+        assert SELL_CONFLUENCE_MIN == 3
 
     def test_default_rules_count_v13(self):
         """Vérifie que DEFAULT_RULES contient 14 règles (v1.3)."""

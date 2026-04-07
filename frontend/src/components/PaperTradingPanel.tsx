@@ -6,9 +6,10 @@
  * - Position ouverte courante (prix entrée, SL, TP, PnL latent)
  * - Métriques de performance (Sharpe, drawdown, profit factor)
  * - Journal des trades (table scrollable)
- * - Boutons : Activer, Reset, Tick manuel, Fermer position
+ * - Mode AUTO : exécute des ticks automatiquement à intervalle régulier
+ * - Boutons : Activer, Reset, Tick manuel, Auto ON/OFF, Fermer position
  */
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -27,6 +28,8 @@ import {
   Tooltip,
   CircularProgress,
   TextField,
+  MenuItem,
+  LinearProgress,
 } from '@mui/material';
 import {
   PlayArrow,
@@ -36,6 +39,8 @@ import {
   TrendingUp,
   TrendingDown,
   AccountBalance,
+  AutoMode as AutoModeIcon,
+  Timer as TimerIcon,
 } from '@mui/icons-material';
 import { usePaperTrading } from '../hooks/usePaperTrading';
 import type { PaperTradeItem } from '../types';
@@ -67,6 +72,16 @@ const statusChip = (status: string) => {
   return <Chip size="small" color={cfg.color} label={cfg.label} />;
 };
 
+// Options d'intervalle auto-tick
+const AUTO_INTERVALS = [
+  { value: 10, label: '10s' },
+  { value: 30, label: '30s' },
+  { value: 60, label: '1 min' },
+  { value: 300, label: '5 min' },
+  { value: 900, label: '15 min' },
+  { value: 3600, label: '1h' },
+];
+
 export default function PaperTradingPanel() {
   const {
     status,
@@ -74,6 +89,11 @@ export default function PaperTradingPanel() {
     loading,
     error,
     lastTick,
+    autoMode,
+    autoIntervalSec,
+    autoTickCount,
+    startAuto,
+    stopAuto,
     refresh,
     activate,
     reset,
@@ -83,6 +103,33 @@ export default function PaperTradingPanel() {
 
   const [capital, setCapital] = useState('10000');
   const [tickLoading, setTickLoading] = useState(false);
+  const [selectedInterval, setSelectedInterval] = useState(60);
+
+  // Countdown timer pour le prochain tick auto
+  const [countdown, setCountdown] = useState(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Gère le countdown quand autoMode est actif
+  useEffect(() => {
+    if (autoMode) {
+      setCountdown(autoIntervalSec);
+      countdownRef.current = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) return autoIntervalSec;
+          return prev - 1;
+        });
+      }, 1000);
+      return () => {
+        if (countdownRef.current) clearInterval(countdownRef.current);
+      };
+    } else {
+      setCountdown(0);
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    }
+  }, [autoMode, autoIntervalSec]);
 
   const handleActivate = async () => {
     await activate(Number(capital) || 10000);
@@ -106,10 +153,23 @@ export default function PaperTradingPanel() {
     }
   };
 
+  const handleStartAuto = () => {
+    startAuto(selectedInterval);
+  };
+
+  const handleStopAuto = () => {
+    stopAuto();
+  };
+
   const account = status?.account;
   const openPos = status?.open_position;
   const metrics = status?.metrics;
   const isActive = account?.is_active ?? false;
+
+  // Progress pour le countdown
+  const countdownProgress = autoMode && autoIntervalSec > 0
+    ? ((autoIntervalSec - countdown) / autoIntervalSec) * 100
+    : 0;
 
   return (
     <Box>
@@ -124,6 +184,18 @@ export default function PaperTradingPanel() {
           label={isActive ? 'ACTIF' : 'INACTIF'}
           color={isActive ? 'success' : 'default'}
         />
+        {autoMode && (
+          <Chip
+            size="small"
+            icon={<AutoModeIcon sx={{ fontSize: 14 }} />}
+            label={`AUTO ${AUTO_INTERVALS.find(i => i.value === autoIntervalSec)?.label ?? autoIntervalSec + 's'}`}
+            color="primary"
+            sx={{
+              fontWeight: 700,
+              animation: 'pulse-glow 2s ease-in-out infinite',
+            }}
+          />
+        )}
         {status?.current_btc_price && (
           <Chip
             size="small"
@@ -137,8 +209,8 @@ export default function PaperTradingPanel() {
         <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
       )}
 
-      {/* Contrôles */}
-      <Stack direction="row" spacing={1} mb={2} flexWrap="wrap" useFlexGap>
+      {/* Contrôles principaux */}
+      <Stack direction="row" spacing={1} mb={1.5} flexWrap="wrap" useFlexGap>
         <TextField
           size="small"
           label="Capital ($)"
@@ -159,16 +231,18 @@ export default function PaperTradingPanel() {
           </Button>
         ) : (
           <>
-            <Tooltip title="Exécuter un tick manuellement">
-              <Button
-                variant="outlined"
-                startIcon={tickLoading ? <CircularProgress size={16} /> : <PlayArrow />}
-                onClick={handleTick}
-                disabled={tickLoading}
-              >
-                Tick
-              </Button>
-            </Tooltip>
+            {!autoMode && (
+              <Tooltip title="Exécuter un tick manuellement">
+                <Button
+                  variant="outlined"
+                  startIcon={tickLoading ? <CircularProgress size={16} /> : <PlayArrow />}
+                  onClick={handleTick}
+                  disabled={tickLoading}
+                >
+                  Tick
+                </Button>
+              </Tooltip>
+            )}
             {openPos && (
               <Button
                 variant="outlined"
@@ -200,6 +274,100 @@ export default function PaperTradingPanel() {
         </Button>
       </Stack>
 
+      {/* ── MODE AUTO ─────────────────────────────────────────────────────── */}
+      {isActive && (
+        <Box sx={{
+          mb: 2,
+          p: 1.5,
+          borderRadius: 2,
+          border: autoMode ? '1px solid #F7931A' : '1px solid rgba(255,255,255,0.08)',
+          bgcolor: autoMode ? 'rgba(247, 147, 26, 0.06)' : 'rgba(255,255,255,0.02)',
+          transition: 'all 0.3s ease',
+        }}>
+          <Stack direction="row" alignItems="center" spacing={1.5} flexWrap="wrap" useFlexGap>
+            <AutoModeIcon sx={{ color: autoMode ? '#F7931A' : 'text.secondary', fontSize: 20 }} />
+            <Typography variant="body2" fontWeight={600} sx={{ color: autoMode ? '#F7931A' : 'text.secondary' }}>
+              Mode Auto
+            </Typography>
+
+            {!autoMode ? (
+              <>
+                <TextField
+                  select
+                  size="small"
+                  value={selectedInterval}
+                  onChange={(e) => setSelectedInterval(Number(e.target.value))}
+                  sx={{ minWidth: 100 }}
+                  label="Intervalle"
+                >
+                  {AUTO_INTERVALS.map(opt => (
+                    <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                  ))}
+                </TextField>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<PlayArrow />}
+                  onClick={handleStartAuto}
+                  sx={{
+                    background: 'linear-gradient(135deg, #F7931A, #E65100)',
+                    fontWeight: 700,
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #FFB74D, #F7931A)',
+                      boxShadow: '0 0 16px rgba(247, 147, 26, 0.4)',
+                    },
+                  }}
+                >
+                  Démarrer Auto
+                </Button>
+              </>
+            ) : (
+              <>
+                {/* Countdown + stats */}
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ flex: 1 }}>
+                  <TimerIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
+                    Prochain tick dans {countdown}s
+                  </Typography>
+                  <Box sx={{ flex: 1, mx: 1 }}>
+                    <LinearProgress
+                      variant="determinate"
+                      value={countdownProgress}
+                      sx={{
+                        height: 4,
+                        borderRadius: 2,
+                        bgcolor: 'rgba(255,255,255,0.06)',
+                        '& .MuiLinearProgress-bar': {
+                          bgcolor: '#F7931A',
+                          borderRadius: 2,
+                          transition: 'transform 1s linear',
+                        },
+                      }}
+                    />
+                  </Box>
+                  <Chip
+                    size="small"
+                    label={`${autoTickCount} ticks`}
+                    variant="outlined"
+                    sx={{ fontWeight: 700, fontFamily: 'monospace' }}
+                  />
+                </Stack>
+                <Button
+                  variant="contained"
+                  color="error"
+                  size="small"
+                  startIcon={<Stop />}
+                  onClick={handleStopAuto}
+                  sx={{ fontWeight: 700 }}
+                >
+                  Arrêter
+                </Button>
+              </>
+            )}
+          </Stack>
+        </Box>
+      )}
+
       {/* Dernière action */}
       {lastTick && (
         <Alert
@@ -210,7 +378,7 @@ export default function PaperTradingPanel() {
           }
           sx={{ mb: 2 }}
         >
-          <strong>Dernier tick :</strong> {lastTick.detail}
+          <strong>{autoMode ? `Auto-tick #${autoTickCount} :` : 'Dernier tick :'}</strong> {lastTick.detail}
         </Alert>
       )}
 

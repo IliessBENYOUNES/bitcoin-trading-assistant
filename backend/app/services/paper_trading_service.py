@@ -184,28 +184,71 @@ class PaperTradingService:
                     timestamp=now.isoformat(),
                 )
 
-            # Mettre à jour le highest_price pour trailing stop
+            # Mettre à jour le highest_price pour trailing stop (long)
+            # ou lowest_price pour trailing stop (short)
             if open_pos.direction == "long":
                 if open_pos.highest_price_since_entry is None or current_price > open_pos.highest_price_since_entry:
                     open_pos.highest_price_since_entry = current_price
                     self.db.commit()
+            elif open_pos.direction == "short":
+                if open_pos.lowest_price_since_entry is None or current_price < open_pos.lowest_price_since_entry:
+                    open_pos.lowest_price_since_entry = current_price
+                    self.db.commit()
 
-            # Vérifier si le DecisionService recommande de fermer (signal contraire)
+            # Vérifier si le DecisionService recommande de fermer (signal contraire ou affaibli)
             decision_result = self._get_decision()
             if decision_result:
                 action = decision_result.get("recommendation", {}).get("action", "attendre")
                 score = decision_result.get("combined_score", 0)
+                unrealized_pnl = self._calc_unrealized_pnl(open_pos, current_price)
+                unrealized_pnl_pct = (unrealized_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
 
-                # Si on a un long et le signal dit "vendre" fortement
-                if open_pos.direction == "long" and action == "vendre" and score < -20:
+                close_signal = False
+                signal_reason = ""
+
+                if open_pos.direction == "long":
+                    # Fermer un LONG si :
+                    # 1. Signal contraire "vendre" (peu importe la force)
+                    if action == "vendre":
+                        close_signal = True
+                        signal_reason = f"Signal contraire : vendre (score={score})"
+                    # 2. Signal "attendre" avec score devenu négatif (le signal bullish s'est dissipé)
+                    elif action == "attendre" and score <= 0:
+                        close_signal = True
+                        signal_reason = f"Signal affaibli : attendre (score={score})"
+
+                elif open_pos.direction == "short":
+                    # Fermer un SHORT si :
+                    # 1. Signal contraire "acheter"
+                    if action == "acheter":
+                        close_signal = True
+                        signal_reason = f"Signal contraire : acheter (score={score})"
+                    # 2. Signal "attendre" avec score devenu positif
+                    elif action == "attendre" and score >= 0:
+                        close_signal = True
+                        signal_reason = f"Signal affaibli : attendre (score={score})"
+
+                # Profit taking : fermer si PnL latent > 2% (prendre les gains sans attendre le TP)
+                if not close_signal and unrealized_pnl_pct >= 2.0:
+                    close_signal = True
+                    signal_reason = f"Prise de profit : PnL latent {unrealized_pnl_pct:.1f}%"
+
+                # Loss cut : fermer si PnL latent < -1.5% et le signal n'est plus fort
+                if not close_signal and unrealized_pnl_pct <= -1.5:
+                    entry_direction_score = score if open_pos.direction == "long" else -score
+                    if entry_direction_score < 30:  # Le signal n'est plus assez fort pour justifier la perte
+                        close_signal = True
+                        signal_reason = f"Couper les pertes : PnL {unrealized_pnl_pct:.1f}%, signal faible (score={score})"
+
+                if close_signal:
                     closed = self._close_position(
                         open_pos, current_price,
-                        f"Signal contraire : {action} (score={score})",
+                        signal_reason,
                         "closed_signal"
                     )
                     return PaperTickResult(
                         action_taken="closed_signal",
-                        detail=f"Position fermée sur signal contraire (score={score})",
+                        detail=f"Position fermée : {signal_reason}",
                         position_closed=PaperTradeResponse.model_validate(closed),
                         current_price=current_price,
                         timestamp=now.isoformat(),
@@ -315,7 +358,8 @@ class PaperTradingService:
             entry_price=price,
             stop_loss_price=sl,
             take_profit_price=tp,
-            highest_price_since_entry=price,
+            highest_price_since_entry=price if direction == "long" else None,
+            lowest_price_since_entry=price if direction == "short" else None,
             position_size_usd=min(size_usd, account.current_capital),
             entry_reason=reason[:500],
             decision_score=score,
@@ -569,7 +613,29 @@ class PaperTradingService:
     # ================================================================
 
     def _get_current_price(self) -> Optional[float]:
-        """Récupère le dernier prix BTC depuis les candles en DB."""
+        """
+        Récupère le prix BTC le plus récent possible.
+
+        Priorité :
+        1. API Binance en temps réel (ticker/price — latence ~100ms)
+        2. Fallback : dernier close_price en DB (peut être vieux de plusieurs heures)
+        """
+        # Tentative 1 : prix live via Binance
+        try:
+            import httpx
+            resp = httpx.get(
+                "https://api.binance.com/api/v3/ticker/price",
+                params={"symbol": "BTCUSDT"},
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                price = float(resp.json()["price"])
+                if price > 0:
+                    return price
+        except Exception as e:
+            logger.debug(f"Prix live Binance indisponible: {e}")
+
+        # Tentative 2 : fallback DB
         candle = (
             self.db.query(Candle)
             .filter(Candle.symbol == "BTC/USD")
