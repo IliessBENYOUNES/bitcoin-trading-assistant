@@ -15,5 +15,6 @@ from app.api.routes.sentiment import router as sentiment_router
 from app.api.routes.risk import router as risk_router
 from app.api.routes.paper_trading import router as paper_router
 from app.api.routes.audit import router as audit_router
+from app.api.routes.learning import router as learning_router
 
-__all__ = ["health_router", "market_router", "alerts_router", "news_router", "decision_router", "backtest_router", "verification_router", "sentiment_router", "risk_router", "paper_router", "audit_router"]
+__all__ = ["health_router", "market_router", "alerts_router", "news_router", "decision_router", "backtest_router", "verification_router", "sentiment_router", "risk_router", "paper_router", "audit_router", "learning_router"]

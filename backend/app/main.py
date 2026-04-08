@@ -17,12 +17,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import engine, Base
-from app.api.routes import health_router, market_router, alerts_router, news_router, decision_router, backtest_router, verification_router, sentiment_router, risk_router, paper_router, audit_router
+from app.api.routes import health_router, market_router, alerts_router, news_router, decision_router, backtest_router, verification_router, sentiment_router, risk_router, paper_router, audit_router, learning_router
 from app.api.routes.scheduler import router as scheduler_router
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 
 # IMPORTANT : importer les modèles pour que SQLAlchemy les connaisse
 from app.models import Candle, Alert, SentimentHistory, NewsHistory, RiskConfig, PaperAccount, PaperTrade  # noqa: F401
+from app.models import PaperRun, LearningSignal, StrategyFeedback  # noqa: F401
 
 # Configuration
 settings = get_settings()
@@ -109,6 +110,7 @@ app.include_router(sentiment_router)    # /sentiment/history/load, range, covera
 app.include_router(risk_router)         # /risk/config, /risk/status, /risk/evaluate, /risk/kill-switch
 app.include_router(paper_router)        # /paper/account, /paper/status, /paper/tick, /paper/trades, /paper/metrics
 app.include_router(audit_router)        # /audit/truth, /audit/costs, /v2/readiness
+app.include_router(learning_router)     # /learning/stats, /learning/analyze, /learning/run/*
 app.include_router(scheduler_router)   # /scheduler/status
 
 

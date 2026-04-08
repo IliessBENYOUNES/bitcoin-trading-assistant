@@ -2,6 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-04-09
+
+### Added
+- **PaperRun — Campagnes de validation** : Nouveau modèle `PaperRun` pour identifier et comparer des campagnes de trading.
+  - `POST /learning/run/start` : Démarrer une campagne (snapshot config profil)
+  - `POST /learning/run/{id}/end` : Terminer une campagne
+  - `GET /learning/runs` : Lister les campagnes
+  - `GET /learning/run/{id}/metrics` : Métriques complètes brut + net (coûts TradingCostModel)
+  - `GET /learning/runs/compare` : Comparaison avant/après avec verdict automatique
+  - Métriques par run : win rate, expectancy brut/net, profit factor brut/net, drawdown, par direction, par type de sortie, délais entre trades
+
+- **Smart Cooldown — Cooldown intelligent contextuel** : Le cooldown n'est plus un entier fixe. Il s'adapte au contexte du dernier trade :
+  - Réduit (×0.5) après sortie stale / scratch / trailing flat
+  - Réduit (×0.7) si signal fort (score > 50)
+  - Allongé (×1.5) après grosse perte ou SL
+  - Borné entre `min_cooldown_minutes` et `max_cooldown_minutes`
+  - Bornes absolues de sécurité (0.5 - 30 min)
+  - Activé par défaut sur le profil scalping : `smart_cooldown_enabled=True, min=0.5, max=5.0`
+  - `backend/app/services/smart_cooldown_service.py` : nouveau service
+
+- **Cooldown Diagnostic** : Nouvelle section `cooldown` dans `GET /paper/diagnostic` :
+  - Cooldown configuré actuel
+  - Délai moyen / médian / min / max entre trades
+  - Distribution des délais (< 2min, 2-5min, 5-15min, 15-60min, > 60min)
+  - Ticks bloqués par cooldown + % du total
+  - Signaux perdus pendant le cooldown (avaient un score exploitable)
+  - Cooldown efficiency (ratio théorique vs réel)
+
+- **Learning Layer — Apprentissage explicable** : Première couche d'apprentissage basée sur les données stockées en base.
+  - **LearningSignal** : Échantillon d'apprentissage auto-enregistré à chaque fermeture de trade (features contextuelles + résultat)
+  - **StrategyFeedback** : Ajustements de paramètres suggérés avec explicabilité, versioning, safety bounds
+  - **Mode shadow** : Les suggestions ne sont PAS appliquées automatiquement (inspection + promotion manuelle)
+  - **Safety bounds** : Bornes absolues sur chaque paramètre (buy_threshold, trailing, cooldown, etc.)
+  - **Rollback** : Tout ajustement peut être annulé
+  - Endpoints :
+    - `GET /learning/stats` : Stats du dataset
+    - `GET /learning/patterns` : Patterns gagnants/perdants identifiés
+    - `POST /learning/analyze` : Analyse complète + suggestions
+    - `GET /learning/suggestions` : Suggestions shadow
+    - `POST /learning/promote/{id}` : Promouvoir une suggestion
+    - `POST /learning/rollback/{id}` : Rollback
+    - `GET /learning/versions` : Historique des versions
+    - `GET /learning/signals` : Échantillons d'apprentissage récents
+
+- **73 nouveaux tests** — `test_smart_cooldown.py` (smart cooldown, PaperRun, cooldown diagnostic, endpoints) + `test_learning.py` (record sample, dataset stats, patterns, suggestions, promote/rollback, safety bounds). Total : **1163 tests**.
+
+### Changed
+- **Profil scalping enrichi** : Ajout de `smart_cooldown_enabled=True`, `min_cooldown_minutes=0.5`, `max_cooldown_minutes=5.0`
+- **DiagnosticResponse enrichi** : Nouvelle section `cooldown: CooldownDiagnostic`
+- **_check_cooldown amélioré** : Utilise `SmartCooldownService` si `smart_cooldown_enabled` dans le profil
+- **_close_position enrichi** : Enregistre automatiquement un `LearningSignal` à chaque fermeture de trade
+
+### Technical
+- Nouveaux modèles : `PaperRun`, `LearningSignal`, `StrategyFeedback`
+- Nouveaux schémas : `paper_run.py`, `learning.py`, `CooldownDiagnostic`
+- Nouveaux services : `smart_cooldown_service.py`, `paper_run_service.py`, `learning_service.py`
+- Nouvelle route : `learning.py` (12 endpoints)
+- Modèles exportés dans `models/__init__.py`
+
 ## [1.8.1] - 2026-04-09
 
 ### Added

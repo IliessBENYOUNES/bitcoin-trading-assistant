@@ -111,6 +111,15 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # Sur BTC $71k : activation après ~$57, trail de ~$85
         trailing_stop_activation_pct=0.08,
         trailing_stop_pct=0.12,
+        # [v1.9] Smart cooldown — cooldown contextuel basé sur le dernier trade
+        # Au lieu de toujours attendre 2 min, le cooldown s'adapte :
+        # - Après trailing flat ou stale → 0.5 min (réentrée rapide)
+        # - Après SL → 3 min (prudence)
+        # - Après trade gagnant → 1.2 min
+        # Borné entre 0.5 et 5 min pour éviter le spam
+        smart_cooldown_enabled=True,
+        min_cooldown_minutes=0.5,
+        max_cooldown_minutes=5.0,
     ),
 }
 

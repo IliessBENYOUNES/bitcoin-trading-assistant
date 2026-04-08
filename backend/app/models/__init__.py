@@ -15,8 +15,11 @@ from app.models.news_history import NewsHistory
 from app.models.risk_config import RiskConfig
 from app.models.paper_account import PaperAccount, PaperTrade
 from app.models.tick_activity_log import TickActivityLog
+from app.models.paper_run import PaperRun
+from app.models.learning import LearningSignal, StrategyFeedback
 
 __all__ = [
     "Candle", "Alert", "SentimentHistory", "NewsHistory", "RiskConfig",
     "PaperAccount", "PaperTrade", "TickActivityLog",
+    "PaperRun", "LearningSignal", "StrategyFeedback",
 ]

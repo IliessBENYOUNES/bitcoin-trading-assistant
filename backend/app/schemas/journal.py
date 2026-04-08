@@ -59,6 +59,10 @@ class TradingProfileParams(BaseModel):
         default=None,
         description="% minimum de profit avant activation du trailing stop (ex: 0.03 = 0.03%)"
     )
+    # [v1.9] Smart cooldown — cooldown contextuel au lieu d'un cooldown fixe
+    smart_cooldown_enabled: bool = Field(default=False, description="Active le cooldown intelligent contextuel")
+    min_cooldown_minutes: Optional[float] = Field(default=None, description="Borne min du cooldown intelligent (minutes)")
+    max_cooldown_minutes: Optional[float] = Field(default=None, description="Borne max du cooldown intelligent (minutes)")
 
 
 class TradingProfileResponse(BaseModel):

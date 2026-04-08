@@ -69,6 +69,31 @@ class RiskBrakeAnalysis(BaseModel):
     pct_structural: float = 0.0      # position_already_open + cooldown + max_trades
 
 
+class CooldownDiagnostic(BaseModel):
+    """Diagnostic détaillé du cooldown entre trades."""
+    # Config
+    cooldown_configured_min: float = 0.0
+    smart_cooldown_enabled: bool = False
+    # Délais réels observés
+    avg_delay_between_trades_min: float = 0.0
+    median_delay_between_trades_min: float = 0.0
+    min_delay_min: float = 0.0
+    max_delay_min: float = 0.0
+    # Impact
+    ticks_blocked_by_cooldown: int = 0
+    pct_blocked_by_cooldown: float = 0.0
+    # Distribution des délais (buckets)
+    delay_under_2min: int = 0
+    delay_2_to_5min: int = 0
+    delay_5_to_15min: int = 0
+    delay_15_to_60min: int = 0
+    delay_over_60min: int = 0
+    # Signaux perdus pendant cooldown
+    signals_lost_during_cooldown: int = 0
+    # Ratio théorique vs réel
+    cooldown_efficiency: str = ""  # "Le cooldown bloque 15% des ticks, dont 30% avaient un signal exploitable"
+
+
 class DiagnosticResponse(BaseModel):
     """Réponse complète du diagnostic de fréquence."""
     # Résumé
@@ -89,6 +114,9 @@ class DiagnosticResponse(BaseModel):
 
     # Risk engine comme frein
     risk_brake: RiskBrakeAnalysis = RiskBrakeAnalysis()
+
+    # [v1.9] Diagnostic cooldown
+    cooldown: CooldownDiagnostic = CooldownDiagnostic()
 
     # Verdict synthétique
     main_bottleneck: str = "unknown"

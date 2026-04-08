@@ -673,7 +673,10 @@ class PaperTradingService:
             cooldown_min = profile_params.cooldown_minutes if profile_params else 120
             # [v1.7] En multi-slot, cooldown par slot
             cooldown_slot = slot_name if is_multi else None
-            cooldown_reason = self._check_cooldown(account.id, cooldown_min, slot=cooldown_slot)
+            cooldown_reason = self._check_cooldown(
+                account.id, cooldown_min, slot=cooldown_slot,
+                profile_params=profile_params, signal_score=abs(score),
+            )
             if cooldown_reason:
                 _log_tick(action_taken="hold", btc_price=current_price,
                           decision_score=score, decision_action=action,
@@ -964,6 +967,14 @@ class PaperTradingService:
         self.db.commit()
         self.db.refresh(trade)
 
+        # [v1.9] Enregistrer un échantillon d'apprentissage (best-effort)
+        try:
+            from app.services.learning_service import LearningService
+            learning = LearningService(self.db)
+            learning.record_sample(trade)
+        except Exception as e:
+            logger.debug(f"Learning sample recording error (non-blocking): {e}")
+
         emoji = "✅" if pnl >= 0 else "❌"
         logger.info(
             f"{emoji} Position fermée ({status}) @ {exit_price:.2f} | "
@@ -1090,13 +1101,15 @@ class PaperTradingService:
     # [v1.5] CONTRÔLES DE FRÉQUENCE
     # ================================================================
 
-    def _check_cooldown(self, account_id: int, cooldown_minutes: int, slot: Optional[str] = None) -> Optional[str]:
+    def _check_cooldown(self, account_id: int, cooldown_minutes: int,
+                        slot: Optional[str] = None,
+                        profile_params=None,
+                        signal_score: Optional[float] = None) -> Optional[str]:
         """
         Vérifie le cooldown entre deux trades. Retourne raison si bloqué.
 
         [v1.7] En mode multi-slot, le cooldown est vérifié PAR SLOT.
-        Un slot "balanced" peut avoir un cooldown de 5min pendant que
-        le slot "scalping" a son propre cooldown de 1min.
+        [v1.9] Si smart_cooldown_enabled, le cooldown est dynamique et contextuel.
         """
         if cooldown_minutes <= 0:
             return None
@@ -1114,8 +1127,39 @@ class PaperTradingService:
         if last_trade and last_trade.exit_ts:
             exit_ts = _ensure_aware(last_trade.exit_ts)
             elapsed = (datetime.now(timezone.utc) - exit_ts).total_seconds() / 60
-            if elapsed < cooldown_minutes:
-                remaining = int(cooldown_minutes - elapsed)
+
+            # [v1.9] Smart cooldown : calcul dynamique basé sur le contexte
+            effective_cooldown = cooldown_minutes
+            smart_enabled = (
+                profile_params is not None
+                and getattr(profile_params, "smart_cooldown_enabled", False)
+            )
+            if smart_enabled:
+                from app.services.smart_cooldown_service import SmartCooldownService
+                min_cd = getattr(profile_params, "min_cooldown_minutes", None) or 0.5
+                max_cd = getattr(profile_params, "max_cooldown_minutes", None) or 10.0
+                # Calculer la durée du dernier trade en minutes
+                last_duration_min = None
+                if last_trade.duration_hours is not None:
+                    last_duration_min = last_trade.duration_hours * 60
+                effective_cooldown = SmartCooldownService.compute_cooldown(
+                    base_cooldown=cooldown_minutes,
+                    last_exit_type=last_trade.status,
+                    last_pnl=last_trade.pnl,
+                    last_pnl_pct=last_trade.pnl_pct,
+                    last_duration_min=last_duration_min,
+                    signal_score=signal_score,
+                    min_cooldown=min_cd,
+                    max_cooldown=max_cd,
+                )
+
+            if elapsed < effective_cooldown:
+                remaining = round(effective_cooldown - elapsed, 1)
+                if smart_enabled and effective_cooldown != cooldown_minutes:
+                    return (
+                        f"Smart cooldown : {remaining} min restantes "
+                        f"(dynamique {effective_cooldown:.1f} min, base={cooldown_minutes} min)"
+                    )
                 return f"Cooldown : {remaining} min restantes (profil exige {cooldown_minutes} min)"
         return None
 

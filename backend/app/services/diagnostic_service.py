@@ -33,6 +33,7 @@ from app.schemas.diagnostic import (
     PositionDurationStats,
     ProfileComparisonRow,
     RiskBrakeAnalysis,
+    CooldownDiagnostic,
     MissedOpportunitySummary,
     MissedOpportunityItem,
     LeverageAnalysisResponse,
@@ -137,7 +138,10 @@ class DiagnosticService:
         # 6. Risk engine comme frein
         risk_brake = self._analyze_risk_brake(ticks)
 
-        # 7. Bottleneck principal
+        # 7. Cooldown diagnostic
+        cooldown_diag = self._analyze_cooldown(closed_trades, ticks, account)
+
+        # 8. Bottleneck principal
         main_bottleneck, bottleneck_detail, recommendations = self._identify_bottleneck(
             top_reasons, pos_duration, risk_brake, total_ticks, total_trades
         )
@@ -152,9 +156,93 @@ class DiagnosticService:
             position_duration=pos_duration,
             profile_comparison=profile_comparison,
             risk_brake=risk_brake,
+            cooldown=cooldown_diag,
             main_bottleneck=main_bottleneck,
             bottleneck_detail=bottleneck_detail,
             recommendations=recommendations,
+        )
+
+    def _analyze_cooldown(self, trades: list, ticks: list, account) -> CooldownDiagnostic:
+        """Analyse détaillée du cooldown entre trades."""
+        profile_name = getattr(account, "active_profile", "conservative")
+        profile_params = PROFILE_PRESETS.get(profile_name, PROFILE_PRESETS.get("conservative"))
+
+        cooldown_configured = getattr(profile_params, "cooldown_minutes", 0) if profile_params else 0
+        smart_enabled = getattr(profile_params, "smart_cooldown_enabled", False) if profile_params else False
+
+        # Ticks bloqués par cooldown
+        cooldown_ticks = [t for t in ticks if t.reason_no_trade == "cooldown_active"]
+        total_nt = len([t for t in ticks if t.reason_no_trade]) or 1
+
+        # Signaux perdus pendant cooldown (avaient un score exploitable)
+        signals_lost = sum(
+            1 for t in cooldown_ticks
+            if t.decision_score is not None and abs(t.decision_score) > 15
+            and t.decision_action in ("acheter", "vendre")
+        )
+
+        # Calculer les délais réels entre trades (exit_ts → entry_ts suivant)
+        # Trier les trades par entry_ts
+        sorted_trades = sorted(
+            [t for t in trades if t.entry_ts and t.exit_ts],
+            key=lambda t: t.entry_ts,
+        )
+        delays = []
+        for i in range(1, len(sorted_trades)):
+            prev_exit = sorted_trades[i - 1].exit_ts
+            curr_entry = sorted_trades[i].entry_ts
+            if prev_exit and curr_entry:
+                if prev_exit.tzinfo is None:
+                    from datetime import timezone as _tz
+                    prev_exit = prev_exit.replace(tzinfo=_tz.utc)
+                if curr_entry.tzinfo is None:
+                    from datetime import timezone as _tz
+                    curr_entry = curr_entry.replace(tzinfo=_tz.utc)
+                delay_min = (curr_entry - prev_exit).total_seconds() / 60
+                if delay_min >= 0:
+                    delays.append(delay_min)
+
+        if not delays:
+            return CooldownDiagnostic(
+                cooldown_configured_min=cooldown_configured,
+                smart_cooldown_enabled=smart_enabled,
+                ticks_blocked_by_cooldown=len(cooldown_ticks),
+                pct_blocked_by_cooldown=round(len(cooldown_ticks) / total_nt * 100, 1),
+                signals_lost_during_cooldown=signals_lost,
+            )
+
+        avg_delay = sum(delays) / len(delays)
+        sorted_delays = sorted(delays)
+        median_delay = sorted_delays[len(sorted_delays) // 2]
+
+        # Distribution des délais
+        under_2 = sum(1 for d in delays if d < 2)
+        d_2_5 = sum(1 for d in delays if 2 <= d < 5)
+        d_5_15 = sum(1 for d in delays if 5 <= d < 15)
+        d_15_60 = sum(1 for d in delays if 15 <= d < 60)
+        over_60 = sum(1 for d in delays if d >= 60)
+
+        efficiency = (
+            f"Cooldown configuré {cooldown_configured} min, délai réel moyen {avg_delay:.1f} min. "
+            f"{len(cooldown_ticks)} ticks bloqués par cooldown dont {signals_lost} avec signal exploitable."
+        )
+
+        return CooldownDiagnostic(
+            cooldown_configured_min=cooldown_configured,
+            smart_cooldown_enabled=smart_enabled,
+            avg_delay_between_trades_min=round(avg_delay, 1),
+            median_delay_between_trades_min=round(median_delay, 1),
+            min_delay_min=round(min(delays), 1),
+            max_delay_min=round(max(delays), 1),
+            ticks_blocked_by_cooldown=len(cooldown_ticks),
+            pct_blocked_by_cooldown=round(len(cooldown_ticks) / total_nt * 100, 1),
+            delay_under_2min=under_2,
+            delay_2_to_5min=d_2_5,
+            delay_5_to_15min=d_5_15,
+            delay_15_to_60min=d_15_60,
+            delay_over_60min=over_60,
+            signals_lost_during_cooldown=signals_lost,
+            cooldown_efficiency=efficiency,
         )
 
     def _rank_non_trade_reasons(self, ticks: list) -> list[NonTradeRankedReason]:

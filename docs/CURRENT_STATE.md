@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 9 avril 2026
-> **Version :** v1.8.1
+> **Version :** v1.9.0
 > **Branche :** `master`
-> **Dernier commit :** feat(scalping): audit service + recalibrage trailing/score/levier + reset protection
+> **Dernier commit :** feat(learning): PaperRun + SmartCooldown + LearningLayer + CooldownDiagnostic
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.8.1** |
+| Version courante | **v1.9.0** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1090 tests**, tous passing ✅ |
+| Tests backend | **1163 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **Étape 2 fonctionnellement livrée** — Scalping recalibré, Reality gap closure en cours avant v2.0 |
+| Phase courante | **v1.9.0 livré** — Learning Layer + Smart Cooldown + PaperRun, prochaine étape validation runtime |
 
 ### ⚠️ État de maturité honnête
 
@@ -36,11 +36,14 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **Scalping recalibré v1.8.1** (trailing stop élargi, scoring plus sélectif, levier conservateur, short amélioré)
 - **Protection Reset UI** (bouton Full Reset séparé avec confirmation typed "RESET")
 - **Gate formelle v2.0** (8 critères objectifs, status READY/PARTIAL/NOT_READY)
-- 1090 tests backend, tsc clean
+- **[v1.9] Campagnes de validation (PaperRun)** — démarrer/arrêter/comparer des runs avec métriques brut+net
+- **[v1.9] Smart Cooldown** — cooldown contextuel (réduit après stale/trailing flat, allongé après SL/perte)
+- **[v1.9] Cooldown Diagnostic** — visibilité du cooldown dans le diagnostic (délais, distribution, signaux perdus)
+- **[v1.9] Learning Layer explicable** — LearningSignal + StrategyFeedback, patterns, suggestions shadow, promote/rollback
+- 1163 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
-- ❌ **Campagnes de validation (PaperRun)** : Pas de concept de "run" borné pour comparer rigoureusement des profils sur des périodes identiques.
-- ❌ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 7+ jours.
+- ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.
 - ⚠️ **Gate v2.0 = NOT_READY** : La gate existe mais le système n'a pas encore assez de trades pour passer les critères.
 
 ---
@@ -66,13 +69,14 @@ bitcoin-trading-assistant/
 │   │   │   ├── news.py         # GET /news, GET /news/sentiment, /news/history/*
 │   │   │   ├── risk.py         # /risk/config, status, evaluate, kill-switch, record-loss
 │   │   │   ├── paper_trading.py # /paper/* (14 endpoints)
+│   │   │   ├── learning.py     # /learning/* (12 endpoints - runs, learning, patterns)
 │   │   │   └── scheduler.py    # GET /scheduler/status, POST trigger
-│   │   ├── models/             # Modèles SQLAlchemy (7 tables)
-│   │   ├── schemas/            # Schémas Pydantic (12 fichiers)
-│   │   ├── services/           # Logique métier (22 services)
+│   │   ├── models/             # Modèles SQLAlchemy (10 tables)
+│   │   ├── schemas/            # Schémas Pydantic (15 fichiers)
+│   │   ├── services/           # Logique métier (25 services)
 │   │   ├── tasks/              # Jobs planifiés (APScheduler)
 │   │   └── utils/              # Utilitaires
-│   └── tests/                  # 1005+ tests pytest
+│   └── tests/                  # 1163+ tests pytest
 ├── frontend/src/               # React 18 + TypeScript
 │   ├── components/             # Panels UI
 │   ├── hooks/                  # Custom hooks React
