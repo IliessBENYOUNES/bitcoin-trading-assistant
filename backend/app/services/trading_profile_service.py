@@ -87,7 +87,7 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         min_confidence="low",
         min_scenario_dominance=0.35,
         max_trades_per_day=50,
-        cooldown_minutes=3,
+        cooldown_minutes=1,           # réentrée rapide après fermeture
         max_position_duration_hours=2,
         profit_take_pct=0.3,
         loss_cut_pct=0.3,
@@ -99,9 +99,9 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # Seuils de décision abaissés (BUY > +10, SELL < -8)
         buy_threshold=10,
         sell_threshold=8,
-        # Sorties rapides
+        # Sorties rapides — fermer après 10 min si SL/TP pas touché
         momentum_fade_enabled=True,
-        stale_exit_minutes=60,
+        stale_exit_minutes=10,
     ),
 }
 
@@ -158,17 +158,38 @@ class TradingProfileService:
         return False
 
     def set_profile(self, profile_type: str) -> TradingProfileResponse:
-        """Change le profil de trading actif (conservative, balanced, aggressive, auto)."""
+        """
+        Change le profil de trading actif.
+
+        [v1.6.1] Si une position ouverte existe sous un profil DIFFÉRENT,
+        elle est automatiquement fermée. Cela évite le goulot d'étranglement
+        "position blocking" quand on passe de conservative (positions longues)
+        à scalping (positions courtes).
+        """
         if profile_type not in self.VALID_PROFILES:
             raise ValueError(f"Profil inconnu : {profile_type}. Valides : {self.VALID_PROFILES}")
 
         account = self.db.query(PaperAccount).first()
+        old_profile = None
         if account is None:
             # Créer un compte par défaut si absent
             account = PaperAccount(active_profile=profile_type)
             self.db.add(account)
         else:
+            old_profile = account.active_profile
             account.active_profile = profile_type
+
+        # [v1.6.1] Fermer la position ouverte si le profil change
+        # pour ne pas bloquer le nouveau profil avec une vieille position
+        if old_profile and old_profile != profile_type and old_profile != "auto":
+            from app.services.paper_trading_service import PaperTradingService
+            pts = PaperTradingService(self.db)
+            open_pos = pts.get_open_position()
+            if open_pos is not None:
+                reason = f"Changement de profil : {old_profile} → {profile_type}"
+                pts.close_position_manual(reason)
+                logger.info(f"🔄 Position fermée automatiquement : {reason}")
+
         self.db.commit()
         self.db.refresh(account)
         logger.info(f"Profil de trading changé → {profile_type}")

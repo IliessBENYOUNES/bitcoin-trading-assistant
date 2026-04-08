@@ -249,7 +249,17 @@ class PaperTradingService:
                 elapsed_min = (now - entry_ts).total_seconds() / 60
                 unrealized_pnl_now = self._calc_unrealized_pnl(open_pos, current_price)
                 unrealized_pct = (unrealized_pnl_now / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
-                if elapsed_min >= stale_minutes and abs(unrealized_pct) < 0.1:
+
+                # [v1.6.2] Seuil de stagnation adapté au profil
+                # Pour les profils tight (scalping, loss_cut ≤ 0.5%), on utilise
+                # profit_take_pct comme seuil : si après stale_minutes la position
+                # n'a pas atteint le TP/SL, on ferme et on réessaie.
+                # Pour les profils classiques, le seuil reste à 0.1%.
+                stale_pnl_threshold = 0.1
+                if profile_params and profile_params.loss_cut_pct <= 0.5:
+                    stale_pnl_threshold = profile_params.profit_take_pct
+
+                if elapsed_min >= stale_minutes and abs(unrealized_pct) < stale_pnl_threshold:
                     signal_reason = f"Position stagnante depuis {elapsed_min:.0f} min, PnL latent {unrealized_pct:.2f}%"
                     closed = self._close_position(open_pos, current_price, signal_reason, "closed_stale")
                     _log_tick(action_taken="closed_stale", btc_price=current_price,

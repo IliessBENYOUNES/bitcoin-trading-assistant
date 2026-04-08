@@ -46,7 +46,7 @@ import {
   SmartToy as RobotIcon,
 } from '@mui/icons-material';
 import { usePaperTrading } from '../hooks/usePaperTrading';
-import { setPaperProfile, getPaperProfile, createPaperAccount } from '../api/marketApi';
+import { setPaperProfile, getPaperProfile, createPaperAccount, closePaperPosition } from '../api/marketApi';
 import type { PaperTradeItem, TradingProfileType } from '../types';
 
 // Couleur selon PnL
@@ -210,6 +210,12 @@ export default function PaperTradingPanel() {
   const handleLaunchRobot = async () => {
     setLaunching(true);
     try {
+      // 0. Fermer la position existante si le profil change
+      //    (évite le "goulot d'étranglement : position blocking")
+      if (status?.open_position && activeProfile !== selectedProfile) {
+        await closePaperPosition(`Changement de profil : ${activeProfile} → ${selectedProfile}`);
+      }
+
       // 1. Définir le profil
       await setPaperProfile(selectedProfile);
       setActiveProfile(selectedProfile);
@@ -225,7 +231,7 @@ export default function PaperTradingPanel() {
       const profileOpt = PROFILE_OPTIONS.find(p => p.value === selectedProfile);
       const interval = profileOpt?.autoInterval ?? 10;
       startAuto(interval);
-    } catch (err: unknown) {
+    } catch {
       // error handled by hook
     } finally {
       setLaunching(false);
