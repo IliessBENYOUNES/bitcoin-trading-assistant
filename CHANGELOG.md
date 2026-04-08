@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-04-08
+
+### Added
+- **TradingCostModel** — Modèle de coûts de trading avec 3 presets (optimistic, realistic, stressed). Paramètres : maker fee, taker fee, spread, slippage. Calcule les métriques brut/net (PnL, expectancy, profit factor, win rate).
+  - `trading_cost_service.py` : dataclass `TradingCostModel` avec `apply_to_pnl()`, `apply_to_trades()`, presets `COST_OPTIMISTIC`, `COST_REALISTIC`, `COST_STRESSED`
+  - `schemas/trading_cost.py` : `CostPresetType`, `TradingCostConfig`, `TradingCostImpact`, `CostAuditMetrics`
+- **TruthAuditService** — Service d'audit de vérité des métriques de paper trading. Couvre : expectancy brute/nette, drawdown vérifié, performance par slot, performance par profil, impact trailing stop, impact levier, verdict global (DANGEROUS/FRAGILE/VIABLE/SOLID).
+- **V2GateService** — Gate formelle de passage vers v2.0 avec 8 critères objectifs : nombre de trades ≥50, expectancy nette >0, drawdown <15%, win rate >40%, profit factor >1.0, audit verdict ≥VIABLE, documentation à jour, kill switch fonctionnel. Retourne READY/PARTIAL/NOT_READY.
+- **Endpoints d'audit** — `GET /audit/truth` (audit complet), `GET /audit/costs` (presets disponibles), `GET /v2/readiness` (gate v2.0)
+- **48 nouveaux tests** — `test_reality_gap.py` couvrant TradingCostModel (23 tests), TruthAuditService (15 tests), V2GateService (4 tests), endpoints API (6 tests). Total : **1053 tests**.
+
+### Changed
+- **Documentation honnête** — Réécriture complète de `CURRENT_STATE.md` pour refléter l'état réel du projet avec ses limites structurelles (pas de frais, pas de campagnes, pas d'audit). Le problème "backtest sans frais" reclassé de ⚠️ Low à 🔴 CRITIQUE.
+- **ROADMAP nettoyée** — Suppression des sections 1-9 obsolètes (décrivaient l'état v0.6 avec "Dashboard corrupted" et "4 tests failing"). Ajout de la phase v1.8 Reality Gap Closure. Les diagnostics de maturité archivés.
+- **RTM v1.8.0** — Version mise à jour, ajout FR-MSL-005 (trailing stop), FR-CST-001, FR-RUN-001, FR-AUD-001, FR-GATE-001 (planned).
+
+### Technical
+- `backend/app/services/trading_cost_service.py` : nouveau service
+- `backend/app/services/truth_audit_service.py` : nouveau service
+- `backend/app/services/v2_gate_service.py` : nouveau service
+- `backend/app/schemas/trading_cost.py` : nouveaux schémas
+- `backend/app/api/routes/audit.py` : nouvelles routes
+- `backend/app/api/routes/__init__.py` : ajout `audit_router`
+- `backend/app/main.py` : include `audit_router`
+- `backend/app/schemas/__init__.py` : exports trading_cost
+- `backend/tests/test_reality_gap.py` : 48 tests
+
 ## [1.7.2] - 2026-04-08
 
 ### Added

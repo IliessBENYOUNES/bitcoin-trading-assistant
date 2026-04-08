@@ -117,6 +117,14 @@ from app.schemas.journal import (
     LeverageRecommendation,
 )
 
+from app.schemas.trading_cost import (
+    CostPresetType,
+    TradingCostConfig,
+    TradingCostImpact,
+    CostAuditMetrics,
+    CostPresetsResponse,
+)
+
 __all__ = [
     # ...existing exports...
     "CandleBase",
@@ -200,4 +208,10 @@ __all__ = [
     "DurationBucket",
     "TradingStyleResult",
     "LeverageRecommendation",
+    # v1.8 — Trading Cost Model
+    "CostPresetType",
+    "TradingCostConfig",
+    "TradingCostImpact",
+    "CostAuditMetrics",
+    "CostPresetsResponse",
 ]

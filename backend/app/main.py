@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import engine, Base
-from app.api.routes import health_router, market_router, alerts_router, news_router, decision_router, backtest_router, verification_router, sentiment_router, risk_router, paper_router
+from app.api.routes import health_router, market_router, alerts_router, news_router, decision_router, backtest_router, verification_router, sentiment_router, risk_router, paper_router, audit_router
 from app.api.routes.scheduler import router as scheduler_router
 from app.tasks.scheduler import start_scheduler, stop_scheduler
 
@@ -108,6 +108,7 @@ app.include_router(verification_router) # /backtest/verify, /backtest/walk-forwa
 app.include_router(sentiment_router)    # /sentiment/history/load, range, coverage, at-date
 app.include_router(risk_router)         # /risk/config, /risk/status, /risk/evaluate, /risk/kill-switch
 app.include_router(paper_router)        # /paper/account, /paper/status, /paper/tick, /paper/trades, /paper/metrics
+app.include_router(audit_router)        # /audit/truth, /audit/costs, /v2/readiness
 app.include_router(scheduler_router)   # /scheduler/status
 
 

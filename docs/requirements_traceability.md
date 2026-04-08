@@ -1,7 +1,7 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v1.7.1
+## Version: v1.8.0
 ## Date: 2026-04-08
 
 ---
@@ -81,6 +81,12 @@
 | **FR-MSL-002** | **Mean reversion bidirectionnel** | **SHORT en surachat, LONG en survente** | **✅ PASS** | **test_scalping_reversal** |
 | **FR-MSL-003** | **SL/TP direction-aware** | **Defaults corrigés pour SHORT** | **✅ PASS** | **test_sl_tp_defaults** |
 | **FR-MSL-004** | **Per-slot cooldown** | **Chaque slot a ses propres timers indépendants** | **✅ PASS** | **test_per_slot_cooldown** |
+| **FR-MSL-005** | **Trailing stop scalping** | **Trailing stop activé quand profit > seuil, ferme si recul > trail%** | **✅ PASS** | **1005 tests passing** |
+| | | | | |
+| **FR-CST-001** | **Modèle de coûts de trading** | **TradingCostModel avec presets, métriques brut/net** | **⬜ PLANNED** | **v1.8.1** |
+| **FR-RUN-001** | **Campagnes de validation (PaperRun)** | **Runs bornés, profil fixe, verdict final** | **⬜ PLANNED** | **v1.8.2** |
+| **FR-AUD-001** | **Audit de vérité métriques** | **Expectancy nette, drawdown vérifié, verdict global** | **⬜ PLANNED** | **v1.8.3** |
+| **FR-GATE-001** | **Gate formelle v2.0** | **Checklist de readiness, status READY/PARTIAL/NOT_READY** | **⬜ PLANNED** | **v1.8.4** |
 
 ---
 
@@ -90,7 +96,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1005 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1053 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 
@@ -172,4 +178,5 @@
 | **test_paper_trading.py** | **68** | **✅** |
 | **test_journal_and_profiles.py** | **84** | **✅** |
 | **test_diagnostic.py** | **55** | **✅** |
-| **Total** | **1005** | ✅ |
+| **test_reality_gap.py** | **48** | **✅** |
+| **Total** | **1053** | ✅ |
