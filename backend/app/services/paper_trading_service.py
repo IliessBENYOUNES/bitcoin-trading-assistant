@@ -205,7 +205,12 @@ class PaperTradingService:
             close_reason = self._check_sl_tp(open_pos, current_price)
 
             if close_reason is None:
-                close_reason = self._check_expiration(open_pos, now)
+                # [v1.6.1] Passer la durée max du profil pour expiration rapide
+                profile_max_hours = (
+                    profile_params.max_position_duration_hours
+                    if profile_params else None
+                )
+                close_reason = self._check_expiration(open_pos, now, profile_max_hours)
 
             if close_reason is not None:
                 exit_price = current_price
@@ -343,10 +348,18 @@ class PaperTradingService:
                 lc_pct = profile_params.loss_cut_pct if profile_params else 1.5
                 lc_score = profile_params.loss_cut_score_threshold if profile_params else 30
                 if not close_signal and unrealized_pnl_pct <= -lc_pct:
-                    entry_direction_score = score if open_pos.direction == "long" else -score
-                    if entry_direction_score < lc_score:
+                    # [v1.6.1] Profil tight (scalping) : coupe inconditionnelle
+                    # Pour les profils avec loss_cut_pct ≤ 0.5%, on ne vérifie pas
+                    # le score — on coupe immédiatement. En scalping, 0.3% de perte
+                    # est déjà significatif et ne doit pas dépendre du signal.
+                    if lc_pct <= 0.5:
                         close_signal = True
-                        signal_reason = f"Couper les pertes : PnL {unrealized_pnl_pct:.1f}%, signal faible (score={score})"
+                        signal_reason = f"Coupe de perte rapide (scalping) : PnL {unrealized_pnl_pct:.1f}%"
+                    else:
+                        entry_direction_score = score if open_pos.direction == "long" else -score
+                        if entry_direction_score < lc_score:
+                            close_signal = True
+                            signal_reason = f"Couper les pertes : PnL {unrealized_pnl_pct:.1f}%, signal faible (score={score})"
 
                 if close_signal:
                     closed = self._close_position(
@@ -542,11 +555,38 @@ class PaperTradingService:
             # Ouvrir la position
             direction = "long" if action == "acheter" else "short"
             reason = f"{action} | score={score} | {confidence} | {summary[:100]}"
+
+            # SL/TP par défaut du risk engine
+            sl_price = evaluation.stop_loss_price or current_price * 0.95
+            tp_price = evaluation.take_profit_price or current_price * 1.10
+
+            # [v1.6.1] Profil tight (scalping) : override SL/TP avec les %
+            # du profil si ceux-ci sont plus serrés que le risk engine.
+            # Cela garantit des sorties rapides adaptées au scalping.
+            if profile_params and profile_params.loss_cut_pct <= 0.5:
+                lc = profile_params.loss_cut_pct / 100
+                pt = profile_params.profit_take_pct / 100
+                if direction == "long":
+                    profile_sl = current_price * (1 - lc)
+                    profile_tp = current_price * (1 + pt)
+                    sl_price = max(sl_price, profile_sl)  # SL plus proche = plus haut pour long
+                    tp_price = min(tp_price, profile_tp)  # TP plus proche = plus bas pour long
+                else:  # short
+                    profile_sl = current_price * (1 + lc)
+                    profile_tp = current_price * (1 - pt)
+                    sl_price = min(sl_price, profile_sl)  # SL plus proche = plus bas pour short
+                    tp_price = max(tp_price, profile_tp)  # TP plus proche = plus haut pour short
+                logger.info(
+                    f"🎯 Profil tight → SL/TP ajustés : "
+                    f"SL={sl_price:.2f} TP={tp_price:.2f} "
+                    f"(loss_cut={profile_params.loss_cut_pct}%, profit_take={profile_params.profit_take_pct}%)"
+                )
+
             position = self._open_position(
                 account=account,
                 price=current_price,
-                sl=evaluation.stop_loss_price or current_price * 0.95,
-                tp=evaluation.take_profit_price or current_price * 1.10,
+                sl=sl_price,
+                tp=tp_price,
                 size_usd=evaluation.max_position_size_usd or 1000.0,
                 reason=reason,
                 score=score,
@@ -567,7 +607,7 @@ class PaperTradingService:
 
             return PaperTickResult(
                 action_taken=f"opened_{direction}",
-                detail=f"Position {direction} ouverte @ {current_price:.2f} | SL={evaluation.stop_loss_price:.2f} | TP={evaluation.take_profit_price:.2f} | Levier x{leverage_final}",
+                detail=f"Position {direction} ouverte @ {current_price:.2f} | SL={sl_price:.2f} | TP={tp_price:.2f} | Levier x{leverage_final}",
                 position_opened=PaperTradeResponse.model_validate(position),
                 current_price=current_price,
                 timestamp=now.isoformat(),
@@ -734,12 +774,20 @@ class PaperTradingService:
                 return "closed_tp"
         return None
 
-    def _check_expiration(self, trade: PaperTrade, now: datetime) -> Optional[str]:
-        """Vérifie si la position a dépassé la durée max."""
+    def _check_expiration(self, trade: PaperTrade, now: datetime,
+                          profile_max_hours: Optional[float] = None) -> Optional[str]:
+        """Vérifie si la position a dépassé la durée max.
+
+        Utilise le minimum entre la durée du compte et celle du profil actif.
+        Pour scalping (profil 2h) vs compte (168h), cela garantit l'expiration rapide.
+        """
         account = self.db.query(PaperAccount).get(trade.account_id)
         if account is None:
             return None
         max_hours = account.max_open_duration_hours
+        # [v1.6.1] Utiliser la durée du profil si plus courte
+        if profile_max_hours is not None and profile_max_hours > 0:
+            max_hours = min(max_hours, profile_max_hours)
         entry_ts = _ensure_aware(trade.entry_ts)
         elapsed = (now - entry_ts).total_seconds() / 3600
         if elapsed >= max_hours:

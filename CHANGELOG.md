@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.1] - 2026-04-08
+
+### Fixed
+- **Scalping : SL/TP trop larges** — Les positions scalping utilisaient les SL/TP du risk engine global (5% SL / 10% TP), beaucoup trop larges pour du scalping (0.3%). Maintenant, quand le profil a `loss_cut_pct ≤ 0.5%`, les SL/TP sont recalculés à partir des % du profil et les valeurs les plus serrées sont utilisées.
+- **Loss cut conditionnel au score** — Le loss cut exigeait `PnL < -lc_pct ET score < lc_score`, ce qui retardait la coupe en scalping. Pour les profils tight (`loss_cut_pct ≤ 0.5%`), le loss cut est désormais **inconditionnel** dès que le seuil de perte est atteint.
+- **Expiration utilisait le compte (168h) au lieu du profil (2h)** — `_check_expiration` utilisait uniquement `account.max_open_duration_hours` (168h). Il utilise désormais `min(account, profil)`, donc le scalping expire à 2h.
+- **Direction SL/TP pour shorts** — Les SL/TP pour shorts sont correctement inversés (SL au-dessus, TP en dessous) dans le recalcul profil.
+
+### Changed
+- Auto-tick frontend : ajout intervalle 5s pour scalping rapide
+- Intervalle auto-tick par défaut : 10s (était 60s)
+- Le message de détail à l'ouverture affiche les SL/TP réellement utilisés (et non ceux du risk engine)
+
+### Technical
+- `paper_trading_service.py` — Logique SL/TP profile-aware, loss cut inconditionnel, expiration profile-aware
+- `PaperTradingPanel.tsx` — Intervalle 5s ajouté, défaut 10s
+
 ## [1.6.0] - 2026-04-08
 
 ### Added

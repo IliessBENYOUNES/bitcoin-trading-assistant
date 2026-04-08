@@ -74,6 +74,7 @@ const statusChip = (status: string) => {
 
 // Options d'intervalle auto-tick
 const AUTO_INTERVALS = [
+  { value: 5, label: '5s' },
   { value: 10, label: '10s' },
   { value: 30, label: '30s' },
   { value: 60, label: '1 min' },
@@ -103,7 +104,7 @@ export default function PaperTradingPanel() {
 
   const [capital, setCapital] = useState('10000');
   const [tickLoading, setTickLoading] = useState(false);
-  const [selectedInterval, setSelectedInterval] = useState(60);
+  const [selectedInterval, setSelectedInterval] = useState(10);
 
   // Countdown timer pour le prochain tick auto
   const [countdown, setCountdown] = useState(0);

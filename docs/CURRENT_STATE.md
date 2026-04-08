@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 8 avril 2026
-> **Version :** v1.6.0
+> **Version :** v1.6.1
 > **Branche :** `master`
-> **Dernier commit :** feat(diagnostic): add frequency diagnostic + scalping profile + faster exits
+> **Dernier commit :** fix(paper-trading): scalping SL/TP serrés, loss cut inconditionnel, expiration profil
 
 ---
 
@@ -13,7 +13,7 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.6.0** |
+| Version courante | **v1.6.1** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
@@ -480,3 +480,4 @@ python -m pytest tests/ -v
 | 3 | News RSS peuvent être indisponibles (timeout) | ⚠️ Low | Géré par fallback + cache TTL 5min |
 | 4 | Backtest sans frais/slippage | ⚠️ Low | Résultats optimistes, documenté dans le code |
 | ~~5~~ | ~~Vérification marquait toutes les prédictions INCORRECT~~ | ~~🔴 High~~ | ~~✅ Corrigé v1.1.2 + v1.2.0 — seuils adapatifs + ADX + quality score~~ |
+| ~~6~~ | ~~Scalping : SL/TP trop larges, positions non fermées automatiquement~~ | ~~🔴 High~~ | ~~✅ Corrigé v1.6.1 — SL/TP serrés via profil, loss cut inconditionnel, expiration profil~~ |
