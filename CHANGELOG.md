@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.1] - 2026-04-08
+
+### Added
+- **Mode Auto-Profil** — Sélection dynamique du profil par le moteur à chaque tick
+  - Nouveau choix "🤖 Auto" dans le sélecteur de profil (bouton violet)
+  - Le système choisit automatiquement Conservative/Balanced/Aggressive en fonction du signal :
+    - Score ≥ 50 + confiance "high" → Aggressive (opportunité forte)
+    - Score ≥ 30 + confiance ≥ "medium" → Balanced (opportunité correcte)
+    - Sinon → Conservative (prudence par défaut)
+  - Le profil résolu est tracé dans le tick : `profile_type = "auto→aggressive"`
+  - Le levier et les seuils (min_score, cooldown, max_trades/jour) s'ajustent dynamiquement
+  - 17 nouveaux tests backend (boundaries, DB, endpoints, sélection automatique)
+
+### Technical
+- `TradingProfileType` enum : ajout valeur `auto`
+- `TradingProfileService.auto_select_profile()` : méthode statique de résolution
+- `TradingProfileService.is_auto_mode()` : détecte le mode auto
+- `PaperTradingService.tick()` : résolution auto du profil après obtention de la decision
+- Frontend : bouton "🤖 Auto" violet + texte explicatif adaptatif
+- 949 tests backend, tous passing ✅
+- tsc --noEmit sans erreur ✅
+
 ## [1.5.0] - 2026-04-08
 
 ### Added

@@ -508,6 +508,110 @@ class TestTradingProfileService:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Tests Mode Auto-Profil
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAutoProfileSelection:
+    """Tests pour la sélection automatique de profil (mode auto)."""
+
+    def test_auto_select_aggressive(self):
+        """Score fort + confiance haute → aggressive."""
+        result = TradingProfileService.auto_select_profile(score=55, confidence="high")
+        assert result == "aggressive"
+
+    def test_auto_select_aggressive_negative_score(self):
+        """Score négatif fort + confiance haute → aggressive (abs)."""
+        result = TradingProfileService.auto_select_profile(score=-60, confidence="high")
+        assert result == "aggressive"
+
+    def test_auto_select_balanced_medium_confidence(self):
+        """Score moyen + confiance medium → balanced."""
+        result = TradingProfileService.auto_select_profile(score=35, confidence="medium")
+        assert result == "balanced"
+
+    def test_auto_select_balanced_high_confidence_moderate_score(self):
+        """Score modéré + confiance haute → balanced (score < 50)."""
+        result = TradingProfileService.auto_select_profile(score=40, confidence="high")
+        assert result == "balanced"
+
+    def test_auto_select_conservative_low_score(self):
+        """Score faible → conservative."""
+        result = TradingProfileService.auto_select_profile(score=10, confidence="low")
+        assert result == "conservative"
+
+    def test_auto_select_conservative_low_confidence(self):
+        """Score correct mais confiance basse → conservative."""
+        result = TradingProfileService.auto_select_profile(score=55, confidence="low")
+        assert result == "conservative"
+
+    def test_auto_select_conservative_medium_score_low_confidence(self):
+        """Score moyen + confiance basse → conservative."""
+        result = TradingProfileService.auto_select_profile(score=35, confidence="low")
+        assert result == "conservative"
+
+    def test_auto_select_boundary_50_high(self):
+        """Boundary : score=50 exact + high → aggressive."""
+        result = TradingProfileService.auto_select_profile(score=50, confidence="high")
+        assert result == "aggressive"
+
+    def test_auto_select_boundary_30_medium(self):
+        """Boundary : score=30 exact + medium → balanced."""
+        result = TradingProfileService.auto_select_profile(score=30, confidence="medium")
+        assert result == "balanced"
+
+    def test_auto_select_boundary_49_high(self):
+        """Boundary : score=49 + high → balanced (pas aggressive)."""
+        result = TradingProfileService.auto_select_profile(score=49, confidence="high")
+        assert result == "balanced"
+
+    def test_auto_select_boundary_29_medium(self):
+        """Boundary : score=29 + medium → conservative (pas balanced)."""
+        result = TradingProfileService.auto_select_profile(score=29, confidence="medium")
+        assert result == "conservative"
+
+    def test_auto_select_unknown_confidence(self):
+        """Confiance inconnue → conservative."""
+        result = TradingProfileService.auto_select_profile(score=80, confidence="unknown")
+        assert result == "conservative"
+
+    def test_set_profile_auto(self, db_session, paper_account):
+        """Changement vers auto."""
+        svc = TradingProfileService(db_session)
+        result = svc.set_profile("auto")
+        assert result.active_profile == TradingProfileType.auto
+        # Vérifier que c'est stocké en DB
+        account = db_session.query(PaperAccount).first()
+        assert account.active_profile == "auto"
+
+    def test_is_auto_mode_true(self, db_session, paper_account):
+        """is_auto_mode retourne True quand profil = auto."""
+        svc = TradingProfileService(db_session)
+        svc.set_profile("auto")
+        assert svc.is_auto_mode() is True
+
+    def test_is_auto_mode_false(self, db_session, paper_account):
+        """is_auto_mode retourne False quand profil != auto."""
+        svc = TradingProfileService(db_session)
+        assert svc.is_auto_mode() is False
+
+    def test_get_active_profile_auto_returns_conservative_params(self, db_session, paper_account):
+        """En mode auto, get_active_profile retourne conservative comme placeholder."""
+        svc = TradingProfileService(db_session)
+        svc.set_profile("auto")
+        result = svc.get_active_profile()
+        assert result.active_profile == TradingProfileType.auto
+        # Les params placeholder sont ceux de conservative
+        assert result.params.min_score == 35
+
+    def test_get_all_presets_excludes_auto(self):
+        """Les presets ne contiennent pas auto (ce n'est pas un preset)."""
+        presets = TradingProfileService.get_all_presets()
+        assert len(presets) == 3
+        types = [p.profile_type.value for p in presets]
+        assert "auto" not in types
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Tests LeverageService
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -694,7 +798,7 @@ class TestJournalEndpoints:
         resp = client.get("/paper/profile")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["active_profile"] in ("conservative", "balanced", "aggressive")
+        assert data["active_profile"] in ("conservative", "balanced", "aggressive", "auto")
         assert "params" in data
 
     def test_profile_set(self, client, db_session):
@@ -704,6 +808,26 @@ class TestJournalEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["active_profile"] == "balanced"
+
+    def test_profile_set_auto(self, client, db_session):
+        """POST /paper/profile avec auto → accepté."""
+        client.post("/paper/account", json={"initial_capital": 10000})
+        resp = client.post("/paper/profile", json={"profile": "auto"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["active_profile"] == "auto"
+
+    def test_profile_get_auto(self, client, db_session):
+        """Après set auto, GET retourne auto avec params placeholder."""
+        client.post("/paper/account", json={"initial_capital": 10000})
+        client.post("/paper/profile", json={"profile": "auto"})
+        resp = client.get("/paper/profile")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["active_profile"] == "auto"
+        assert "params" in data
+        # Les params placeholder sont conservative
+        assert data["params"]["min_score"] == 35
 
     def test_profile_presets(self, client, db_session):
         """GET /paper/profile/presets retourne les 3 presets."""

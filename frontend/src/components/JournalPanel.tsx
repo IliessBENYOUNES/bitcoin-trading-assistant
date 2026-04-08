@@ -87,6 +87,7 @@ const PROFILE_COLORS: Record<string, string> = {
   conservative: '#4caf50',
   balanced: '#ff9800',
   aggressive: '#f44336',
+  auto: '#9c27b0',
 };
 
 export default function JournalPanel() {
@@ -162,12 +163,12 @@ export default function JournalPanel() {
         {profile && (
           <Chip
             size="small"
-            label={profile.params.label}
+            label={profile.active_profile === 'auto' ? '🤖 Auto' : profile.params.label}
             sx={{
-              bgcolor: `${PROFILE_COLORS[profile.active_profile]}20`,
-              color: PROFILE_COLORS[profile.active_profile],
+              bgcolor: `${PROFILE_COLORS[profile.active_profile] ?? '#9c27b0'}20`,
+              color: PROFILE_COLORS[profile.active_profile] ?? '#9c27b0',
               fontWeight: 700,
-              border: `1px solid ${PROFILE_COLORS[profile.active_profile]}40`,
+              border: `1px solid ${PROFILE_COLORS[profile.active_profile] ?? '#9c27b0'}40`,
             }}
           />
         )}
@@ -212,12 +213,32 @@ export default function JournalPanel() {
                 {p.label}
               </ToggleButton>
             ))}
+            {/* Mode Auto — sélection dynamique du profil par le moteur */}
+            <ToggleButton
+              value="auto"
+              sx={{
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: '0.75rem',
+                px: 1.5,
+                color: PROFILE_COLORS.auto,
+                borderColor: `${PROFILE_COLORS.auto}40`,
+                '&.Mui-selected': {
+                  bgcolor: `${PROFILE_COLORS.auto}20`,
+                  color: PROFILE_COLORS.auto,
+                  borderColor: PROFILE_COLORS.auto,
+                },
+              }}
+            >
+              🤖 Auto
+            </ToggleButton>
           </ToggleButtonGroup>
           {profile && (
             <Typography variant="caption" color="text.secondary">
-              Score min: {profile.params.min_score} | Cooldown: {profile.params.cooldown_minutes}m |
-              Max/jour: {profile.params.max_trades_per_day} |
-              Levier: {profile.params.leverage_enabled ? `x${profile.params.max_leverage}` : 'OFF'}
+              {profile.active_profile === 'auto'
+                ? 'Profil ajusté automatiquement selon la force du signal'
+                : `Score min: ${profile.params.min_score} | Cooldown: ${profile.params.cooldown_minutes}m | Max/jour: ${profile.params.max_trades_per_day} | Levier: ${profile.params.leverage_enabled ? `x${profile.params.max_leverage}` : 'OFF'}`
+              }
             </Typography>
           )}
         </Stack>

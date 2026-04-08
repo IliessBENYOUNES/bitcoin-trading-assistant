@@ -32,7 +32,7 @@ from app.models.paper_account import PaperAccount, PaperTrade
 from app.models.candle import Candle
 from app.services.decision_service import DecisionService
 from app.services.risk_service import RiskService
-from app.services.trading_profile_service import TradingProfileService
+from app.services.trading_profile_service import TradingProfileService, PROFILE_PRESETS
 from app.services.leverage_service import LeverageService
 from app.services.journal_service import JournalService
 from app.schemas.paper_trading import (
@@ -141,10 +141,12 @@ class PaperTradingService:
         account = self.get_or_create_account()
 
         # [v1.5] Récupérer le profil actif
+        is_auto_mode = False
         try:
             profile_svc = TradingProfileService(self.db)
+            is_auto_mode = profile_svc.is_auto_mode()
             profile_params = profile_svc.get_active_params()
-            profile_name = profile_params.profile_type.value
+            profile_name = "auto" if is_auto_mode else profile_params.profile_type.value
         except Exception:
             profile_name = "conservative"
             profile_params = None
@@ -232,8 +234,15 @@ class PaperTradingService:
             if decision_result:
                 action = decision_result.get("recommendation", {}).get("action", "attendre")
                 score = decision_result.get("combined_score", 0)
+                confidence = decision_result.get("recommendation", {}).get("confidence", "low")
                 unrealized_pnl = self._calc_unrealized_pnl(open_pos, current_price)
                 unrealized_pnl_pct = (unrealized_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
+
+                # [v1.6] Mode auto : résoudre le profil réel pour les seuils de sortie
+                if is_auto_mode:
+                    resolved_profile = TradingProfileService.auto_select_profile(score, confidence)
+                    profile_params = PROFILE_PRESETS[resolved_profile]
+                    profile_name = f"auto→{resolved_profile}"
 
                 close_signal = False
                 signal_reason = ""
@@ -326,6 +335,13 @@ class PaperTradingService:
             score = decision_result.get("combined_score", 0)
             confidence = decision_result.get("recommendation", {}).get("confidence", "low")
             summary = decision_result.get("summary", "")
+
+            # [v1.6] Mode auto : résoudre le profil réel en fonction du signal
+            if is_auto_mode:
+                resolved_profile = TradingProfileService.auto_select_profile(score, confidence)
+                profile_params = PROFILE_PRESETS[resolved_profile]
+                profile_name = f"auto→{resolved_profile}"
+                logger.info(f"🤖 Auto-profil résolu : {resolved_profile} (score={score}, conf={confidence})")
 
             if action == "attendre":
                 _log_tick(action_taken="hold", btc_price=current_price,

@@ -1,8 +1,8 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v1.4.0
-## Date: 2026-04-07
+## Version: v1.5.0
+## Date: 2026-04-08
 
 ---
 
@@ -60,6 +60,18 @@
 | **FR-PAP-005** | **Paper Trades Journal** | **GET /paper/trades retourne liste paginée + filtres status** | **✅ PASS** | **test_get_trades_with_filter** |
 | **FR-PAP-006** | **Paper Close Manual** | **POST /paper/close ferme la position ouverte** | **✅ PASS** | **test_close_with_position** |
 | **FR-PAP-007** | **PaperTradingPanel UI** | **Statut + tick + métriques + journal + position ouverte** | **✅ PASS** | **tsc --noEmit clean** |
+| **FR-JRN-001** | **Journal d'évaluation multi-jours** | **GET /paper/journal retourne synthèse + journalier + activité + raisons** | **✅ PASS** | **64 tests passing** |
+| **FR-JRN-002** | **Vue synthèse période** | **PnL, win rate, expectancy, profit factor, Sharpe, drawdown, verdict** | **✅ PASS** | **test_journal_period_summary** |
+| **FR-JRN-003** | **Vue journalière** | **Résumé par jour (trades, PnL, meilleur/pire, verdict)** | **✅ PASS** | **test_journal_daily_view** |
+| **FR-JRN-004** | **Vue activité** | **Fréquence ticks, ratio tick→trade, répartition** | **✅ PASS** | **test_journal_activity** |
+| **FR-JRN-005** | **Raisons de non-trade** | **Agrégation + labels humains + pourcentages** | **✅ PASS** | **test_journal_non_trade_reasons** |
+| **FR-PRF-001** | **Profils de trading** | **GET /paper/profile retourne profil actif + paramètres** | **✅ PASS** | **test_get_profile** |
+| **FR-PRF-002** | **Changement de profil** | **POST /paper/profile change conservative/balanced/aggressive** | **✅ PASS** | **test_set_profile** |
+| **FR-PRF-003** | **Presets profils** | **GET /paper/profile/presets retourne tous les profils disponibles** | **✅ PASS** | **test_get_profile_presets** |
+| **FR-LEV-001** | **Levier auto intelligent** | **Calcul score × confiance × volatilité × max_leverage** | **✅ PASS** | **test_leverage_recommendation** |
+| **FR-LEV-002** | **Veto risk engine** | **blocked/danger → x1, caution → cap 50%** | **✅ PASS** | **test_leverage_risk_veto** |
+| **FR-STY-001** | **Style de trading** | **GET /paper/style retourne distribution durées + style dominant** | **✅ PASS** | **test_trading_style** |
+| **FR-STY-002** | **JournalPanel UI** | **5 sous-vues, profils, KPIs, barres de distribution** | **✅ PASS** | **tsc --noEmit clean** |
 
 ---
 
@@ -69,7 +81,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 841 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 930 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 
@@ -129,23 +141,25 @@
 |-----------|-------|--------|
 | test_health.py | 3 | ✅ |
 | test_market.py | 4 | ✅ |
-| test_indicators.py | 25 | ✅ |
-| test_time_buckets.py | 17 | ✅ |
-| test_scheduler.py | 8 | ✅ |
-| test_scheduler_dual_jobs.py | 13 | ✅ |
+| test_indicators.py | 35 | ✅ |
+| test_time_buckets.py | 24 | ✅ |
+| test_scheduler.py | 16 | ✅ |
+| test_scheduler_dual_jobs.py | 15 | ✅ |
 | test_scheduler_resample_1d.py | 7 | ✅ |
 | test_scheduler_resample_1h.py | 6 | ✅ |
-| **test_signals.py** | **52** | **✅** |
+| **test_signals.py** | **88** | **✅** |
 | **test_alerts.py** | **48** | **✅** |
 | **test_news.py** | **43** | **✅** |
-| **test_decision.py** | **75** | **✅** |
+| **test_decision.py** | **122** | **✅** |
 | **test_backtest.py** | **31** | **✅** |
-| **test_verification.py** | **33** | **✅** |
+| **test_verification.py** | **79** | **✅** |
 | **test_binance_and_router.py** | **89** | **✅** |
 | **test_news_history.py** | **33** | **✅** |
 | **test_cryptocompare.py** | **30** | **✅** |
-| **test_sentiment_history.py** | **17** | **✅** |
+| **test_sentiment_history.py** | **42** | **✅** |
 | **test_scheduler_news.py** | **11** | **✅** |
-| **test_risk.py** | **55** | **✅** |
-| **test_paper_trading.py** | **64** | **✅** |
-| **Total** | **841** | ✅ |
+| **test_risk.py** | **57** | **✅** |
+| **test_price_service.py** | **15** | **✅** |
+| **test_paper_trading.py** | **68** | **✅** |
+| **test_journal_and_profiles.py** | **64** | **✅** |
+| **Total** | **930** | ✅ |

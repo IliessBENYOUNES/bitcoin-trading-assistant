@@ -18,6 +18,7 @@ class TradingProfileType(str, Enum):
     conservative = "conservative"
     balanced = "balanced"
     aggressive = "aggressive"
+    auto = "auto"
 
 
 class TradingProfileParams(BaseModel):

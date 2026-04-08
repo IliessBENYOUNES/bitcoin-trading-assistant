@@ -40,8 +40,9 @@
 │  ├── Sentiment historique + ML          🔄 En cours (v1.2.1-1.2.4 livrés)  │
 │  ├── Risk management engine             ✅ Livré (v1.3)                    │
 │  ├── Paper trading                      ✅ Livré (v1.4)             │
-│  ├── Production (Docker, CI/CD, Auth)   ⬜ Planifié (v1.5)         │
-│  └── Multi-assets (ETH, SOL...)         ⬜ Planifié (v1.6)         │
+│  ├── Journal + Profils + Levier + Style ✅ Livré (v1.5)             │
+│  ├── Production (Docker, CI/CD, Auth)   ⬜ Planifié (v1.6)         │
+│  └── Multi-assets (ETH, SOL...)         ⬜ Planifié (v1.7)         │
 │                                                                      │
 │  ÉTAPE 3 — INFINI v2 (v2.0+)                                       │
 │  Assistant autonome (sous contrôle humain)                           │
@@ -62,7 +63,7 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v1.4.0 — Paper Trading System (Livré) ✅
+### État actuel : v1.5.0 — Journal + Profils + Levier Auto + Style (Livré) ✅
 
 | Composant | Status |
 |-----------|--------|
@@ -91,7 +92,12 @@
 | **RiskPanel (dashboard risque, kill switch, config, perte journalière)** | **✅ Complet (v1.3)** |
 | **Paper Trading System (tick engine, SL/TP, métriques, journal, scheduler)** | **✅ Complet (v1.4)** |
 | **PaperTradingPanel (statut, tick manuel, positions, métriques)** | **✅ Complet (v1.4)** |
-| 841 tests backend | ✅ Tous passing |
+| **Journal d'évaluation multi-jours (synthèse, journalier, activité, raisons)** | **✅ Complet (v1.5)** |
+| **Profils de trading (Conservative/Balanced/Aggressive)** | **✅ Complet (v1.5)** |
+| **Levier auto intelligent (score × confiance × volatilité, veto risk)** | **✅ Complet (v1.5)** |
+| **Style de trading (distribution durées, scalping/intraday/swing)** | **✅ Complet (v1.5)** |
+| **JournalPanel (5 sous-vues, profils, KPIs, barres de distribution)** | **✅ Complet (v1.5)** |
+| 930 tests backend | ✅ Tous passing |
 
 ### ✅ LIVRÉ : v0.7 — Moteur de Signaux (Niveau 2)
 
@@ -359,28 +365,40 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 | 14.5 Frontend PaperTradingPanel | 🟡 Moyenne | 4h | Statut, tick manuel, positions, journal, métriques | ✅ |
 | 14.6 64 tests backend | 🔴 Haute | 3h | Modèles, service, SL/TP, métriques, tick, endpoints | ✅ |
 
-### Phase v1.5 — Production Ready
+### Phase v1.5 — Journal + Profils + Levier Auto + Style ✅ LIVRÉ
+
+| Tâche | Priorité | Effort | Description | Status |
+|-------|----------|--------|-------------|--------|
+| 15.1 Journal d'évaluation multi-jours | 🔴 Haute | 6h | Synthèse période, vue journalière, activité, raisons non-trade | ✅ |
+| 15.2 Profils de trading | 🔴 Haute | 3h | Conservative/Balanced/Aggressive avec seuils configurables | ✅ |
+| 15.3 Levier auto intelligent | 🔴 Haute | 4h | score × confiance × volatilité, veto risk engine | ✅ |
+| 15.4 Style de trading | 🟡 Moyenne | 3h | Distribution durées, scalping/intraday/swing | ✅ |
+| 15.5 Modèle TickActivityLog | 🔴 Haute | 2h | Persistance de chaque tick (actions + non-trades) | ✅ |
+| 15.6 Frontend JournalPanel | 🟡 Moyenne | 4h | 5 sous-vues, profils, KPIs, barres de distribution | ✅ |
+| 15.7 64 tests backend | 🔴 Haute | 3h | Journal, profils, levier, style, endpoints, schémas | ✅ |
+
+### Phase v1.6 — Production Ready
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
-| 15.1 Docker Compose | 🔴 Haute | 3h | Backend + Frontend + PostgreSQL |
-| 15.2 CI/CD GitHub Actions | 🟡 Moyenne | 4h | Tests + Build + Deploy |
-| 15.3 Auth JWT | 🟡 Moyenne | 6h | Login/Register |
-| 15.4 HTTPS + Reverse proxy | 🔴 Haute | 2h | Nginx/Caddy |
-| 15.5 Monitoring | 🟢 Basse | 4h | Prometheus + Grafana |
+| 16.1 Docker Compose | 🔴 Haute | 3h | Backend + Frontend + PostgreSQL |
+| 16.2 CI/CD GitHub Actions | 🟡 Moyenne | 4h | Tests + Build + Deploy |
+| 16.3 Auth JWT | 🟡 Moyenne | 6h | Login/Register |
+| 16.4 HTTPS + Reverse proxy | 🔴 Haute | 2h | Nginx/Caddy |
+| 16.5 Monitoring | 🟢 Basse | 4h | Prometheus + Grafana |
 
-### Phase v1.6 — Multi-Assets (ETH, SOL, etc.) 🌐
+### Phase v1.7 — Multi-Assets (ETH, SOL, etc.) 🌐
 
 > **Déplacé en dernier** : On perfectionne d'abord tout sur BTC. Si le modèle (technique + sentiment + risk + paper trading) fonctionne bien sur BTC, on l'étend aux autres actifs. BTC est le marché le plus liquide et le mieux documenté — c'est le terrain d'entraînement idéal.
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
-| 16.1 Dropdown symbole | 🔴 Haute | 2h | BTC/USD, ETH/USD, SOL/USD... |
-| 16.2 Scheduler multi-symbol | 🔴 Haute | 4h | Loop sur liste configurable |
-| 16.3 Dashboard comparatif | 🟡 Moyenne | 4h | Multi-charts ou tabs |
-| 16.4 Heatmap corrélation | 🟢 Basse | 6h | Matrice inter-assets |
+| 17.1 Dropdown symbole | 🔴 Haute | 2h | BTC/USD, ETH/USD, SOL/USD... |
+| 17.2 Scheduler multi-symbol | 🔴 Haute | 4h | Loop sur liste configurable |
+| 17.3 Dashboard comparatif | 🟡 Moyenne | 4h | Multi-charts ou tabs |
+| 17.4 Heatmap corrélation | 🟢 Basse | 6h | Matrice inter-assets |
 
-**Prérequis** : Toutes les phases v1.0 → v1.5 validées sur BTC. Le passage en multi-assets est une extension, pas une priorité tant que le moteur n'est pas mature sur un seul actif.
+**Prérequis** : Toutes les phases v1.0 → v1.6 validées sur BTC. Le passage en multi-assets est une extension, pas une priorité tant que le moteur n'est pas mature sur un seul actif.
 
 ### Phase v2.0+ — INFINI Mode Autonome ⚠️
 
@@ -1520,21 +1538,22 @@ Trois règles simples :
 │   ├── [✅] v1.2.4 — Intégration news historique dans walk-forward (20 tests) — 681 tests total
 │   ├── [✅] v1.3.0 — Risk Management Engine (55 tests) — 777 tests total
 │   ├── [✅] v1.4.0 — Paper Trading System (64 tests) — 841 tests total
+│   ├── [✅] v1.5.0 — Journal + Profils + Levier Auto + Style (64 tests) — 930 tests total
 │   └── [ ] v1.2b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
 │
 ├── Juin
 │   ├── [ ] v1.2b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
-│   └── [ ] v1.5.0 — Production Ready (Docker, CI/CD, Auth)
+│   └── [ ] v1.6.0 — Production Ready (Docker, CI/CD, Auth)
 │
 ├── Juillet
-│   └── [ ] v1.5.0 — Production Ready (Docker, CI/CD, Auth)
+│   └── [ ] v1.6.0 — Production Ready (Docker, CI/CD, Auth)
 │
 ├── Août
 │   ├── [ ] v1.2c — Modèle ML sentiment basique (classification titres news)
-│   └── [ ] v1.5.0 — Production Ready (Docker, CI/CD, Auth)
+│   └── [ ] v1.6.0 — Production Ready (Docker, CI/CD, Auth)
 │
 ├── Septembre
-│   └── [ ] v1.6.0 — Multi-Assets (ETH, SOL... — seulement si BTC validé)
+│   └── [ ] v1.7.0 — Multi-Assets (ETH, SOL... — seulement si BTC validé)
 │
 ├── Octobre+
 │   └── [ ] v2.0.0 — INFINI Mode Autonome

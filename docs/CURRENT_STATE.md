@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 8 avril 2026
-> **Version :** v1.5.0
+> **Version :** v1.5.1
 > **Branche :** `master`
-> **Dernier commit :** feat(journal): add paper trading evaluation journal, trading profiles, auto leverage, style qualification
+> **Dernier commit :** feat(profiles): add auto-profile mode — dynamic profile selection per tick based on signal strength
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.5.0** |
+| Version courante | **v1.5.1** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **930 tests**, tous passing ✅ |
+| Tests backend | **949 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -51,7 +51,8 @@ bitcoin-trading-assistant/
 │   │   │   ├── sentiment_history.py # Modèle SentimentHistory
 │   │   │   ├── news_history.py     # Modèle NewsHistory
 │   │   │   ├── risk_config.py      # Modèle RiskConfig
-│   │   │   └── paper_account.py    # ← NOUVEAU v1.4 — PaperAccount + PaperTrade
+│   │   │   ├── paper_account.py    # ← v1.4 — PaperAccount + PaperTrade + active_profile (v1.5)
+│   │   │   └── tick_activity_log.py # ← NOUVEAU v1.5 — TickActivityLog (journal ticks)
 │   │   ├── schemas/
 │   │   │   ├── paper_trading.py    # ← NOUVEAU v1.4 — PaperAccountCreate/Response, PaperTradeResponse, PaperMetrics, PaperStatus, PaperTickResult
 │   │   │   └── ...
@@ -66,7 +67,7 @@ bitcoin-trading-assistant/
 │   │   │   └── scheduler.py    # APScheduler quad-jobs (4h + 30m + news + paper)
 │   │   └── utils/
 │   └── tests/
-│       ├── test_journal_and_profiles.py # ← NOUVEAU v1.5 — 64 tests
+│       ├── test_journal_and_profiles.py # ← MAJ v1.5.1 — 83 tests (+17 auto-profil)
 │       ├── test_paper_trading.py       # ← MAJ v1.5 — 64 tests
 │       ├── test_price_service.py       # ← v1.4.2 — 13 tests
 │       └── ...
@@ -155,7 +156,7 @@ bitcoin-trading-assistant/
 | GET | `/paper/journal` | **Journal d'évaluation multi-jours (filtres dates, synthèse, journalier, activité, raisons)** | **✅ NOUVEAU v1.5** |
 | GET | `/paper/style` | **Qualification du style de trading (distribution durées, scalping/intraday/swing)** | **✅ NOUVEAU v1.5** |
 | GET | `/paper/profile` | **Profil de trading actif + paramètres** | **✅ NOUVEAU v1.5** |
-| POST | `/paper/profile` | **Changer de profil (conservative/balanced/aggressive)** | **✅ NOUVEAU v1.5** |
+| POST | `/paper/profile` | **Changer de profil (conservative/balanced/aggressive/auto)** | **✅ MAJ v1.5.1** |
 | GET | `/paper/profile/presets` | **Tous les presets de profils disponibles** | **✅ NOUVEAU v1.5** |
 
 ### 3.2 Backend — Services
@@ -336,24 +337,27 @@ bitcoin-trading-assistant/
 | Fichier | Tests | Couverture |
 |---------|-------|------------|
 | test_health.py | 3 | Routes health + root |
-| test_indicators.py | 25 | Align bucket, NaN, freshness, indicateurs, intégration |
+| test_indicators.py | 35 | Align bucket, NaN, freshness, indicateurs, intégration |
 | test_market.py | 4 | Candles CRUD, filtres, limites |
-| test_scheduler.py | 8 | Config, timeframe, lifecycle, fetch job, status |
-| test_scheduler_dual_jobs.py | 13 | Dual config, jobs 4h/30m, erreurs |
+| test_scheduler.py | 16 | Config, timeframe, lifecycle, fetch job, status |
+| test_scheduler_dual_jobs.py | 15 | Dual config, jobs 4h/30m, erreurs |
 | test_scheduler_resample_1d.py | 7 | Resample 4h→1d, OHLCV, idempotent |
 | test_scheduler_resample_1h.py | 6 | Resample 30m→1h, OHLCV, idempotent |
-| test_scheduler_news.py         | 11 | ← NOUVEAU v1.2.3b — 11 tests job news RSS |
-| test_cryptocompare.py          | 30 | ← NOUVEAU v1.2.3b — 30 tests CryptoCompare (parsing, fetch, history, endpoints) |
-| test_signals.py | **71** | **RSI/MACD/SMA/Bollinger/ADX/Volume interpréteurs, MACD relatif, composite v1.2, résumé** |
+| test_scheduler_news.py         | 11 | Job news RSS + CryptoCompare |
+| test_cryptocompare.py          | 30 | CryptoCompare (parsing, fetch, history, endpoints) |
+| test_signals.py | **88** | **RSI/MACD/SMA/Bollinger/ADX/Volume interpréteurs, MACD relatif, composite v1.2, résumé** |
 | test_alerts.py | 48 | CRUD, évaluation, récurrence, endpoints |
 | test_news.py | 43 | Sentiment, impact, RSS, résumé, résilience, endpoints |
-| test_decision.py | **90** | Règles, scénarios, recommandation, intégration, endpoint, **sentiment historique combiné v1.2.4** |
+| test_decision.py | **122** | Règles, scénarios, recommandation, intégration, endpoint, **sentiment historique combiné v1.2.4** |
 | test_backtest.py | 31 | Schémas, métriques, intégration DB, endpoints, edge cases |
-| **test_verification.py** | **84** | **Range, verify, walk-forward, correctness v1.2, directional match, quality score, seuils adapatifs, integrity, compare mode, technical_only dual patch v1.2.4, endpoints** |
+| **test_verification.py** | **79** | **Range, verify, walk-forward, correctness v1.2, directional match, quality score, seuils adaptatifs, integrity, compare mode, technical_only dual patch v1.2.4, endpoints** |
 | test_binance_and_router.py | 89 | Binance 14 intervalles, DataSourceRouter, combinaisons |
 | **test_news_history.py** | **33** | **Modèle, scoring, persist idempotent, queries, range, coverage, endpoints** |
-| **test_risk.py** | **55** | **Config CRUD, évaluation trades, ATR SL, daily loss, kill switch, endpoints, edge cases** |
-| test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
+| **test_sentiment_history.py** | **42** | **Modèle, normalisation, requête par date, plage, couverture, chargement, intégration** |
+| **test_risk.py** | **57** | **Config CRUD, évaluation trades, ATR SL, daily loss, kill switch, endpoints, edge cases** |
+| **test_price_service.py** | **15** | **PriceService unifié, Binance→CoinGecko→DB fallback, ticker 24h** |
+| test_time_buckets.py | 24 | Timeframes, normalisation, buckets, fenêtres |
+| **test_paper_trading.py** | **68** | **Modèles, service, SL/TP, métriques, tick engine, endpoints, shorts** |
 | **test_journal_and_profiles.py** | **64** | **Journal évaluation, profils trading, levier auto, style, endpoints, schémas** |
 | **TOTAL** | **930** | **Tous passing ✅** |
 

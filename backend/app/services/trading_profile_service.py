@@ -94,12 +94,27 @@ class TradingProfileService:
     def __init__(self, db: Session):
         self.db = db
 
+    # Valeurs acceptées pour set_profile (les 3 presets + auto)
+    VALID_PROFILES = list(PROFILE_PRESETS.keys()) + ["auto"]
+
     def get_active_profile(self) -> TradingProfileResponse:
-        """Retourne le profil actif et ses paramètres."""
+        """Retourne le profil actif et ses paramètres.
+        Quand le profil est "auto", retourne les params conservative comme placeholder.
+        Les vrais paramètres sont résolus dynamiquement à chaque tick via auto_select_profile().
+        """
         account = self.db.query(PaperAccount).first()
         profile_name = "conservative"
         if account and hasattr(account, "active_profile") and account.active_profile:
             profile_name = account.active_profile
+
+        # En mode auto, on retourne les params conservative comme placeholder
+        # Le vrai profil est résolu per-tick par auto_select_profile()
+        if profile_name == "auto":
+            return TradingProfileResponse(
+                active_profile=TradingProfileType.auto,
+                params=PROFILE_PRESETS["conservative"],
+            )
+
         params = PROFILE_PRESETS.get(profile_name, PROFILE_PRESETS["conservative"])
         return TradingProfileResponse(
             active_profile=TradingProfileType(profile_name),
@@ -110,10 +125,17 @@ class TradingProfileService:
         """Retourne directement les paramètres du profil actif."""
         return self.get_active_profile().params
 
+    def is_auto_mode(self) -> bool:
+        """Vérifie si le profil actif est en mode auto."""
+        account = self.db.query(PaperAccount).first()
+        if account and hasattr(account, "active_profile") and account.active_profile:
+            return account.active_profile == "auto"
+        return False
+
     def set_profile(self, profile_type: str) -> TradingProfileResponse:
-        """Change le profil de trading actif."""
-        if profile_type not in PROFILE_PRESETS:
-            raise ValueError(f"Profil inconnu : {profile_type}. Valides : {list(PROFILE_PRESETS.keys())}")
+        """Change le profil de trading actif (conservative, balanced, aggressive, auto)."""
+        if profile_type not in self.VALID_PROFILES:
+            raise ValueError(f"Profil inconnu : {profile_type}. Valides : {self.VALID_PROFILES}")
 
         account = self.db.query(PaperAccount).first()
         if account is None:
@@ -126,6 +148,37 @@ class TradingProfileService:
         self.db.refresh(account)
         logger.info(f"Profil de trading changé → {profile_type}")
         return self.get_active_profile()
+
+    @staticmethod
+    def auto_select_profile(score: float, confidence: str) -> str:
+        """
+        Sélectionne automatiquement le profil optimal en fonction de la force du signal.
+
+        Logique :
+        - Score ≥ 50 ET confiance "high" → aggressive (opportunité forte)
+        - Score ≥ 30 ET confiance ≥ "medium" → balanced (opportunité correcte)
+        - Sinon → conservative (prudence par défaut)
+
+        Args:
+            score: Score composite du moteur de décision (valeur absolue utilisée)
+            confidence: Niveau de confiance ("low", "medium", "high")
+
+        Returns:
+            Nom du profil résolu ("conservative", "balanced" ou "aggressive")
+        """
+        abs_score = abs(score)
+        confidence_level = {"low": 0, "medium": 1, "high": 2}.get(confidence, 0)
+
+        # Opportunité forte → agressif
+        if abs_score >= 50 and confidence_level >= 2:
+            return "aggressive"
+
+        # Opportunité correcte → équilibré
+        if abs_score >= 30 and confidence_level >= 1:
+            return "balanced"
+
+        # Par défaut → conservateur
+        return "conservative"
 
     @staticmethod
     def get_all_presets() -> list[TradingProfileParams]:
