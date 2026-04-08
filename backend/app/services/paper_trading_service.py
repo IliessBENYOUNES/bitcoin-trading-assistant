@@ -609,7 +609,9 @@ class PaperTradingService:
 
             # [v1.5] Vérification cooldown
             cooldown_min = profile_params.cooldown_minutes if profile_params else 120
-            cooldown_reason = self._check_cooldown(account.id, cooldown_min)
+            # [v1.7] En multi-slot, cooldown par slot
+            cooldown_slot = slot_name if is_multi else None
+            cooldown_reason = self._check_cooldown(account.id, cooldown_min, slot=cooldown_slot)
             if cooldown_reason:
                 _log_tick(action_taken="hold", btc_price=current_price,
                           decision_score=score, decision_action=action,
@@ -629,7 +631,9 @@ class PaperTradingService:
 
             # [v1.5] Vérification max trades/jour
             max_tpd = profile_params.max_trades_per_day if profile_params else 3
-            max_check = self._check_max_trades_per_day(account.id, max_tpd)
+            # [v1.7] En multi-slot, compteur par slot
+            max_slot = slot_name if is_multi else None
+            max_check = self._check_max_trades_per_day(account.id, max_tpd, slot=max_slot)
             if max_check:
                 _log_tick(action_taken="hold", btc_price=current_price,
                           decision_score=score, decision_action=action,
@@ -998,19 +1002,27 @@ class PaperTradingService:
     # [v1.5] CONTRÔLES DE FRÉQUENCE
     # ================================================================
 
-    def _check_cooldown(self, account_id: int, cooldown_minutes: int) -> Optional[str]:
-        """Vérifie le cooldown entre deux trades. Retourne raison si bloqué."""
+    def _check_cooldown(self, account_id: int, cooldown_minutes: int, slot: Optional[str] = None) -> Optional[str]:
+        """
+        Vérifie le cooldown entre deux trades. Retourne raison si bloqué.
+
+        [v1.7] En mode multi-slot, le cooldown est vérifié PAR SLOT.
+        Un slot "balanced" peut avoir un cooldown de 5min pendant que
+        le slot "scalping" a son propre cooldown de 1min.
+        """
         if cooldown_minutes <= 0:
             return None
-        last_trade = (
+        query = (
             self.db.query(PaperTrade)
             .filter(
                 PaperTrade.account_id == account_id,
                 PaperTrade.status != "open",
             )
-            .order_by(PaperTrade.exit_ts.desc())
-            .first()
         )
+        # [v1.7] Filtrer par slot si spécifié
+        if slot is not None:
+            query = query.filter(PaperTrade.slot == slot)
+        last_trade = query.order_by(PaperTrade.exit_ts.desc()).first()
         if last_trade and last_trade.exit_ts:
             exit_ts = _ensure_aware(last_trade.exit_ts)
             elapsed = (datetime.now(timezone.utc) - exit_ts).total_seconds() / 60
@@ -1019,19 +1031,27 @@ class PaperTradingService:
                 return f"Cooldown : {remaining} min restantes (profil exige {cooldown_minutes} min)"
         return None
 
-    def _check_max_trades_per_day(self, account_id: int, max_trades: int) -> Optional[str]:
-        """Vérifie le nombre max de trades par jour. Retourne raison si atteint."""
+    def _check_max_trades_per_day(self, account_id: int, max_trades: int, slot: Optional[str] = None) -> Optional[str]:
+        """
+        Vérifie le nombre max de trades par jour. Retourne raison si atteint.
+
+        [v1.7] En mode multi-slot, le compteur est PAR SLOT.
+        Chaque slot a son propre quota de trades/jour.
+        """
         if max_trades <= 0:
             return None
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        count = (
+        query = (
             self.db.query(func.count(PaperTrade.id))
             .filter(
                 PaperTrade.account_id == account_id,
                 PaperTrade.entry_ts >= today_start,
             )
-            .scalar() or 0
         )
+        # [v1.7] Filtrer par slot si spécifié
+        if slot is not None:
+            query = query.filter(PaperTrade.slot == slot)
+        count = query.scalar() or 0
         if count >= max_trades:
             return f"{count}/{max_trades} trades aujourd'hui (max atteint)"
         return None

@@ -41,12 +41,12 @@ async def lifespan(app: FastAPI):
     - Code APRÈS yield = exécuté à l'ARRÊT
     """
     # === DÉMARRAGE ===
-    print("🚀 Démarrage de l'application...")
-    print("📦 Création des tables si nécessaire...")
+    print("[START] Demarrage de l'application...")
+    print("[DB] Creation des tables si necessaire...")
 
     # Crée les tables qui n'existent pas encore
     Base.metadata.create_all(bind=engine)
-    print("✅ Tables prêtes")
+    print("[OK] Tables pretes")
 
     # Démarrer le scheduler (si activé)
     start_scheduler()
@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
     yield  # L'application tourne ici
 
     # === ARRÊT ===
-    print("👋 Arrêt de l'application...")
+    print("[STOP] Arret de l'application...")
 
     # Arrêter le scheduler
     stop_scheduler()
