@@ -7,9 +7,9 @@
  * - Métriques de performance (Sharpe, drawdown, profit factor)
  * - Journal des trades (table scrollable)
  * - Mode AUTO : exécute des ticks automatiquement à intervalle régulier
- * - Boutons : Activer, Reset, Tick manuel, Auto ON/OFF, Fermer position
+ * - 🤖 Bouton unique "Lancer le Robot" : choisit le profil, active, et démarre l'auto
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -30,6 +30,8 @@ import {
   TextField,
   MenuItem,
   LinearProgress,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import {
   PlayArrow,
@@ -41,9 +43,11 @@ import {
   AccountBalance,
   AutoMode as AutoModeIcon,
   Timer as TimerIcon,
+  SmartToy as RobotIcon,
 } from '@mui/icons-material';
 import { usePaperTrading } from '../hooks/usePaperTrading';
-import type { PaperTradeItem } from '../types';
+import { setPaperProfile, getPaperProfile, createPaperAccount } from '../api/marketApi';
+import type { PaperTradeItem, TradingProfileType } from '../types';
 
 // Couleur selon PnL
 const pnlColor = (pnl: number | null): string => {
@@ -67,6 +71,8 @@ const statusChip = (status: string) => {
     closed_signal: { color: 'warning', label: '⚠️ Signal' },
     closed_expired: { color: 'default', label: '⏰ Expiré' },
     closed_manual: { color: 'default', label: '✋ Manuel' },
+    closed_stale: { color: 'default', label: '💤 Stagnant' },
+    closed_momentum_fade: { color: 'warning', label: '📉 Fade' },
   };
   const cfg = map[status] || { color: 'default' as const, label: status };
   return <Chip size="small" color={cfg.color} label={cfg.label} />;
@@ -83,6 +89,57 @@ const AUTO_INTERVALS = [
   { value: 3600, label: '1h' },
 ];
 
+// Profils disponibles avec infos pour le one-click
+const PROFILE_OPTIONS: {
+  value: TradingProfileType;
+  label: string;
+  emoji: string;
+  description: string;
+  autoInterval: number;   // intervalle auto-tick optimal pour ce profil
+  color: string;
+}[] = [
+  {
+    value: 'conservative',
+    label: 'Prudent',
+    emoji: '🛡️',
+    description: 'Peu de trades, haute qualité',
+    autoInterval: 300,
+    color: '#4caf50',
+  },
+  {
+    value: 'balanced',
+    label: 'Équilibré',
+    emoji: '⚖️',
+    description: 'Compromis fréquence / qualité',
+    autoInterval: 60,
+    color: '#ff9800',
+  },
+  {
+    value: 'aggressive',
+    label: 'Agressif',
+    emoji: '🔥',
+    description: 'Plus de trades, plus de risque',
+    autoInterval: 30,
+    color: '#f44336',
+  },
+  {
+    value: 'scalping',
+    label: 'Scalping',
+    emoji: '⚡',
+    description: 'Haute fréquence, sorties rapides',
+    autoInterval: 5,
+    color: '#e040fb',
+  },
+  {
+    value: 'auto',
+    label: 'Auto',
+    emoji: '🤖',
+    description: 'Le robot choisit le profil',
+    autoInterval: 10,
+    color: '#9c27b0',
+  },
+];
+
 export default function PaperTradingPanel() {
   const {
     status,
@@ -96,7 +153,6 @@ export default function PaperTradingPanel() {
     startAuto,
     stopAuto,
     refresh,
-    activate,
     reset,
     manualTick,
     closePosition,
@@ -105,10 +161,26 @@ export default function PaperTradingPanel() {
   const [capital, setCapital] = useState('10000');
   const [tickLoading, setTickLoading] = useState(false);
   const [selectedInterval, setSelectedInterval] = useState(10);
+  const [selectedProfile, setSelectedProfile] = useState<TradingProfileType>('auto');
+  const [activeProfile, setActiveProfile] = useState<TradingProfileType | null>(null);
+  const [launching, setLaunching] = useState(false);
 
   // Countdown timer pour le prochain tick auto
   const [countdown, setCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Charger le profil actif au démarrage
+  const loadProfile = useCallback(async () => {
+    try {
+      const p = await getPaperProfile();
+      setActiveProfile(p.active_profile as TradingProfileType);
+      setSelectedProfile(p.active_profile as TradingProfileType);
+    } catch {
+      // Ignore — profil par défaut
+    }
+  }, []);
+
+  useEffect(() => { loadProfile(); }, [loadProfile]);
 
   // Gère le countdown quand autoMode est actif
   useEffect(() => {
@@ -132,8 +204,36 @@ export default function PaperTradingPanel() {
     }
   }, [autoMode, autoIntervalSec]);
 
-  const handleActivate = async () => {
-    await activate(Number(capital) || 10000);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🤖 LANCER LE ROBOT — Un seul bouton fait tout
+  // ═══════════════════════════════════════════════════════════════════════════
+  const handleLaunchRobot = async () => {
+    setLaunching(true);
+    try {
+      // 1. Définir le profil
+      await setPaperProfile(selectedProfile);
+      setActiveProfile(selectedProfile);
+
+      // 2. Activer le compte s'il ne l'est pas
+      const isActive = status?.account?.is_active ?? false;
+      if (!isActive) {
+        await createPaperAccount({ initial_capital: Number(capital) || 10000 });
+        await refresh();
+      }
+
+      // 3. Démarrer le mode auto avec l'intervalle optimal du profil
+      const profileOpt = PROFILE_OPTIONS.find(p => p.value === selectedProfile);
+      const interval = profileOpt?.autoInterval ?? 10;
+      startAuto(interval);
+    } catch (err: unknown) {
+      // error handled by hook
+    } finally {
+      setLaunching(false);
+    }
+  };
+
+  const handleStopRobot = () => {
+    stopAuto();
   };
 
   const handleReset = async () => {
@@ -158,14 +258,14 @@ export default function PaperTradingPanel() {
     startAuto(selectedInterval);
   };
 
-  const handleStopAuto = () => {
-    stopAuto();
-  };
 
   const account = status?.account;
   const openPos = status?.open_position;
   const metrics = status?.metrics;
   const isActive = account?.is_active ?? false;
+
+  // Profil actif — trouver les infos d'affichage
+  const activeProfileInfo = PROFILE_OPTIONS.find(p => p.value === activeProfile);
 
   // Progress pour le countdown
   const countdownProgress = autoMode && autoIntervalSec > 0
@@ -197,6 +297,18 @@ export default function PaperTradingPanel() {
             }}
           />
         )}
+        {activeProfileInfo && isActive && (
+          <Chip
+            size="small"
+            label={`${activeProfileInfo.emoji} ${activeProfileInfo.label}`}
+            sx={{
+              fontWeight: 700,
+              bgcolor: `${activeProfileInfo.color}22`,
+              color: activeProfileInfo.color,
+              border: `1px solid ${activeProfileInfo.color}44`,
+            }}
+          />
+        )}
         {status?.current_btc_price && (
           <Chip
             size="small"
@@ -210,161 +322,174 @@ export default function PaperTradingPanel() {
         <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
       )}
 
-      {/* Contrôles principaux */}
-      <Stack direction="row" spacing={1} mb={1.5} flexWrap="wrap" useFlexGap>
-        <TextField
-          size="small"
-          label="Capital ($)"
-          type="number"
-          value={capital}
-          onChange={(e) => setCapital(e.target.value)}
-          sx={{ width: 120 }}
-        />
-        {!isActive ? (
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={<PlayArrow />}
-            onClick={handleActivate}
-            disabled={loading}
-          >
-            Activer
-          </Button>
-        ) : (
-          <>
-            {!autoMode && (
-              <Tooltip title="Exécuter un tick manuellement">
-                <Button
-                  variant="outlined"
-                  startIcon={tickLoading ? <CircularProgress size={16} /> : <PlayArrow />}
-                  onClick={handleTick}
-                  disabled={tickLoading}
-                >
-                  Tick
-                </Button>
-              </Tooltip>
-            )}
-            {openPos && (
-              <Button
-                variant="outlined"
-                color="warning"
-                startIcon={<Close />}
-                onClick={handleClose}
-              >
-                Fermer position
-              </Button>
-            )}
-          </>
-        )}
-        <Button
-          variant="outlined"
-          color="error"
-          startIcon={<Stop />}
-          onClick={handleReset}
-          disabled={loading}
-        >
-          Reset
-        </Button>
-        <Button
-          variant="outlined"
-          startIcon={<Refresh />}
-          onClick={refresh}
-          disabled={loading}
-        >
-          Actualiser
-        </Button>
-      </Stack>
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* 🤖 ZONE LANCEMENT ROBOT — Un clic pour tout faire              */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {!autoMode && (
+        <Box sx={{
+          mb: 2,
+          p: 2,
+          borderRadius: 2,
+          border: '1px solid rgba(247, 147, 26, 0.3)',
+          bgcolor: 'rgba(247, 147, 26, 0.04)',
+        }}>
+          <Stack direction="row" alignItems="center" spacing={1} mb={1.5}>
+            <RobotIcon sx={{ color: '#F7931A' }} />
+            <Typography variant="body1" fontWeight={700} sx={{ color: '#F7931A' }}>
+              🤖 Lancer le Robot
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              — Choisis un mode, appuie, c'est tout.
+            </Typography>
+          </Stack>
 
-      {/* ── MODE AUTO ─────────────────────────────────────────────────────── */}
-      {isActive && (
+          {/* Sélecteur de profil */}
+          <Stack direction="row" spacing={1} mb={2} flexWrap="wrap" useFlexGap>
+            <ToggleButtonGroup
+              value={selectedProfile}
+              exclusive
+              onChange={(_e, val) => val && setSelectedProfile(val as TradingProfileType)}
+              size="small"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  px: 1.5,
+                },
+              }}
+            >
+              {PROFILE_OPTIONS.map((p) => (
+                <ToggleButton
+                  key={p.value}
+                  value={p.value}
+                  sx={{
+                    '&.Mui-selected': {
+                      bgcolor: `${p.color}22`,
+                      color: p.color,
+                      borderColor: p.color,
+                      '&:hover': { bgcolor: `${p.color}33` },
+                    },
+                  }}
+                >
+                  <Tooltip title={p.description} arrow>
+                    <span>{p.emoji} {p.label}</span>
+                  </Tooltip>
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Stack>
+
+          {/* Description du profil sélectionné */}
+          {(() => {
+            const p = PROFILE_OPTIONS.find(x => x.value === selectedProfile);
+            return p ? (
+              <Alert
+                severity="info"
+                icon={false}
+                sx={{ mb: 2, py: 0.5, bgcolor: `${p.color}0A`, border: `1px solid ${p.color}33` }}
+              >
+                <Typography variant="body2">
+                  <strong>{p.emoji} {p.label}</strong> — {p.description}
+                  {' · '}Tick auto toutes les <strong>{AUTO_INTERVALS.find(i => i.value === p.autoInterval)?.label ?? p.autoInterval + 's'}</strong>
+                </Typography>
+              </Alert>
+            ) : null;
+          })()}
+
+          {/* Capital + Bouton Lancer */}
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <TextField
+              size="small"
+              label="Capital ($)"
+              type="number"
+              value={capital}
+              onChange={(e) => setCapital(e.target.value)}
+              sx={{ width: 130 }}
+            />
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={launching ? <CircularProgress size={20} color="inherit" /> : <RobotIcon />}
+              onClick={handleLaunchRobot}
+              disabled={launching || loading}
+              sx={{
+                flex: 1,
+                py: 1.5,
+                fontWeight: 800,
+                fontSize: '1rem',
+                background: 'linear-gradient(135deg, #F7931A, #E65100)',
+                boxShadow: '0 4px 20px rgba(247, 147, 26, 0.3)',
+                '&:hover': {
+                  background: 'linear-gradient(135deg, #FFB74D, #F7931A)',
+                  boxShadow: '0 6px 28px rgba(247, 147, 26, 0.5)',
+                  transform: 'translateY(-1px)',
+                },
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {launching ? 'Lancement...' : '🤖 Lancer le Robot'}
+            </Button>
+          </Stack>
+        </Box>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* 🔴 ROBOT EN COURS — Countdown + Arrêt                           */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {autoMode && (
         <Box sx={{
           mb: 2,
           p: 1.5,
           borderRadius: 2,
-          border: autoMode ? '1px solid #F7931A' : '1px solid rgba(255,255,255,0.08)',
-          bgcolor: autoMode ? 'rgba(247, 147, 26, 0.06)' : 'rgba(255,255,255,0.02)',
+          border: '1px solid #F7931A',
+          bgcolor: 'rgba(247, 147, 26, 0.06)',
           transition: 'all 0.3s ease',
         }}>
           <Stack direction="row" alignItems="center" spacing={1.5} flexWrap="wrap" useFlexGap>
-            <AutoModeIcon sx={{ color: autoMode ? '#F7931A' : 'text.secondary', fontSize: 20 }} />
-            <Typography variant="body2" fontWeight={600} sx={{ color: autoMode ? '#F7931A' : 'text.secondary' }}>
-              Mode Auto
+            <AutoModeIcon sx={{ color: '#F7931A', fontSize: 20, animation: 'spin 2s linear infinite' }} />
+            <Typography variant="body2" fontWeight={600} sx={{ color: '#F7931A' }}>
+              Robot actif {activeProfileInfo ? `(${activeProfileInfo.emoji} ${activeProfileInfo.label})` : ''}
             </Typography>
 
-            {!autoMode ? (
-              <>
-                <TextField
-                  select
-                  size="small"
-                  value={selectedInterval}
-                  onChange={(e) => setSelectedInterval(Number(e.target.value))}
-                  sx={{ minWidth: 100 }}
-                  label="Intervalle"
-                >
-                  {AUTO_INTERVALS.map(opt => (
-                    <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-                  ))}
-                </TextField>
-                <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<PlayArrow />}
-                  onClick={handleStartAuto}
+            {/* Countdown + stats */}
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ flex: 1 }}>
+              <TimerIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+              <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
+                Prochain tick dans {countdown}s
+              </Typography>
+              <Box sx={{ flex: 1, mx: 1 }}>
+                <LinearProgress
+                  variant="determinate"
+                  value={countdownProgress}
                   sx={{
-                    background: 'linear-gradient(135deg, #F7931A, #E65100)',
-                    fontWeight: 700,
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #FFB74D, #F7931A)',
-                      boxShadow: '0 0 16px rgba(247, 147, 26, 0.4)',
+                    height: 4,
+                    borderRadius: 2,
+                    bgcolor: 'rgba(255,255,255,0.06)',
+                    '& .MuiLinearProgress-bar': {
+                      bgcolor: '#F7931A',
+                      borderRadius: 2,
+                      transition: 'transform 1s linear',
                     },
                   }}
-                >
-                  Démarrer Auto
-                </Button>
-              </>
-            ) : (
-              <>
-                {/* Countdown + stats */}
-                <Stack direction="row" alignItems="center" spacing={1} sx={{ flex: 1 }}>
-                  <TimerIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                  <Typography variant="caption" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
-                    Prochain tick dans {countdown}s
-                  </Typography>
-                  <Box sx={{ flex: 1, mx: 1 }}>
-                    <LinearProgress
-                      variant="determinate"
-                      value={countdownProgress}
-                      sx={{
-                        height: 4,
-                        borderRadius: 2,
-                        bgcolor: 'rgba(255,255,255,0.06)',
-                        '& .MuiLinearProgress-bar': {
-                          bgcolor: '#F7931A',
-                          borderRadius: 2,
-                          transition: 'transform 1s linear',
-                        },
-                      }}
-                    />
-                  </Box>
-                  <Chip
-                    size="small"
-                    label={`${autoTickCount} ticks`}
-                    variant="outlined"
-                    sx={{ fontWeight: 700, fontFamily: 'monospace' }}
-                  />
-                </Stack>
-                <Button
-                  variant="contained"
-                  color="error"
-                  size="small"
-                  startIcon={<Stop />}
-                  onClick={handleStopAuto}
-                  sx={{ fontWeight: 700 }}
-                >
-                  Arrêter
-                </Button>
-              </>
-            )}
+                />
+              </Box>
+              <Chip
+                size="small"
+                label={`${autoTickCount} ticks`}
+                variant="outlined"
+                sx={{ fontWeight: 700, fontFamily: 'monospace' }}
+              />
+            </Stack>
+            <Button
+              variant="contained"
+              color="error"
+              size="small"
+              startIcon={<Stop />}
+              onClick={handleStopRobot}
+              sx={{ fontWeight: 700 }}
+            >
+              Arrêter le Robot
+            </Button>
           </Stack>
         </Box>
       )}
@@ -445,6 +570,16 @@ export default function PaperTradingPanel() {
               Position {openPos.direction.toUpperCase()} ouverte
             </Typography>
             {statusChip(openPos.status)}
+            <Button
+              variant="outlined"
+              color="warning"
+              size="small"
+              startIcon={<Close />}
+              onClick={handleClose}
+              sx={{ ml: 'auto' }}
+            >
+              Fermer
+            </Button>
           </Stack>
           <Typography variant="body2">
             Entrée : <strong>${openPos.entry_price.toLocaleString()}</strong>
@@ -457,6 +592,67 @@ export default function PaperTradingPanel() {
           </Typography>
         </Box>
       )}
+
+      {/* Contrôles secondaires (toujours visibles) */}
+      <Stack direction="row" spacing={1} mb={2} flexWrap="wrap" useFlexGap>
+        {isActive && !autoMode && (
+          <Tooltip title="Exécuter un tick manuellement">
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={tickLoading ? <CircularProgress size={14} /> : <PlayArrow />}
+              onClick={handleTick}
+              disabled={tickLoading}
+            >
+              Tick manuel
+            </Button>
+          </Tooltip>
+        )}
+        <Button
+          variant="outlined"
+          size="small"
+          color="error"
+          startIcon={<Stop />}
+          onClick={handleReset}
+          disabled={loading || autoMode}
+        >
+          Reset
+        </Button>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<Refresh />}
+          onClick={refresh}
+          disabled={loading}
+        >
+          Actualiser
+        </Button>
+        {/* Mode avancé : intervalle custom */}
+        {isActive && !autoMode && (
+          <>
+            <TextField
+              select
+              size="small"
+              value={selectedInterval}
+              onChange={(e) => setSelectedInterval(Number(e.target.value))}
+              sx={{ minWidth: 90 }}
+              label="Intervalle"
+            >
+              {AUTO_INTERVALS.map(opt => (
+                <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+              ))}
+            </TextField>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<AutoModeIcon />}
+              onClick={handleStartAuto}
+            >
+              Auto custom
+            </Button>
+          </>
+        )}
+      </Stack>
 
       <Divider sx={{ my: 2 }} />
 
@@ -492,6 +688,14 @@ export default function PaperTradingPanel() {
           </Table>
         </TableContainer>
       )}
+
+      {/* CSS animation pour le spinner */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </Box>
   );
 }

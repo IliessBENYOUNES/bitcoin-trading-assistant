@@ -14,6 +14,11 @@ All notable changes to this project will be documented in this file.
 - Auto-tick frontend : ajout intervalle 5s pour scalping rapide
 - Intervalle auto-tick par défaut : 10s (était 60s)
 - Le message de détail à l'ouverture affiche les SL/TP réellement utilisés (et non ceux du risk engine)
+- **PaperTradingPanel refactorisé** — Bouton unique "🤖 Lancer le Robot" : sélection profil + activation + auto-tick en un clic
+- Sélecteur de profil intégré directement dans le panel (🛡️ Prudent / ⚖️ Équilibré / 🔥 Agressif / ⚡ Scalping / 🤖 Auto)
+- Intervalle auto-tick automatiquement adapté au profil (5s scalping, 10s auto, 30s agressif, 60s équilibré, 300s prudent)
+- Affichage du profil actif dans le header et badge de statut robot
+- Nouveaux status badges : 💤 Stagnant, 📉 Fade
 
 ### Technical
 - `paper_trading_service.py` — Logique SL/TP profile-aware, loss cut inconditionnel, expiration profile-aware

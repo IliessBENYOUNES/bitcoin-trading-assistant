@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 8 avril 2026
 > **Version :** v1.6.1
 > **Branche :** `master`
-> **Dernier commit :** fix(paper-trading): scalping SL/TP serrés, loss cut inconditionnel, expiration profil
+> **Dernier commit :** feat(ui): one-click robot launch with profile selector
 
 ---
 
