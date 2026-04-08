@@ -77,6 +77,7 @@ def create_or_update_account(
     service = PaperTradingService(db)
     account = service.get_or_create_account(config.initial_capital)
     account.max_open_duration_hours = config.max_open_duration_hours
+    account.max_open_positions = config.max_open_positions
     if not account.is_active:
         account.is_active = True
     db.commit()

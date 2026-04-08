@@ -618,7 +618,7 @@ export async function getPaperAccount(
 }
 
 export async function createPaperAccount(
-  config: { initial_capital?: number; max_open_duration_hours?: number } = {},
+  config: { initial_capital?: number; max_open_duration_hours?: number; max_open_positions?: number } = {},
   options: FetchOptions = {}
 ): Promise<PaperAccountItem> {
   const url = `${BASE_URL}/paper/account`;

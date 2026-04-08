@@ -21,6 +21,8 @@ class PaperAccountCreate(BaseModel):
     """Configuration pour créer/reset un compte paper."""
     initial_capital: float = Field(default=10000.0, ge=100, le=10_000_000)
     max_open_duration_hours: float = Field(default=168.0, ge=1, le=8760)
+    max_open_positions: int = Field(default=1, ge=1, le=10,
+                                    description="Nombre max de positions simultanées (1=mono, >1=multi-slot)")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -50,6 +52,7 @@ class PaperTradeResponse(BaseModel):
     duration_hours: Optional[float] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    slot: Optional[str] = None  # v1.7 — slot multi-position
 
     model_config = {"from_attributes": True}
 
@@ -79,11 +82,13 @@ class PaperAccountResponse(BaseModel):
     sharpe_ratio: Optional[float] = None
     is_active: bool
     max_open_duration_hours: float
+    max_open_positions: int = 1  # v1.7
     btc_price_at_start: Optional[float] = None
     peak_capital: float
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    open_position: Optional[PaperTradeResponse] = None
+    open_position: Optional[PaperTradeResponse] = None  # rétrocompat
+    open_positions: list[PaperTradeResponse] = []  # v1.7 multi-slot
 
     model_config = {"from_attributes": True}
 
@@ -117,7 +122,8 @@ class PaperMetrics(BaseModel):
 class PaperStatus(BaseModel):
     """État complet du paper trading (compte + position + métriques)."""
     account: PaperAccountResponse
-    open_position: Optional[PaperTradeResponse] = None
+    open_position: Optional[PaperTradeResponse] = None  # rétrocompat
+    open_positions: list[PaperTradeResponse] = []  # v1.7 multi-slot
     metrics: PaperMetrics
     is_running: bool = False
     last_check_ts: Optional[str] = None
@@ -128,6 +134,16 @@ class PaperStatus(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 # Résultat d'un tick
 # ─────────────────────────────────────────────────────────────────────────────
+
+class SlotTickResult(BaseModel):
+    """Résultat d'un tick pour un slot individuel."""
+    slot: str
+    action_taken: str
+    detail: str
+    profile_type: str
+    position_opened: Optional[PaperTradeResponse] = None
+    position_closed: Optional[PaperTradeResponse] = None
+
 
 class PaperTickResult(BaseModel):
     """Résultat d'une itération du paper trading."""
@@ -144,4 +160,6 @@ class PaperTickResult(BaseModel):
     leverage_used: Optional[float] = None
     profile_type: Optional[str] = None
     non_trade_reason: Optional[str] = None
+    # v1.7 — Multi-slot
+    slot_results: list[SlotTickResult] = []
 

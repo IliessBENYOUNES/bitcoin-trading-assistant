@@ -41,6 +41,7 @@ from app.schemas.paper_trading import (
     PaperMetrics,
     PaperStatus,
     PaperTickResult,
+    SlotTickResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -116,12 +117,64 @@ class PaperTradingService:
         return account
 
     def get_open_position(self) -> Optional[PaperTrade]:
-        """Retourne la position ouverte (s'il y en a une)."""
+        """Retourne la position ouverte (s'il y en a une). Rétrocompatible."""
         return (
             self.db.query(PaperTrade)
             .filter(PaperTrade.status == "open")
             .first()
         )
+
+    def get_open_positions(self) -> list[PaperTrade]:
+        """[v1.7] Retourne TOUTES les positions ouvertes."""
+        return (
+            self.db.query(PaperTrade)
+            .filter(PaperTrade.status == "open")
+            .all()
+        )
+
+    def get_open_position_for_slot(self, slot: str) -> Optional[PaperTrade]:
+        """[v1.7] Retourne la position ouverte pour un slot donné."""
+        return (
+            self.db.query(PaperTrade)
+            .filter(PaperTrade.status == "open", PaperTrade.slot == slot)
+            .first()
+        )
+
+    def get_enabled_slots(self, account: PaperAccount) -> list[str]:
+        """
+        [v1.7] Retourne la liste des slots actifs.
+
+        En mode mono (max_open_positions=1) : retourne [active_profile].
+        En mode multi (max_open_positions>1) : retourne les profils parallèles.
+        Le profil "auto" se résout en ["balanced", "scalping"] pour le multi-slot.
+        """
+        max_pos = getattr(account, "max_open_positions", 1) or 1
+        profile = account.active_profile or "conservative"
+
+        if max_pos <= 1:
+            return [profile]
+
+        # Mode multi : retourner des slots par stratégie
+        # "auto" → balanced (tendance) + scalping (court terme)
+        if profile == "auto":
+            return ["balanced", "scalping"]
+
+        # Si un profil spécifique est sélectionné en multi, on ajoute le scalping
+        # pour permettre du trading haute fréquence en parallèle
+        if profile == "scalping":
+            return ["scalping", "aggressive"]
+        elif profile in ("balanced", "aggressive"):
+            return [profile, "scalping"]
+        elif profile == "conservative":
+            return ["conservative", "scalping"]
+        else:
+            return [profile]
+
+    def _capital_for_slot(self, account: PaperAccount, num_slots: int) -> float:
+        """[v1.7] Capital max alloué par slot (division égale)."""
+        if num_slots <= 1:
+            return account.current_capital
+        return account.current_capital / num_slots
 
     # ================================================================
     # TICK — Boucle centrale du paper trading
@@ -129,27 +182,114 @@ class PaperTradingService:
 
     def tick(self) -> PaperTickResult:
         """
-        Exécute un cycle du paper trading :
-        1. Vérifie que le compte est actif
-        2. Récupère le prix courant
-        3. Si position ouverte → vérifie SL/TP/expiration
-        4. Si pas de position → consulte DecisionService + RiskService
-        5. Ouvre/ferme des positions selon les résultats
-        6. [v1.5] Journalise le tick, applique profil et levier
+        [v1.7] Exécute un cycle du paper trading — multi-slot.
+
+        En mode mono (max_open_positions=1) : comportement identique à avant.
+        En mode multi (max_open_positions>1) : itère sur chaque slot (profil),
+        monitore les positions ouvertes et en ouvre de nouvelles en parallèle.
+
+        Chaque slot est un profil avec ses propres paramètres (SL/TP, durée, etc.).
+        Exemple : slot "balanced" (trend long) + slot "scalping" (court terme).
         """
         now = datetime.now(timezone.utc)
         account = self.get_or_create_account()
 
-        # [v1.5] Récupérer le profil actif
-        is_auto_mode = False
-        try:
-            profile_svc = TradingProfileService(self.db)
-            is_auto_mode = profile_svc.is_auto_mode()
-            profile_params = profile_svc.get_active_params()
-            profile_name = "auto" if is_auto_mode else profile_params.profile_type.value
-        except Exception:
-            profile_name = "conservative"
-            profile_params = None
+        # Vérification : compte actif
+        if not account.is_active:
+            return PaperTickResult(
+                action_taken="inactive",
+                detail="Paper trading désactivé. Activez-le via POST /paper/account.",
+                current_price=0.0,
+                timestamp=now.isoformat(),
+                non_trade_reason="inactive",
+            )
+
+        # Récupérer le prix courant
+        current_price = self._get_current_price()
+        if current_price is None or current_price <= 0:
+            return PaperTickResult(
+                action_taken="no_price",
+                detail="Prix BTC indisponible. Vérifiez que les données sont chargées.",
+                current_price=0.0,
+                timestamp=now.isoformat(),
+                non_trade_reason="no_price",
+            )
+
+        # Capture le prix initial pour buy & hold (si pas encore fait)
+        if account.btc_price_at_start is None:
+            account.btc_price_at_start = current_price
+            self.db.commit()
+
+        # [v1.7] Déterminer les slots actifs
+        slots = self.get_enabled_slots(account)
+        max_pos = getattr(account, "max_open_positions", 1) or 1
+
+        # Mode mono-slot (rétrocompatible) : exécuter un seul tick
+        if max_pos <= 1 or len(slots) <= 1:
+            slot_name = slots[0] if slots else "conservative"
+            return self._tick_single_slot(
+                account=account,
+                slot_name=slot_name,
+                current_price=current_price,
+                now=now,
+                is_multi=False,
+            )
+
+        # [v1.7] Mode multi-slot : itérer sur chaque slot
+        slot_results: list[SlotTickResult] = []
+        primary_result: Optional[PaperTickResult] = None
+
+        for slot_name in slots:
+            result = self._tick_single_slot(
+                account=account,
+                slot_name=slot_name,
+                current_price=current_price,
+                now=now,
+                is_multi=True,
+            )
+
+            slot_results.append(SlotTickResult(
+                slot=slot_name,
+                action_taken=result.action_taken,
+                detail=result.detail,
+                profile_type=result.profile_type or slot_name,
+                position_opened=result.position_opened,
+                position_closed=result.position_closed,
+            ))
+
+            # Garder le résultat le plus "intéressant" comme résultat principal
+            if primary_result is None or result.action_taken not in ("hold", "inactive", "no_price"):
+                primary_result = result
+
+        if primary_result is None:
+            primary_result = PaperTickResult(
+                action_taken="hold",
+                detail=f"Multi-slot : {len(slots)} slots actifs, rien à faire",
+                current_price=current_price,
+                timestamp=now.isoformat(),
+            )
+
+        primary_result.slot_results = slot_results
+        return primary_result
+
+    def _tick_single_slot(
+        self,
+        account: PaperAccount,
+        slot_name: str,
+        current_price: float,
+        now: datetime,
+        is_multi: bool = False,
+    ) -> PaperTickResult:
+        """
+        Exécute un tick pour un slot donné.
+
+        Un slot = un profil avec ses paramètres propres.
+        Chaque slot ne peut avoir qu'une seule position ouverte.
+        """
+        # Résoudre le profil pour ce slot
+        profile_params = PROFILE_PRESETS.get(slot_name, PROFILE_PRESETS["conservative"])
+        profile_name = slot_name
+        is_auto_mode = False  # en multi-slot, chaque slot a un profil fixe
 
         # [v1.6] Paramètres de décision pilotés par le profil
         _analysis_tf = getattr(profile_params, "analysis_timeframe", None) or "4h"
@@ -165,40 +305,11 @@ class PaperTradingService:
             except Exception as e:
                 logger.debug(f"Journal log error (non-blocking): {e}")
 
-        # Vérification : compte actif
-        if not account.is_active:
-            _log_tick(action_taken="inactive", reason_no_trade="inactive",
-                      reason_detail="Paper trading désactivé")
-            return PaperTickResult(
-                action_taken="inactive",
-                detail="Paper trading désactivé. Activez-le via POST /paper/account.",
-                current_price=0.0,
-                timestamp=now.isoformat(),
-                profile_type=profile_name,
-                non_trade_reason="inactive",
-            )
-
-        # Récupérer le prix courant
-        current_price = self._get_current_price()
-        if current_price is None or current_price <= 0:
-            _log_tick(action_taken="no_price", reason_no_trade="no_price",
-                      reason_detail="Prix BTC indisponible")
-            return PaperTickResult(
-                action_taken="no_price",
-                detail="Prix BTC indisponible. Vérifiez que les données sont chargées.",
-                current_price=0.0,
-                timestamp=now.isoformat(),
-                profile_type=profile_name,
-                non_trade_reason="no_price",
-            )
-
-        # Capture le prix initial pour buy & hold (si pas encore fait)
-        if account.btc_price_at_start is None:
-            account.btc_price_at_start = current_price
-            self.db.commit()
-
-        # Vérifier la position ouverte
-        open_pos = self.get_open_position()
+        # [v1.7] Vérifier la position ouverte pour CE slot
+        if is_multi:
+            open_pos = self.get_open_position_for_slot(slot_name)
+        else:
+            open_pos = self.get_open_position()
 
         if open_pos is not None:
             # --- Position ouverte : vérifier SL/TP/expiration ---
@@ -634,6 +745,7 @@ class PaperTradingService:
                 leverage=leverage_final,
                 leverage_reason=leverage_reasons,
                 profile_type=profile_name,
+                slot=slot_name if is_multi else None,
             )
 
             _log_tick(action_taken=f"opened_{direction}", btc_price=current_price,
@@ -675,10 +787,17 @@ class PaperTradingService:
         leverage: float = 1.0,
         leverage_reason: Optional[str] = None,
         profile_type: Optional[str] = None,
+        slot: Optional[str] = None,
     ) -> PaperTrade:
         """Ouvre une position paper."""
         if now is None:
             now = datetime.now(timezone.utc)
+
+        # [v1.7] En multi-slot, limiter le capital par slot
+        max_pos = getattr(account, "max_open_positions", 1) or 1
+        if max_pos > 1:
+            capital_per_slot = self._capital_for_slot(account, max_pos)
+            size_usd = min(size_usd, capital_per_slot)
 
         effective_size = size_usd * leverage
 
@@ -696,6 +815,7 @@ class PaperTradingService:
             effective_size_usd=round(effective_size, 2),
             leverage_reason=leverage_reason,
             profile_type=profile_type,
+            slot=slot,
             entry_reason=reason[:500],
             decision_score=score,
             entry_ts=now,
@@ -981,27 +1101,39 @@ class PaperTradingService:
     def get_status(self) -> PaperStatus:
         """Retourne le statut complet du paper trading."""
         account = self.get_or_create_account()
-        open_pos = self.get_open_position()
+        open_positions = self.get_open_positions()
+        open_pos = open_positions[0] if open_positions else None
         metrics = self.get_metrics()
 
         current_price = self._get_current_price()
-        unrealized = None
-        if open_pos and current_price:
-            unrealized = self._calc_unrealized_pnl(open_pos, current_price)
+        # Calcul PnL non réalisé total (toutes positions ouvertes)
+        total_unrealized = None
+        if open_positions and current_price:
+            total_unrealized = sum(
+                self._calc_unrealized_pnl(pos, current_price)
+                for pos in open_positions
+            )
 
         account_resp = PaperAccountResponse.model_validate(account)
+        # Rétrocompat : open_position = première position
         if open_pos:
             account_resp.open_position = PaperTradeResponse.model_validate(open_pos)
+        # [v1.7] Toutes les positions ouvertes
+        account_resp.open_positions = [
+            PaperTradeResponse.model_validate(p) for p in open_positions
+        ]
 
         open_resp = PaperTradeResponse.model_validate(open_pos) if open_pos else None
+        open_resps = [PaperTradeResponse.model_validate(p) for p in open_positions]
 
         return PaperStatus(
             account=account_resp,
             open_position=open_resp,
+            open_positions=open_resps,
             metrics=metrics,
             is_running=account.is_active,
             current_btc_price=current_price,
-            unrealized_pnl=round(unrealized, 2) if unrealized is not None else None,
+            unrealized_pnl=round(total_unrealized, 2) if total_unrealized is not None else None,
         )
 
     def get_trades(

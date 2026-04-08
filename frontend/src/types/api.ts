@@ -675,6 +675,7 @@ export interface PaperTradeItem {
   duration_hours: number | null;
   created_at: string | null;
   updated_at: string | null;
+  slot?: string | null; // v1.7 multi-slot
 }
 
 export interface PaperAccountItem {
@@ -691,11 +692,13 @@ export interface PaperAccountItem {
   sharpe_ratio: number | null;
   is_active: boolean;
   max_open_duration_hours: number;
+  max_open_positions?: number; // v1.7
   btc_price_at_start: number | null;
   peak_capital: number;
   created_at: string | null;
   updated_at: string | null;
   open_position: PaperTradeItem | null;
+  open_positions?: PaperTradeItem[]; // v1.7
 }
 
 export interface PaperMetrics {
@@ -718,11 +721,21 @@ export interface PaperMetrics {
 export interface PaperStatus {
   account: PaperAccountItem;
   open_position: PaperTradeItem | null;
+  open_positions?: PaperTradeItem[]; // v1.7
   metrics: PaperMetrics;
   is_running: boolean;
   last_check_ts: string | null;
   current_btc_price: number | null;
   unrealized_pnl: number | null;
+}
+
+export interface SlotTickResult {
+  slot: string;
+  action_taken: string;
+  detail: string;
+  profile_type: string;
+  position_opened: PaperTradeItem | null;
+  position_closed: PaperTradeItem | null;
 }
 
 export interface PaperTickResult {
@@ -735,6 +748,7 @@ export interface PaperTickResult {
   decision_score: number | null;
   decision_action: string | null;
   risk_allowed: boolean | null;
+  slot_results?: SlotTickResult[]; // v1.7
 }
 
 export interface PaperTradeListResponse {

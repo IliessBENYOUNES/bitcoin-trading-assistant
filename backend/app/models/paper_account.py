@@ -43,6 +43,13 @@ class PaperAccount(Base):
         String(20), nullable=False, default="conservative"
     )
 
+    # [v1.7] Nombre max de positions ouvertes simultanément
+    # 1 = comportement mono-position (rétrocompatible)
+    # >1 = mode multi-slot (1 position par slot/profil)
+    max_open_positions: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1
+    )
+
     # Prix BTC au moment du reset/création (pour calcul buy & hold)
     btc_price_at_start: Mapped[float] = mapped_column(Float, nullable=True)
 
@@ -108,6 +115,12 @@ class PaperTrade(Base):
 
     # --- Profil de trading au moment de l'entrée (v1.5) ---
     profile_type: Mapped[str] = mapped_column(String(20), nullable=True)
+
+    # --- Slot multi-position (v1.7) ---
+    # Identifie à quel "slot" (profil parallèle) cette position appartient.
+    # Chaque slot ne peut avoir qu'une seule position ouverte.
+    # None = mono-position (rétrocompatible)
+    slot: Mapped[str] = mapped_column(String(20), nullable=True)
 
     # --- PnL ---
     pnl: Mapped[float] = mapped_column(Float, nullable=True)

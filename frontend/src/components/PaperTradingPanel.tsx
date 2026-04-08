@@ -220,11 +220,20 @@ export default function PaperTradingPanel() {
       await setPaperProfile(selectedProfile);
       setActiveProfile(selectedProfile);
 
-      // 2. Activer le compte s'il ne l'est pas
+      // 2. Activer le compte avec multi-slot (3 positions simultanées)
       const isActive = status?.account?.is_active ?? false;
       if (!isActive) {
-        await createPaperAccount({ initial_capital: Number(capital) || 10000 });
+        await createPaperAccount({
+          initial_capital: Number(capital) || 10000,
+          max_open_positions: 3,
+        });
         await refresh();
+      } else {
+        // Même si actif, mettre à jour max_open_positions pour le multi-slot
+        await createPaperAccount({
+          initial_capital: status?.account?.initial_capital || Number(capital) || 10000,
+          max_open_positions: 3,
+        });
       }
 
       // 3. Démarrer le mode auto avec l'intervalle optimal du profil
@@ -562,8 +571,47 @@ export default function PaperTradingPanel() {
         </Box>
       )}
 
-      {/* Position ouverte */}
-      {openPos && (
+      {/* Positions ouvertes (multi-slot) */}
+      {(status?.open_positions?.length ?? 0) > 0 ? (
+        <Box sx={{ mb: 2 }}>
+          {(status?.open_positions ?? []).map((pos) => (
+            <Box key={pos.id} sx={{
+              mb: 1, p: 2,
+              bgcolor: '#1a237e10',
+              borderRadius: 2,
+              border: `1px solid ${pos.direction === 'long' ? '#4caf50' : '#f44336'}44`,
+            }}>
+              <Stack direction="row" alignItems="center" spacing={1} mb={0.5}>
+                {pos.direction === 'long' ? <TrendingUp color="success" /> : <TrendingDown color="error" />}
+                <Typography fontWeight={700} fontSize={14}>
+                  {pos.direction.toUpperCase()}
+                  {pos.slot && <Chip size="small" label={pos.slot} sx={{ ml: 1, fontSize: 11, height: 20 }} />}
+                </Typography>
+                {statusChip(pos.status)}
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  size="small"
+                  startIcon={<Close />}
+                  onClick={handleClose}
+                  sx={{ ml: 'auto' }}
+                >
+                  Fermer
+                </Button>
+              </Stack>
+              <Typography variant="body2">
+                Entrée : <strong>${pos.entry_price.toLocaleString()}</strong>
+                {' | '}SL : <strong style={{ color: '#f44336' }}>${pos.stop_loss_price.toLocaleString()}</strong>
+                {' | '}TP : <strong style={{ color: '#4caf50' }}>${pos.take_profit_price.toLocaleString()}</strong>
+                {' | '}Taille : <strong>${pos.position_size_usd.toLocaleString()}</strong>
+              </Typography>
+              <Typography variant="body2" color="text.secondary" mt={0.5} fontSize={12}>
+                Score : {pos.decision_score?.toFixed(0) ?? '—'} | {pos.entry_reason?.slice(0, 120)}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      ) : openPos && (
         <Box sx={{
           mb: 2, p: 2,
           bgcolor: '#1a237e10',

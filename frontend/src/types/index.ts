@@ -93,6 +93,7 @@ export type {
   PaperMetrics,
   PaperStatus,
   PaperTickResult,
+  SlotTickResult,
   PaperTradeListResponse,
   // Paper Trading — Journal & Profils (v1.5)
   JournalPeriodSummary,

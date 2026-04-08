@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-04-08
+
+### Added
+- **Multi-slot : positions parallèles** — Le bot peut maintenant gérer **plusieurs positions simultanément** (max 3 par défaut). Chaque "slot" est un profil avec ses propres paramètres (SL/TP, durée, levier).
+  - En mode "Auto" : slot "balanced" (tendance 1-4h) + slot "scalping" (haute fréquence 15m) en parallèle
+  - En mode "Scalping" : slot "scalping" + slot "aggressive" en parallèle
+  - Allocation de capital par slot (division égale)
+  - Chaque position affichée dans l'UI avec son badge de slot
+- **Modèle `PaperTrade.slot`** — Nouvelle colonne pour identifier le slot d'une position
+- **Modèle `PaperAccount.max_open_positions`** — Configurable (1=mono rétrocompat, >1=multi)
+- **`PaperStatus.open_positions`** — Liste de toutes les positions ouvertes
+- **`SlotTickResult`** — Résultat par slot dans le tick multi-slot
+- **Scalping mean reversion bidirectionnel** — Le bot peut ouvrir des SHORT en tendance haussière quand les oscillateurs (RSI, StochRSI) montrent un surachat, et des LONG en tendance baissière quand survente
+- **SL/TP defaults direction-aware** — Bug fix critique : les shorts recevaient des SL/TP de longs
+
+### Changed
+- `tick()` refactorisé en orchestrateur multi-slot + `_tick_single_slot()` par slot
+- UI `PaperTradingPanel` : affiche toutes les positions ouvertes avec badges de slot
+- `handleLaunchRobot` active automatiquement `max_open_positions=3` au lancement
+
+### Technical
+- `paper_account.py` — `max_open_positions`, `PaperTrade.slot`
+- `paper_trading_service.py` — `get_open_positions()`, `get_open_position_for_slot()`, `get_enabled_slots()`, `_capital_for_slot()`, `_scalping_reversal_check()`
+- `paper_trading.py` (schemas) — `SlotTickResult`, champs multi-slot
+- Rétrocompatibilité totale : `max_open_positions=1` = comportement identique, 1005 tests passent
+
 ## [1.6.2] - 2026-04-08
 
 ### Fixed
