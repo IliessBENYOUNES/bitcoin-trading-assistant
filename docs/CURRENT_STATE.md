@@ -28,7 +28,6 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 ```
 bitcoin-trading-assistant/
 ├── CLAUDE.md                   # Source unique de vérité agent IA
-├── AGENT.md                    # Conservé pour compatibilité (pointe vers CLAUDE.md)
 ├── backend/                    # API FastAPI
 │   ├── app/
 │   │   ├── main.py             # Point d'entrée, lifespan, CORS

@@ -1,8 +1,7 @@
 # 🤖 CLAUDE.md — Règles Agent IA (Bitcoin Trading Assistant)
 
 > Ce fichier est la **source unique de vérité** pour tout agent IA travaillant sur ce projet.
-> Il fusionne et remplace le contenu de AGENT.md (conservé pour compatibilité).
-> **Version :** v0.9.0 — Dernière mise à jour : 2 avril 2026
+> **Version :** v1.0.0 — Dernière mise à jour : 8 avril 2026
 
 ---
 
@@ -17,7 +16,7 @@
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
 | Tests backend | **1005 tests** pytest, tous passing |
 | Frontend build | `tsc --noEmit` sans erreur |
-| Phase courante | **v1.7.1 livré** — Étape 2 INFINI v1 complète, prochaine étape v2.0 Robot Autonome |
+| Phase courante | **v1.7.2 livré** — Étape 2 INFINI v1 complète, prochaine étape v2.0 Robot Autonome |
 
 **Documents à lire en premier :**
 1. Ce fichier (`CLAUDE.md`) — Règles de l'agent
@@ -261,7 +260,7 @@ Avant d'ajouter une feature :
 1. Lire `docs/ROADMAP.md` pour la roadmap complète (phases + vision long terme)
 2. S'assurer que la feature s'inscrit dans la bonne phase
 
-**Phase actuelle : v1.7.1 livré — Prochaine étape v2.0 Robot Autonome**
+**Phase actuelle : v1.7.2 livré — Prochaine étape v2.0 Robot Autonome**
 
 Ne pas implémenter une feature d'une phase future si la phase courante n'est pas terminée.
 
