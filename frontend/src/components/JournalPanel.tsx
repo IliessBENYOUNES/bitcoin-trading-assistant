@@ -10,7 +10,7 @@
  * - Profil actif + sélection
  * - Style de trading (distribution durées)
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -90,11 +90,13 @@ const PROFILE_COLORS: Record<string, string> = {
   auto: '#9c27b0',
 };
 
-export default function JournalPanel() {
+export default function JournalPanel({ refreshTrigger }: { refreshTrigger?: number }) {
   // Date filters
   const [dateFrom, setDateFrom] = useState(isoDate(-7));
   const [dateTo, setDateTo] = useState(isoDate());
   const [activePreset, setActivePreset] = useState(2); // "7 jours"
+  // Compteur forcé pour re-fetch (résout le bug "aujourd'hui" quand les dates ne changent pas)
+  const [fetchCounter, setFetchCounter] = useState(0);
 
   // Data
   const [journal, setJournal] = useState<JournalResponse | null>(null);
@@ -126,15 +128,30 @@ export default function JournalPanel() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  // fetchCounter inclus pour forcer le re-fetch quand on clique sur le même preset
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo, fetchCounter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Auto-refresh quand refreshTrigger change (après un trade en paper trading)
+  const prevTriggerRef = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger !== undefined && refreshTrigger !== prevTriggerRef.current) {
+      prevTriggerRef.current = refreshTrigger;
+      // Incrémenter fetchCounter pour déclencher fetchData
+      setFetchCounter(prev => prev + 1);
+    }
+  }, [refreshTrigger]);
 
   const handlePreset = (idx: number) => {
     setActivePreset(idx);
     const v = DATE_PRESETS[idx].getValue();
     setDateFrom(v.from);
     setDateTo(v.to);
+    // Incrémenter le compteur pour forcer le re-fetch même si les dates n'ont pas changé
+    // (corrige le bug "Aujourd'hui" → cliquer "Tout" → re-cliquer "Aujourd'hui" sans changement)
+    setFetchCounter(prev => prev + 1);
   };
 
   const handleProfileChange = async (newProfile: string) => {

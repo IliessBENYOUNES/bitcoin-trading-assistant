@@ -1,24 +1,25 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 8 avril 2026
-> **Version :** v1.7.1
+> **Version :** v1.7.2
 > **Branche :** `master`
-> **Dernier commit :** fix(multi-slot): per-slot cooldown + fix startup emoji crash on Windows
+> **Dernier commit :** feat(trading): auto-refresh panels after trade + trailing stop scalping + fix journal today filter
 
 ---
 
 ## 1. Vue d'ensemble
 
-Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'aide à la lecture et à la **décision** sur le marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur **14 timeframes**, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, affiche un **prix BTC temps réel via WebSocket Binance**, **produit des recommandations explicables via un moteur de décision combinant analyse technique et sentiment**, **valide empiriquement les décisions via un moteur de backtesting**, **vérifie les prédictions sur l'historique profond via un système de time-travel backtest + walk-forward**, **applique des garde-fous de risque (SL/TP, daily loss, kill switch)**, **simule le trading en temps réel via un paper trading automatisé**, et **fournit un journal d'évaluation multi-jours avec profils de trading, levier auto intelligent et qualification du style**.
+Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'aide à la lecture et à la **décision** sur le marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur **14 timeframes**, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, affiche un **prix BTC temps réel via WebSocket Binance**, **produit des recommandations explicables via un moteur de décision combinant analyse technique et sentiment**, **valide empiriquement les décisions via un moteur de backtesting**, **vérifie les prédictions sur l'historique profond via un système de time-travel backtest + walk-forward**, **applique des garde-fous de risque (SL/TP, daily loss, kill switch)**, **simule le trading en temps réel via un paper trading automatisé**, **fournit un journal d'évaluation multi-jours avec profils de trading, levier auto intelligent et qualification du style**, **diagnostique la fréquence de trading et identifie les opportunités manquées**, et **gère des positions multi-slot parallèles (trend + scalping simultanés) avec mean reversion bidirectionnel**.
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.7.1** |
+| Version courante | **v1.7.2** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
 | Tests backend | **1005 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
+| Phase courante | **Étape 2 complète (v1.0→v1.7.2)** — Prochaine étape : v2.0 Robot Autonome |
 
 ---
 
@@ -52,14 +53,14 @@ bitcoin-trading-assistant/
 │   │   │   ├── sentiment_history.py # Modèle SentimentHistory
 │   │   │   ├── news_history.py     # Modèle NewsHistory
 │   │   │   ├── risk_config.py      # Modèle RiskConfig
-│   │   │   ├── paper_account.py    # ← v1.4 — PaperAccount + PaperTrade + active_profile (v1.5)
+│   │   │   ├── paper_account.py    # ← v1.4 — PaperAccount + PaperTrade + active_profile (v1.5) + slot/max_open_positions (v1.7)
 │   │   │   └── tick_activity_log.py # ← NOUVEAU v1.5 — TickActivityLog (journal ticks)
 │   │   ├── schemas/
-│   │   │   ├── paper_trading.py    # ← NOUVEAU v1.4 — PaperAccountCreate/Response, PaperTradeResponse, PaperMetrics, PaperStatus, PaperTickResult
+│   │   │   ├── paper_trading.py # ← NOUVEAU v1.4 — PaperAccountCreate/Response, PaperTradeResponse, PaperMetrics, PaperStatus, PaperTickResult, SlotTickResult (v1.7)
 │   │   │   ├── diagnostic.py      # ← NOUVEAU v1.6 — DiagnosticResponse, MissedOpportunitySummary, LeverageAnalysisResponse
 │   │   │   └── ...
 │   │   ├── services/
-│   │   │   ├── paper_trading_service.py # ← MAJ v1.5 — Intégration profils, levier, journal tick
+│   │   │   ├── paper_trading_service.py # ← MAJ v1.7 — Multi-slot, mean reversion, per-slot cooldown
 │   │   │   ├── journal_service.py      # ← NOUVEAU v1.5 — Journal d'évaluation multi-jours
 │   │   │   ├── trading_profile_service.py # ← NOUVEAU v1.5 — Conservative/Balanced/Aggressive/Scalping
 │   │   │   ├── leverage_service.py     # ← NOUVEAU v1.5 — Levier auto intelligent
@@ -70,7 +71,7 @@ bitcoin-trading-assistant/
 │   │   │   └── scheduler.py    # APScheduler quad-jobs (4h + 30m + news + paper)
 │   │   └── utils/
 │   └── tests/
-│       ├── test_journal_and_profiles.py # ← MAJ v1.5.1 — 83 tests (+17 auto-profil)
+│       ├── test_journal_and_profiles.py # ← MAJ v1.7 — 84 tests (+17 auto-profil, +3 scalping)
 │       ├── test_paper_trading.py       # ← MAJ v1.5 — 64 tests
 │       ├── test_price_service.py       # ← v1.4.2 — 13 tests
 │       └── ...
@@ -166,7 +167,24 @@ bitcoin-trading-assistant/
 | **GET** | **`/paper/missed-opportunities`** | **Opportunités manquées (analyse ex-post des mouvements ratés)** | **✅ NOUVEAU v1.6** |
 | **GET** | **`/paper/leverage-analysis`** | **Analyse comparative avec/sans levier** | **✅ NOUVEAU v1.6** |
 
-### 3.2 Backend — Services
+### 3.2 Backend — Services (incluant v1.7 Multi-Slot)
+
+**Fonctionnalités multi-slot (v1.7.0 — v1.7.2) :**
+
+| Fonctionnalité | Description | Status |
+|----------------|-------------|--------|
+| **Positions parallèles** | Jusqu'à 3 positions simultanées (configurable via `max_open_positions`) | **✅ v1.7.0** |
+| **Slots nommés** | Chaque position est assignée à un slot (balanced, scalping, aggressive) | **✅ v1.7.0** |
+| **Allocation de capital** | Division égale du capital entre les slots actifs | **✅ v1.7.0** |
+| **Auto-mode multi-slot** | Mode Auto → slot balanced + scalping en parallèle | **✅ v1.7.0** |
+| **Scalping mean reversion** | SHORT en surachat, LONG en survente (bidirectionnel) | **✅ v1.7.0** |
+| **SL/TP direction-aware** | Defaults corrigés pour SHORT (SL au-dessus, TP en dessous) | **✅ v1.7.0** |
+| **Per-slot cooldown** | Chaque slot a ses propres timers de cooldown indépendants | **✅ v1.7.1** |
+| **Per-slot daily trade counter** | Chaque slot a son propre compteur de trades journalier | **✅ v1.7.1** |
+| **Fix Windows emoji crash** | Remplacement Unicode → ASCII dans les logs startup | **✅ v1.7.1** |
+| **Trailing stop scalping** | Sort dès que le PnL recule de 0.05% depuis le pic (activation à +0.03%) | **✅ v1.7.2** |
+| **Auto-refresh panels** | Journal, Diagnostic, Opportunités manquées se rafraîchissent auto après chaque trade | **✅ v1.7.2** |
+| **Fix filtre Aujourd'hui** | Journal : re-cliquer sur "Aujourd'hui" recharge bien les données | **✅ v1.7.2** |
 
 | Service | Description | Status |
 |---------|-------------|--------|
@@ -187,7 +205,7 @@ bitcoin-trading-assistant/
 | **News Service** | Collecte RSS + classification sentiment + score d'impact | ✅ |
 | **Resample Service** | Agrégation OHLCV 14 timeframes, idempotent | ✅ |
 | **Scheduler Dual-Jobs** | Job 4h + Job 30m via DataSourceRouter | ✅ |
-| **Paper Trading Service** | Moteur de paper trading : exécution temps réel, SL/TP, métriques | ✅ **NOUVEAU v1.4** |
+| **Paper Trading Service** | Moteur de paper trading : exécution temps réel, SL/TP, métriques, **multi-slot positions parallèles, mean reversion bidirectionnel, per-slot cooldown** | ✅ **MAJ v1.7** |
 | **Journal Service** | **Journal d'évaluation : log_tick, agrégations période/jour, activité, raisons non-trade** | **✅ NOUVEAU v1.5** |
 | **Trading Profile Service** | **Profils Conservative/Balanced/Aggressive : seuils, fréquence, levier, sorties** | **✅ NOUVEAU v1.5** |
 | **Leverage Service** | **Levier auto intelligent : score × confiance × volatilité, veto risk engine** | **✅ NOUVEAU v1.5** |
@@ -311,7 +329,7 @@ bitcoin-trading-assistant/
 - Panel news avec jauge sentiment, liste articles, filtres, liens cliquables
 - **Panel backtesting avec config, métriques, journal de trades** ← v1.1
 - **Panel vérification historique avec chargement, date picker, walk-forward** ← NOUVEAU v1.1.1
-- **Panel paper trading avec statut, exécution manuelle de ticks, journal de trades, métriques** ← NOUVEAU v1.4
+- **Panel paper trading avec statut, exécution manuelle de ticks, journal de trades, métriques, multi-slot** ← MAJ v1.7
 - **Panel journal d'évaluation avec filtres, synthèse, détails ticks, raisons** ← NOUVEAU v1.5
 
 ### 3.10 Frontend — Composants (v1.1.1)
@@ -335,7 +353,7 @@ bitcoin-trading-assistant/
 | **StatusRow** | Barre de statut (fraîcheur + scheduler) | ✅ |
 | **SchedulerChip** | Chip scheduler ON / OFF | ✅ |
 | **ErrorBoundary** | Protection crash graphique | ✅ |
-| **PaperTradingPanel** | **Dashboard paper trading : statut, exécution manuelle de ticks, journal de trades, métriques** | **✅ NOUVEAU v1.4** |
+| **PaperTradingPanel** | **Dashboard paper trading : statut, tick, journal, métriques, multi-slot avec badges, bouton robot 1-clic** | **✅ MAJ v1.7** |
 | **JournalPanel** | **Journal d'évaluation : filtres, synthèse, journalier, détails ticks, raisons** | **✅ NOUVEAU v1.5** |
 | **DiagnosticPanel** | **Diagnostic fréquence : raisons non-trade, comparaison profils, opportunités manquées, levier, recommandations** | **✅ NOUVEAU v1.6** |
 
@@ -367,7 +385,7 @@ bitcoin-trading-assistant/
 | **test_price_service.py** | **15** | **PriceService unifié, Binance→CoinGecko→DB fallback, ticker 24h** |
 | test_time_buckets.py | 24 | Timeframes, normalisation, buckets, fenêtres |
 | **test_paper_trading.py** | **68** | **Modèles, service, SL/TP, métriques, tick engine, endpoints, shorts** |
-| **test_journal_and_profiles.py** | **64** | **Journal évaluation, profils trading, levier auto, style, endpoints, schémas** |
+| **test_journal_and_profiles.py** | **84** | **Journal évaluation, profils trading, levier auto, style, auto-profil, scalping, endpoints** |
 | **test_diagnostic.py** | **55** | **Diagnostic fréquence, profil scalping, seuils personnalisés, opportunités manquées, levier, sorties rapides, endpoints** |
 | **TOTAL** | **1005** | **Tous passing ✅** |
 
@@ -431,16 +449,25 @@ python -m pytest tests/ -v
 | Étape | Nom | Versions | Description | Status |
 |-------|-----|----------|-------------|--------|
 | **1** | BTC Insight | v0.2 → v0.9 | Assistant visuel, pédagogique | ✅ **Complet** |
-| **2** | INFINI v1 | v1.0 → v1.6 | Assistant intelligent, décisionnel (BTC-first) | 🔄 **En cours (v1.1.1 livré)** |
+| **2** | INFINI v1 | v1.0 → v1.7 | Assistant intelligent, décisionnel (BTC-first) | ✅ **Complet (v1.7.2 livré)** |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + Sentiment combiné dans walk-forward (v1.2.4) + **Risk Management Engine (v1.3)** + **Paper Trading System (v1.4)** + **Paper Trading Evaluation Journal + Profils + Levier Auto + Style (v1.5)** + **Diagnostic fréquence + Scalping + Sorties rapides (v1.6)** livrés, prochaine étape : Robot autonome (v2.0)
+**Position actuelle :** **Étape 2 complète** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + Sentiment combiné dans walk-forward (v1.2.4) + Risk Management Engine (v1.3) + Paper Trading System (v1.4) + Paper Trading Evaluation Journal + Profils + Levier Auto + Style (v1.5) + Diagnostic fréquence + Scalping + Sorties rapides (v1.6) + **Multi-slot positions parallèles + Mean reversion bidirectionnel + Per-slot cooldown (v1.7)** + **Trailing stop scalping + Auto-refresh panels + Fix filtre journal (v1.7.2)** — **Toutes les fonctionnalités de l'Étape 2 sont livrées**. Prochaine étape : Robot autonome (v2.0)
 
 ---
 
-## 8. Prochaine étape : v1.6 — Robot autonome
+## 8. Prochaine étape : v2.0 — Robot Autonome
 
-> **Objectif** : Développer un robot de trading autonome, capable de prendre des décisions et d'exécuter des ordres sans intervention humaine, en s'appuyant sur le moteur de décision et le système de gestion des risques.
+> **Objectif** : Développer un robot de trading autonome, capable de prendre des décisions et d'exécuter des ordres sans intervention humaine, en s'appuyant sur le moteur de décision, le système de gestion des risques, et le paper trading validé.
+>
+> **Prérequis validés** : ✅ Moteur de décision, ✅ Backtesting, ✅ Vérification historique, ✅ Risk Management, ✅ Paper Trading, ✅ Profils + Levier, ✅ Diagnostic, ✅ Multi-slot
+>
+> **Premières tâches** :
+> - Connecteur exchange via ccxt (Binance/Kraken)
+> - Mode "confirmation humaine" (le système propose, l'humain valide)
+> - Mode "automatique encadré" (exécution avec garde-fous risk engine)
+> - Audit trail complet (chaque décision logguée)
+> - Kill switch physique et logiciel
 
 ---
 
@@ -463,11 +490,15 @@ python -m pytest tests/ -v
 | ~~Paper trading~~ | ~~v1.4~~ | ✅ **Livré** |
 | ~~Journal d'évaluation + Profils + Levier auto + Style~~ | ~~v1.5~~ | ✅ **Livré** |
 | ~~Diagnostic fréquence + Scalping + Sorties rapides~~ | ~~v1.6~~ | ✅ **Livré** |
+| ~~Multi-slot positions parallèles + Mean reversion~~ | ~~v1.7~~ | ✅ **Livré** |
+| ~~Per-slot cooldown + Fix Windows emoji~~ | ~~v1.7.1~~ | ✅ **Livré** |
+| ~~Trailing stop scalping + Auto-refresh panels + Fix journal~~ | ~~v1.7.2~~ | ✅ **Livré** |
 | CryptoPanic + Santiment (sentiment payant) | v1.2b | ❌ Non commencé |
 | Docker Compose | v1.5 | ❌ Non commencé |
 | CI/CD GitHub Actions | v1.5 | ❌ Non commencé |
 | Auth JWT | v1.5 | ❌ Non commencé |
 | Multi-Assets (ETH, SOL...) | v1.6 | ❌ Après validation BTC |
+| **Robot autonome (connecteur exchange, exécution, audit trail)** | **v2.0** | **⬜ Prochaine étape** |
 
 ---
 

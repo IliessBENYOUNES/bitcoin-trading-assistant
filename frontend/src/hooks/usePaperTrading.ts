@@ -27,6 +27,8 @@ interface UsePaperTradingReturn {
   autoMode: boolean;
   autoIntervalSec: number;
   autoTickCount: number;
+  /** Compteur incrémenté à chaque trade exécuté (ouverture ou fermeture) */
+  tradeVersion: number;
   startAuto: (intervalSec: number) => void;
   stopAuto: () => void;
   refresh: () => void;
@@ -53,7 +55,15 @@ export function usePaperTrading({
   const autoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoTickingRef = useRef(false); // guard against overlapping ticks
 
+  // Trade version — incrémenté à chaque trade exécuté (ouverture ou fermeture)
+  const [tradeVersion, setTradeVersion] = useState(0);
+
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Détecte si un tick a résulté en un trade (ouverture ou fermeture)
+  const isTradeAction = (action: string): boolean => {
+    return action.includes('opened') || action.includes('closed');
+  };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -118,6 +128,9 @@ export function usePaperTrading({
     try {
       const result = await paperTick();
       setLastTick(result);
+      if (isTradeAction(result.action_taken)) {
+        setTradeVersion(prev => prev + 1);
+      }
       await fetchAll();
       return result;
     } catch (err: unknown) {
@@ -129,6 +142,7 @@ export function usePaperTrading({
   const closePosition = useCallback(async (reason: string = 'Fermeture manuelle') => {
     try {
       await closePaperPosition(reason);
+      setTradeVersion(prev => prev + 1);
       await fetchAll();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erreur fermeture');
@@ -144,6 +158,9 @@ export function usePaperTrading({
       const result = await paperTick();
       setLastTick(result);
       setAutoTickCount(prev => prev + 1);
+      if (isTradeAction(result.action_taken)) {
+        setTradeVersion(prev => prev + 1);
+      }
       await fetchAll();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erreur auto-tick');
@@ -191,6 +208,7 @@ export function usePaperTrading({
     autoMode,
     autoIntervalSec,
     autoTickCount,
+    tradeVersion,
     startAuto,
     stopAuto,
     refresh: fetchAll,

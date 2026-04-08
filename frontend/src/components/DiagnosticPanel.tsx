@@ -12,7 +12,7 @@
  * 8. Recommandations
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Box, Typography, Paper, Chip, LinearProgress, Alert, AlertTitle,
   Table, TableHead, TableRow, TableCell, TableBody, Tooltip, Button,
@@ -57,9 +57,11 @@ const CATEGORY_LABELS: Record<string, string> = {
 interface DiagnosticPanelProps {
   dateFrom?: string;
   dateTo?: string;
+  /** Compteur externe — quand il change, le panneau se rafraîchit automatiquement */
+  refreshTrigger?: number;
 }
 
-export default function DiagnosticPanel({ dateFrom, dateTo }: DiagnosticPanelProps) {
+export default function DiagnosticPanel({ dateFrom, dateTo, refreshTrigger }: DiagnosticPanelProps) {
   const [diagnostic, setDiagnostic] = useState<DiagnosticResponse | null>(null);
   const [missed, setMissed] = useState<MissedOpportunitySummary | null>(null);
   const [leverage, setLeverage] = useState<LeverageAnalysisResponse | null>(null);
@@ -90,6 +92,15 @@ export default function DiagnosticPanel({ dateFrom, dateTo }: DiagnosticPanelPro
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Auto-refresh quand refreshTrigger change (après un trade)
+  const prevTriggerRef = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger !== undefined && refreshTrigger !== prevTriggerRef.current) {
+      prevTriggerRef.current = refreshTrigger;
+      refresh();
+    }
+  }, [refreshTrigger, refresh]);
 
   if (loading) {
     return (

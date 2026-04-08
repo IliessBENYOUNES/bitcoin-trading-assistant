@@ -32,17 +32,17 @@
 │  ├── Alertes visuelles                  ✅ Livré (v0.8)            │
 │  └── News & sentiment                   ✅ Livré (v0.9)            │
 │                                                                      │
-│  ÉTAPE 2 — INFINI v1 (v1.0 → v1.7)                                 │
+│  ÉTAPE 2 — INFINI v1 (v1.0 → v1.7) ✅ COMPLET                        │
 │  Assistant intelligent, décisionnel                                  │
 │  ├── Moteur de décision / règles        ✅ Livré (v1.0)             │
 │  ├── Backtesting engine                 ✅ Livré (v1.1)             │
 │  ├── Vérification historique            ✅ Livré (v1.1.1)           │
-│  ├── Sentiment historique + ML          🔄 En cours (v1.2.1-1.2.4 livrés)  │
-│  ├── Risk management engine             ✅ Livré (v1.3)                    │
+│  ├── Sentiment historique + ML          ✅ Livré (v1.2.1-1.2.4)    │
+│  ├── Risk management engine             ✅ Livré (v1.3)             │
 │  ├── Paper trading                      ✅ Livré (v1.4)             │
 │  ├── Journal + Profils + Levier + Style ✅ Livré (v1.5)             │
-│  ├── Production (Docker, CI/CD, Auth)   ⬜ Planifié (v1.6)         │
-│  └── Multi-assets (ETH, SOL...)         ⬜ Planifié (v1.7)         │
+│  ├── Diagnostic + Scalping + Sorties    ✅ Livré (v1.6)             │
+│  └── Multi-slot + Mean reversion        ✅ Livré (v1.7)             │
 │                                                                      │
 │  ÉTAPE 3 — INFINI v2 (v2.0+)                                       │
 │  Assistant autonome (sous contrôle humain)                           │
@@ -63,7 +63,7 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v1.5.0 — Journal + Profils + Levier Auto + Style (Livré) ✅
+### État actuel : v1.7.1 — Multi-slot + Mean reversion + Per-slot cooldown (Livré) ✅
 
 | Composant | Status |
 |-----------|--------|
@@ -71,7 +71,7 @@
 | 14 timeframes (1m → 1w) | ✅ Complet |
 | Resample multi-timeframe | ✅ Complet |
 | Frontend Dashboard | ✅ Complet |
-| Indicateurs (RSI, MACD, SMA, Bollinger) | ✅ Complet |
+| Indicateurs (RSI, MACD, SMA, Bollinger, ADX, Volume) | ✅ Complet |
 | Chart Lightweight Charts | ✅ Complet |
 | Signal Engine (interprétation + score) | ✅ Complet (v0.7) |
 | SignalPanel (jauge + liste + consensus) | ✅ Complet (v0.7) |
@@ -93,11 +93,16 @@
 | **Paper Trading System (tick engine, SL/TP, métriques, journal, scheduler)** | **✅ Complet (v1.4)** |
 | **PaperTradingPanel (statut, tick manuel, positions, métriques)** | **✅ Complet (v1.4)** |
 | **Journal d'évaluation multi-jours (synthèse, journalier, activité, raisons)** | **✅ Complet (v1.5)** |
-| **Profils de trading (Conservative/Balanced/Aggressive)** | **✅ Complet (v1.5)** |
+| **Profils de trading (Conservative/Balanced/Aggressive/Scalping + Auto)** | **✅ Complet (v1.5 + v1.5.1)** |
 | **Levier auto intelligent (score × confiance × volatilité, veto risk)** | **✅ Complet (v1.5)** |
 | **Style de trading (distribution durées, scalping/intraday/swing)** | **✅ Complet (v1.5)** |
 | **JournalPanel (5 sous-vues, profils, KPIs, barres de distribution)** | **✅ Complet (v1.5)** |
-| 930 tests backend | ✅ Tous passing |
+| **Diagnostic fréquence (causes non-trade, comparaison profils, opportunities)** | **✅ Complet (v1.6)** |
+| **DiagnosticPanel (raisons, durée positions, levier, recommandations)** | **✅ Complet (v1.6)** |
+| **Multi-slot positions parallèles (trend + scalping simultanés)** | **✅ Complet (v1.7)** |
+| **Mean reversion bidirectionnel (SHORT surachat, LONG survente)** | **✅ Complet (v1.7)** |
+| **Per-slot cooldown + daily trade counter indépendants** | **✅ Complet (v1.7.1)** |
+| 1005 tests backend | ✅ Tous passing |
 
 ### ✅ LIVRÉ : v0.7 — Moteur de Signaux (Niveau 2)
 
@@ -377,17 +382,42 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 | 15.6 Frontend JournalPanel | 🟡 Moyenne | 4h | 5 sous-vues, profils, KPIs, barres de distribution | ✅ |
 | 15.7 64 tests backend | 🔴 Haute | 3h | Journal, profils, levier, style, endpoints, schémas | ✅ |
 
-### Phase v1.6 — Production Ready
+### Phase v1.6 — Diagnostic + Scalping + Sorties rapides ✅ LIVRÉ
+
+| Tâche | Priorité | Effort | Description | Status |
+|-------|----------|--------|-------------|--------|
+| 16.1 DiagnosticService | 🔴 Haute | 6h | Causes non-trade, durée positions, comparaison profils, risk brake | ✅ |
+| 16.2 Profil Scalping | 🔴 Haute | 4h | min_score=5, cooldown=3min, timeframe=15m, seuils custom | ✅ |
+| 16.3 Seuils personnalisables | 🔴 Haute | 3h | buy_threshold/sell_threshold par profil | ✅ |
+| 16.4 Sorties rapides | 🔴 Haute | 3h | Momentum fade + stale position exit | ✅ |
+| 16.5 Opportunités manquées | 🟡 Moyenne | 3h | Analyse ex-post des mouvements ratés | ✅ |
+| 16.6 Analyse levier | 🟡 Moyenne | 2h | Comparaison avec/sans levier | ✅ |
+| 16.7 DiagnosticPanel UI | 🟡 Moyenne | 4h | 7 sections, recommandations, comparaison profils | ✅ |
+| 16.8 55 tests backend | 🔴 Haute | 3h | Diagnostic, scalping, seuils, sorties, endpoints | ✅ |
+
+### Phase v1.7 — Multi-slot + Mean reversion ✅ LIVRÉ
+
+| Tâche | Priorité | Effort | Description | Status |
+|-------|----------|--------|-------------|--------|
+| 17.1 Positions parallèles multi-slot | 🔴 Haute | 6h | Jusqu'à 3 positions simultanées, allocation capital par slot | ✅ |
+| 17.2 Scalping mean reversion bidirectionnel | 🔴 Haute | 4h | SHORT en surachat (RSI/StochRSI), LONG en survente | ✅ |
+| 17.3 SL/TP direction-aware | 🔴 Haute | 2h | Defaults corrigés pour SHORT (SL au-dessus, TP en dessous) | ✅ |
+| 17.4 Per-slot cooldown | 🔴 Haute | 3h | Timers indépendants par slot | ✅ |
+| 17.5 Per-slot daily trade counter | 🔴 Haute | 2h | Compteur journalier par slot | ✅ |
+| 17.6 UI multi-slot | 🟡 Moyenne | 3h | Badges de slot sur les positions, bouton robot 1-clic | ✅ |
+| 17.7 Fix Windows emoji crash | 🟢 Basse | 0.5h | ASCII dans les logs startup | ✅ |
+
+### Phase Production Ready (future)
 
 | Tâche | Priorité | Effort | Description |
 |-------|----------|--------|-------------|
-| 16.1 Docker Compose | 🔴 Haute | 3h | Backend + Frontend + PostgreSQL |
-| 16.2 CI/CD GitHub Actions | 🟡 Moyenne | 4h | Tests + Build + Deploy |
-| 16.3 Auth JWT | 🟡 Moyenne | 6h | Login/Register |
-| 16.4 HTTPS + Reverse proxy | 🔴 Haute | 2h | Nginx/Caddy |
-| 16.5 Monitoring | 🟢 Basse | 4h | Prometheus + Grafana |
+| PR.1 Docker Compose | 🔴 Haute | 3h | Backend + Frontend + PostgreSQL |
+| PR.2 CI/CD GitHub Actions | 🟡 Moyenne | 4h | Tests + Build + Deploy |
+| PR.3 Auth JWT | 🟡 Moyenne | 6h | Login/Register |
+| PR.4 HTTPS + Reverse proxy | 🔴 Haute | 2h | Nginx/Caddy |
+| PR.5 Monitoring | 🟢 Basse | 4h | Prometheus + Grafana |
 
-### Phase v1.7 — Multi-Assets (ETH, SOL, etc.) 🌐
+### Phase Multi-Assets (ETH, SOL, etc.) 🌐 (future)
 
 > **Déplacé en dernier** : On perfectionne d'abord tout sur BTC. Si le modèle (technique + sentiment + risk + paper trading) fonctionne bien sur BTC, on l'étend aux autres actifs. BTC est le marché le plus liquide et le mieux documenté — c'est le terrain d'entraînement idéal.
 
@@ -690,7 +720,7 @@ La couverture de tests est sérieuse. Le dernier run montre 110 tests collectés
 
 **Points d'attention backend**
 
-- Quatre tests en échec sur des détails de contrat (message d'erreur, interval_minimum, isolation resample dans le job legacy). Ce sont des ajustements mineurs, pas des bugs structurels.
+- Quatre tests en échec sur des détails de contrat (message d'erreur, interval_minimum, isolation resample job 30m). Ce sont des ajustements mineurs, pas des bugs structurels.
 - Warnings "coroutine never awaited" lors des tests du scheduler, liés à l'interaction entre le mock de `_fetch_and_store` (async) et l'exécution synchrone dans les tests. Fonctionnellement sans impact.
 - Le fichier `Dashboard.tsx` du frontend a été corrompu (contient des données API WHO au lieu du code React). Nécessite restauration.
 
@@ -1088,7 +1118,7 @@ Le projet se structure en cinq niveaux de maturité, chacun représentant un pal
 
 **Périmètre fonctionnel**
 
-- Modèle d'alerte en base : condition (prix, RSI, MACD, score composite, seuil custom), statut (active/déclenchée/désactivée), historique.
+- Modèle d'alerte en base : condition (prix, RSI, MACD, signaux, seuil custom), statut (active/déclenchée/désactivée), historique.
 - API CRUD `/alerts` (GET, POST, PUT, DELETE).
 - Service AlertChecker intégré au scheduler : évaluation périodique des conditions.
 - Notifications navigateur (Web Push API ou polling).
@@ -1303,7 +1333,7 @@ Le projet se structure en cinq niveaux de maturité, chacun représentant un pal
 **Périmètre fonctionnel**
 
 - Mode simple vs mode expert :
-  - Mode simple : "Le marché est plutôt haussier aujourd'hui. Confiance : modérée. Raison : les indicateurs techniques convergent vers un signal positif."
+  - Mode simple : "Le marché BTC est en tendance haussière modérée. Les indicateurs techniques sont globalement positifs. Pas de signal d'alerte."
   - Mode expert : tous les chiffres, tous les indicateurs, tous les détails.
 - Explications en langage naturel pour chaque signal, chaque décision, chaque opération.
 - Visualisation des décisions : pourquoi le système a acheté, vendu, attendu.
@@ -1539,24 +1569,20 @@ Trois règles simples :
 │   ├── [✅] v1.3.0 — Risk Management Engine (55 tests) — 777 tests total
 │   ├── [✅] v1.4.0 — Paper Trading System (64 tests) — 841 tests total
 │   ├── [✅] v1.5.0 — Journal + Profils + Levier Auto + Style (64 tests) — 930 tests total
+│   ├── [✅] v1.6.0 — Diagnostic + Scalping + Sorties rapides (55 tests) — 1005 tests total
+│   ├── [✅] v1.7.0 — Multi-slot positions parallèles + Mean reversion
+│   ├── [✅] v1.7.1 — Per-slot cooldown + Fix Windows emoji crash — 1005 tests total
 │   └── [ ] v1.2b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
 │
 ├── Juin
 │   ├── [ ] v1.2b — Sentiment Historique : CryptoPanic + Santiment (~100€/mois)
-│   └── [ ] v1.6.0 — Production Ready (Docker, CI/CD, Auth)
+│   └── [ ] v2.0.0 — INFINI Mode Autonome (connecteur exchange, exécution)
 │
-├── Juillet
-│   └── [ ] v1.6.0 — Production Ready (Docker, CI/CD, Auth)
-│
-├── Août
-│   ├── [ ] v1.2c — Modèle ML sentiment basique (classification titres news)
-│   └── [ ] v1.6.0 — Production Ready (Docker, CI/CD, Auth)
-│
-├── Septembre
-│   └── [ ] v1.7.0 — Multi-Assets (ETH, SOL... — seulement si BTC validé)
+├── Juillet — Octobre
+│   └── [ ] v2.0.0 — INFINI Mode Autonome
 │
 ├── Octobre+
-│   └── [ ] v2.0.0 — INFINI Mode Autonome
+│   └── [ ] Production Ready (Docker, CI/CD, Auth)
 │
 ├── Q4 2026 — Q1 2027 : PHASE ML CONVERGENT (v3.0+) 🧠
 │   ├── [ ] v3.0 — Dataset unifié + Feature Engineering (40-50h)

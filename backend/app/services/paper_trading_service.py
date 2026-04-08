@@ -389,6 +389,46 @@ class PaperTradingService:
                         profile_type=profile_name,
                     )
 
+            # [v1.7.2] Trailing stop sur profit
+            # Plus fin que le momentum fade : sort dès que le PnL recule d'un petit %
+            # depuis le pic. Active seulement si le profit a dépassé un seuil d'activation.
+            ts_pct = getattr(profile_params, "trailing_stop_pct", None) if profile_params else None
+            ts_activation = getattr(profile_params, "trailing_stop_activation_pct", None) if profile_params else None
+            if ts_pct and ts_activation:
+                unrealized_pnl_now = self._calc_unrealized_pnl(open_pos, current_price)
+                unrealized_pct_now = (unrealized_pnl_now / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
+
+                # Calculer le pic de PnL % via highest/lowest price
+                if open_pos.direction == "long" and open_pos.highest_price_since_entry:
+                    peak_pnl = self._calc_unrealized_pnl_at_price(open_pos, open_pos.highest_price_since_entry)
+                elif open_pos.direction == "short" and open_pos.lowest_price_since_entry:
+                    peak_pnl = self._calc_unrealized_pnl_at_price(open_pos, open_pos.lowest_price_since_entry)
+                else:
+                    peak_pnl = 0
+
+                peak_pct = (peak_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
+
+                # Condition : le pic a dépassé le seuil d'activation ET le PnL actuel
+                # a reculé de plus de trailing_stop_pct depuis le pic
+                if peak_pct >= ts_activation and (peak_pct - unrealized_pct_now) >= ts_pct:
+                    signal_reason = (
+                        f"Trailing stop : pic {peak_pct:.3f}%, actuel {unrealized_pct_now:.3f}%, "
+                        f"recul {(peak_pct - unrealized_pct_now):.3f}% ≥ seuil {ts_pct}%"
+                    )
+                    closed = self._close_position(open_pos, current_price, signal_reason, "closed_trailing_stop")
+                    _log_tick(action_taken="closed_trailing_stop", btc_price=current_price,
+                              had_open_position=True, trade_id=closed.id,
+                              leverage_final=getattr(closed, "leverage", 1.0))
+                    return PaperTickResult(
+                        action_taken="closed_trailing_stop",
+                        detail=f"Position fermée (trailing stop) : {signal_reason}",
+                        position_closed=PaperTradeResponse.model_validate(closed),
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        leverage_used=getattr(closed, "leverage", 1.0),
+                        profile_type=profile_name,
+                    )
+
             # [v1.6] Sortie rapide — Momentum fade
             # Si le profit latent a atteint un pic puis recule significativement,
             # on prend le profit restant avant qu'il ne disparaisse.

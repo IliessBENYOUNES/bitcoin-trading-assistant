@@ -102,6 +102,10 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # Sorties rapides — fermer après 10 min si SL/TP pas touché
         momentum_fade_enabled=True,
         stale_exit_minutes=10,
+        # [v1.7.2] Trailing stop sur profit — protège les gains acquis
+        # Active dès que le PnL atteint +0.03%, et sort si recul de 0.05% depuis le pic
+        trailing_stop_activation_pct=0.03,
+        trailing_stop_pct=0.05,
     ),
 }
 

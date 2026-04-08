@@ -73,6 +73,7 @@ const statusChip = (status: string) => {
     closed_manual: { color: 'default', label: '✋ Manuel' },
     closed_stale: { color: 'default', label: '💤 Stagnant' },
     closed_momentum_fade: { color: 'warning', label: '📉 Fade' },
+    closed_trailing_stop: { color: 'success', label: '🎯 Trail' },
   };
   const cfg = map[status] || { color: 'default' as const, label: status };
   return <Chip size="small" color={cfg.color} label={cfg.label} />;
@@ -140,7 +141,7 @@ const PROFILE_OPTIONS: {
   },
 ];
 
-export default function PaperTradingPanel() {
+export default function PaperTradingPanel({ onTradeExecuted }: { onTradeExecuted?: () => void }) {
   const {
     status,
     trades,
@@ -150,6 +151,7 @@ export default function PaperTradingPanel() {
     autoMode,
     autoIntervalSec,
     autoTickCount,
+    tradeVersion,
     startAuto,
     stopAuto,
     refresh,
@@ -157,6 +159,15 @@ export default function PaperTradingPanel() {
     manualTick,
     closePosition,
   } = usePaperTrading({ pollInterval: 30000 });
+
+  // Notifier le parent quand un trade est exécuté
+  const prevTradeVersionRef = useRef(tradeVersion);
+  useEffect(() => {
+    if (tradeVersion > prevTradeVersionRef.current) {
+      prevTradeVersionRef.current = tradeVersion;
+      onTradeExecuted?.();
+    }
+  }, [tradeVersion, onTradeExecuted]);
 
   const [capital, setCapital] = useState('10000');
   const [tickLoading, setTickLoading] = useState(false);

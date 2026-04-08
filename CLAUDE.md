@@ -17,7 +17,7 @@
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
 | Tests backend | **1005 tests** pytest, tous passing |
 | Frontend build | `tsc --noEmit` sans erreur |
-| Phase courante | **v0.9 livré** — Étape 1 BTC Insight complète, prochaine étape v1.0 |
+| Phase courante | **v1.7.1 livré** — Étape 2 INFINI v1 complète, prochaine étape v2.0 Robot Autonome |
 
 **Documents à lire en premier :**
 1. Ce fichier (`CLAUDE.md`) — Règles de l'agent
@@ -90,7 +90,7 @@ npx tsc --noEmit
 ```
 
 Vérifier :
-- ✅ **253+ tests** backend passent (le nombre ne doit jamais diminuer)
+- ✅ **1005+ tests** backend passent (le nombre ne doit jamais diminuer)
 - ✅ Aucun nouveau test en échec
 - ✅ `tsc --noEmit` sans erreur
 - Si des tests échouent → **corriger avant de commit**
@@ -261,7 +261,7 @@ Avant d'ajouter une feature :
 1. Lire `docs/ROADMAP.md` pour la roadmap complète (phases + vision long terme)
 2. S'assurer que la feature s'inscrit dans la bonne phase
 
-**Phase actuelle : v1.6 livré — Prochaine étape v2.0 Robot Autonome**
+**Phase actuelle : v1.7.1 livré — Prochaine étape v2.0 Robot Autonome**
 
 Ne pas implémenter une feature d'une phase future si la phase courante n'est pas terminée.
 
@@ -352,7 +352,7 @@ class TestXxxEndpoint:
 ## Checklist pré-commit
 
 ```
-[ ] Tests backend passent (253+ tests, python -m pytest tests/ -v)
+[ ] Tests backend passent (1005+ tests, python -m pytest tests/ -v)
 [ ] Frontend compile (npx tsc --noEmit, zéro erreur)
 [ ] docs/CURRENT_STATE.md mis à jour
 [ ] CHANGELOG.md mis à jour (si nouvelle version)

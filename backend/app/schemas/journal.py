@@ -50,6 +50,15 @@ class TradingProfileParams(BaseModel):
     # [v1.6] Sorties rapides
     momentum_fade_enabled: bool = Field(default=False, description="Sortie si le momentum s'essouffle")
     stale_exit_minutes: Optional[int] = Field(default=None, description="Sortie si position stagnante > N min")
+    # [v1.7.2] Trailing stop sur profit — sort dès que le PnL recule depuis le pic
+    trailing_stop_pct: Optional[float] = Field(
+        default=None,
+        description="% de recul depuis le pic de PnL pour déclencher le trailing stop (ex: 0.05 = 0.05%)"
+    )
+    trailing_stop_activation_pct: Optional[float] = Field(
+        default=None,
+        description="% minimum de profit avant activation du trailing stop (ex: 0.03 = 0.03%)"
+    )
 
 
 class TradingProfileResponse(BaseModel):

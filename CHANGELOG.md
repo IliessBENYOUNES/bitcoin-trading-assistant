@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.2] - 2026-04-08
+
+### Added
+- **Trailing stop scalping** — Nouveau mécanisme de protection des profits pour le scalping. Dès que le PnL latent atteint +0.03%, un trailing stop s'active et ferme la position si le PnL recule de 0.05% depuis le pic. Plus réactif que le momentum fade (qui attendait un recul de 60%).
+  - Nouveaux paramètres profil : `trailing_stop_pct`, `trailing_stop_activation_pct`
+  - Nouveau statut de fermeture : `closed_trailing_stop` (affiché `🎯 Trail` dans l'UI)
+  - Configurable par profil (actuellement activé uniquement sur scalping)
+
+### Changed
+- **Auto-refresh panels après trade** — Le Journal d'évaluation, le Diagnostic de fréquence et les Opportunités manquées se rafraîchissent automatiquement après chaque trade exécuté (ouverture ou fermeture), sans avoir à cliquer sur "Rafraîchir".
+  - `usePaperTrading` expose un compteur `tradeVersion` incrémenté à chaque trade
+  - `PaperTradingPanel` accepte un callback `onTradeExecuted`
+  - `JournalPanel` et `DiagnosticPanel` acceptent un `refreshTrigger` prop
+
+### Fixed
+- **Bug filtre "Aujourd'hui" du Journal** — Quand on cliquait sur "Aujourd'hui" alors que le filtre était déjà sur "Aujourd'hui", les données ne se rechargeaient pas. Corrigé via un compteur `fetchCounter` qui force le re-fetch même si les dates sont identiques.
+
+### Technical
+- `usePaperTrading.ts` : ajout `tradeVersion`, détection `isTradeAction()` dans `doAutoTick`, `manualTick`, `closePosition`
+- `PaperTradingPanel.tsx` : prop `onTradeExecuted`, `useEffect` sur `tradeVersion`
+- `JournalPanel.tsx` : prop `refreshTrigger`, `fetchCounter` state, `handlePreset` incrémente le compteur
+- `DiagnosticPanel.tsx` : prop `refreshTrigger`, `useEffect` auto-refresh
+- `Dashboard.tsx` : état `tradeVersion`, callbacks entre composants
+- `journal.py` : champs `trailing_stop_pct` et `trailing_stop_activation_pct` dans `TradingProfileParams`
+- `trading_profile_service.py` : preset scalping configuré avec trailing stop (0.03% activation, 0.05% trail)
+- `paper_trading_service.py` : logique trailing stop insérée avant momentum fade
+- 1005 tests backend, tous passing ✅
+- tsc --noEmit sans erreur ✅
+
+## [1.7.1] - 2026-04-08
+
+### Fixed
+- **Per-slot cooldown** — Chaque slot a maintenant ses propres timers de cooldown indépendants (avant : cooldown global partagé entre tous les slots). Le slot scalping peut réentrer après 1 min même si le slot balanced vient de trader.
+- **Per-slot daily trade counter** — Chaque slot a son propre compteur de trades journalier (avant : compteur global partagé). Le scalping peut faire 50 trades/jour sans bloquer le slot balanced.
+- **Startup emoji crash on Windows** — Les `print()` de démarrage utilisaient des emojis Unicode (🚀, ✅) qui causaient un `UnicodeEncodeError` sur les consoles Windows CP1252. Remplacés par du texte ASCII.
+- **Reset tick log** — Tentative de purger `tick_activity_log` au reset annulée : le diagnostic filtre déjà par `account_id`, pas besoin de purger.
+
+### Technical
+- `_check_cooldown()` : accepte paramètre optionnel `slot`, filtre par slot en mode multi
+- `_check_max_trades_per_day()` : même correction slot-aware
+- `main.py` : emojis remplacés par `[START]`, `[DB]`, `[OK]`, `[STOP]`
+- Migration `migrate_v17.py` incluse pour colonnes PostgreSQL
+- 1005 tests backend, tous passing ✅
+- tsc --noEmit sans erreur ✅
+
 ## [1.7.0] - 2026-04-08
 
 ### Added

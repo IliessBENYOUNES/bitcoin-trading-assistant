@@ -166,6 +166,13 @@ const Dashboard: React.FC = () => {
   const [alertDrawerOpen, setAlertDrawerOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState<string | null>(null);
 
+  // Compteur de trades — incrémenté à chaque trade exécuté dans PaperTradingPanel
+  // Utilisé pour déclencher le rafraîchissement automatique du JournalPanel et DiagnosticPanel
+  const [tradeVersion, setTradeVersion] = useState(0);
+  const handleTradeExecuted = useCallback(() => {
+    setTradeVersion(prev => prev + 1);
+  }, []);
+
   const symbol = 'BTC/USD';
   const effectiveDays = days;
 
@@ -914,7 +921,7 @@ const Dashboard: React.FC = () => {
                   p: 2,
                   border: '1px solid rgba(255,255,255,0.06)',
                 }}>
-                  <PaperTradingPanel />
+                  <PaperTradingPanel onTradeExecuted={handleTradeExecuted} />
                 </Box>
               </Grid>
               {/* Journal d'évaluation — Pleine largeur */}
@@ -925,7 +932,7 @@ const Dashboard: React.FC = () => {
                   p: 2,
                   border: '1px solid rgba(255,255,255,0.06)',
                 }}>
-                  <JournalPanel />
+                  <JournalPanel refreshTrigger={tradeVersion} />
                 </Box>
               </Grid>
               <Grid item xs={12}>
@@ -935,7 +942,7 @@ const Dashboard: React.FC = () => {
                   p: 2,
                   border: '1px solid rgba(255,255,255,0.06)',
                 }}>
-                  <DiagnosticPanel />
+                  <DiagnosticPanel refreshTrigger={tradeVersion} />
                 </Box>
               </Grid>
             </Grid>

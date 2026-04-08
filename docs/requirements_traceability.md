@@ -1,7 +1,7 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v1.5.0
+## Version: v1.7.1
 ## Date: 2026-04-08
 
 ---
@@ -72,6 +72,15 @@
 | **FR-LEV-002** | **Veto risk engine** | **blocked/danger → x1, caution → cap 50%** | **✅ PASS** | **test_leverage_risk_veto** |
 | **FR-STY-001** | **Style de trading** | **GET /paper/style retourne distribution durées + style dominant** | **✅ PASS** | **test_trading_style** |
 | **FR-STY-002** | **JournalPanel UI** | **5 sous-vues, profils, KPIs, barres de distribution** | **✅ PASS** | **tsc --noEmit clean** |
+| **FR-DIA-001** | **Diagnostic de fréquence** | **GET /paper/diagnostic retourne causes non-trade + recommandations** | **✅ PASS** | **55 tests passing** |
+| **FR-DIA-002** | **Opportunités manquées** | **GET /paper/missed-opportunities retourne analyse ex-post** | **✅ PASS** | **test_missed_opportunities** |
+| **FR-DIA-003** | **Analyse levier** | **GET /paper/leverage-analysis retourne PnL avec/sans levier** | **✅ PASS** | **test_leverage_analysis** |
+| **FR-DIA-004** | **Profil Scalping** | **Profil scalping avec seuils custom, timeframe 15m** | **✅ PASS** | **test_scalping_profile** |
+| **FR-DIA-005** | **DiagnosticPanel UI** | **7 sections, recommandations, comparaison profils** | **✅ PASS** | **tsc --noEmit clean** |
+| **FR-MSL-001** | **Multi-slot positions** | **Jusqu'à 3 positions parallèles, allocation capital par slot** | **✅ PASS** | **1005 tests passing** |
+| **FR-MSL-002** | **Mean reversion bidirectionnel** | **SHORT en surachat, LONG en survente** | **✅ PASS** | **test_scalping_reversal** |
+| **FR-MSL-003** | **SL/TP direction-aware** | **Defaults corrigés pour SHORT** | **✅ PASS** | **test_sl_tp_defaults** |
+| **FR-MSL-004** | **Per-slot cooldown** | **Chaque slot a ses propres timers indépendants** | **✅ PASS** | **test_per_slot_cooldown** |
 
 ---
 
@@ -81,7 +90,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 930 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1005 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 
@@ -161,5 +170,6 @@
 | **test_risk.py** | **57** | **✅** |
 | **test_price_service.py** | **15** | **✅** |
 | **test_paper_trading.py** | **68** | **✅** |
-| **test_journal_and_profiles.py** | **64** | **✅** |
-| **Total** | **930** | ✅ |
+| **test_journal_and_profiles.py** | **84** | **✅** |
+| **test_diagnostic.py** | **55** | **✅** |
+| **Total** | **1005** | ✅ |
