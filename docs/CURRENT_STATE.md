@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 8 avril 2026
 > **Version :** v1.6.2
 > **Branche :** `master`
-> **Dernier commit :** fix(scalping): aggressive stale exit 10min + profile-aware threshold + auto-close on profile change
+> **Dernier commit :** fix(scalping): bidirectional mean reversion + direction-aware SL/TP defaults
 
 ---
 

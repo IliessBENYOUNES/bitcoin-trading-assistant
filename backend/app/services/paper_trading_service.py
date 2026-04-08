@@ -439,6 +439,24 @@ class PaperTradingService:
                 profile_name = f"auto→{resolved_profile}"
                 logger.info(f"🤖 Auto-profil résolu : {resolved_profile} (score={score}, conf={confidence})")
 
+            # [v1.6.2] Scalping bidirectionnel — mean reversion
+            # En scalping, on ne suit pas aveuglément la tendance. Quand les
+            # oscillateurs (RSI, StochRSI) montrent un surachat/survente extrême,
+            # on ouvre une position contrariante pour capter le pullback.
+            # Cela permet d'ouvrir des SHORT même en tendance haussière.
+            scalping_reversal = False
+            if profile_params and profile_params.loss_cut_pct <= 0.5:
+                reversal_dir = self._scalping_reversal_check(decision_result)
+                if reversal_dir:
+                    new_action = "acheter" if reversal_dir == "long" else "vendre"
+                    if new_action != action:
+                        logger.info(
+                            f"⚡ Scalping mean reversion: {action}→{new_action} "
+                            f"(oscillateurs → {reversal_dir})"
+                        )
+                        action = new_action
+                        scalping_reversal = True
+
             if action == "attendre":
                 _log_tick(action_taken="hold", btc_price=current_price,
                           decision_score=score, decision_action=action,
@@ -457,8 +475,10 @@ class PaperTradingService:
                 )
 
             # [v1.5] Vérification profil — score minimum
+            # Les trades de reversal (mean reversion) ne sont pas soumis au
+            # seuil de score car leur signal vient des oscillateurs, pas du score.
             min_score = profile_params.min_score if profile_params else 35
-            if abs(score) < min_score:
+            if abs(score) < min_score and not scalping_reversal:
                 reason = "score_too_low"
                 detail = f"Score {score} < seuil profil {min_score}"
                 _log_tick(action_taken="hold", btc_price=current_price,
@@ -564,11 +584,20 @@ class PaperTradingService:
 
             # Ouvrir la position
             direction = "long" if action == "acheter" else "short"
-            reason = f"{action} | score={score} | {confidence} | {summary[:100]}"
+            if scalping_reversal:
+                reason = f"mean_reversion_{direction} | score={score} | {confidence} | {summary[:100]}"
+            else:
+                reason = f"{action} | score={score} | {confidence} | {summary[:100]}"
 
-            # SL/TP par défaut du risk engine
-            sl_price = evaluation.stop_loss_price or current_price * 0.95
-            tp_price = evaluation.take_profit_price or current_price * 1.10
+            # SL/TP par défaut du risk engine — direction-aware
+            # [v1.6.2] Les fallbacks sont maintenant adaptés à la direction.
+            # Avant, les shorts recevaient des SL/TP de long (bug critique).
+            if direction == "long":
+                sl_price = evaluation.stop_loss_price or current_price * 0.95
+                tp_price = evaluation.take_profit_price or current_price * 1.10
+            else:  # short
+                sl_price = evaluation.stop_loss_price or current_price * 1.05
+                tp_price = evaluation.take_profit_price or current_price * 0.90
 
             # [v1.6.1] Profil tight (scalping) : override SL/TP avec les %
             # du profil si ceux-ci sont plus serrés que le risk engine.
@@ -769,6 +798,47 @@ class PaperTradingService:
     # ================================================================
     # VÉRIFICATIONS SL / TP / EXPIRATION
     # ================================================================
+
+    def _scalping_reversal_check(self, decision_result: dict) -> Optional[str]:
+        """
+        Vérifie si les oscillateurs justifient une position contrariante (mean reversion).
+
+        En scalping, quand les oscillateurs (RSI, StochRSI) sont en zone extrême,
+        il y a une probabilité accrue de pullback. On exploite ce pullback avec
+        une position contrariante et un SL/TP serré (0.3%).
+
+        Cela permet d'ouvrir des SHORT même quand la tendance globale est haussière
+        (et des LONG en tendance baissière).
+
+        Returns:
+            "short" si surachat détecté (pullback baissier probable)
+            "long" si survente détectée (rebond haussier probable)
+            None si pas de signal de reversal
+        """
+        rules = decision_result.get("rules_evaluated", [])
+
+        # Règles oscillateurs indiquant un surachat → shorter
+        overbought_signals = {"rsi_overbought", "stochrsi_overbought"}
+        # Règles oscillateurs indiquant une survente → acheter
+        oversold_signals = {"rsi_oversold", "stochrsi_oversold"}
+
+        overbought = 0
+        oversold = 0
+        for r in rules:
+            if not r.get("satisfied"):
+                continue
+            name = r.get("rule_name", "")
+            if name in overbought_signals:
+                overbought += 1
+            elif name in oversold_signals:
+                oversold += 1
+
+        # Au moins 1 oscillateur en zone extrême → signal de reversal
+        if overbought >= 1:
+            return "short"
+        if oversold >= 1:
+            return "long"
+        return None
 
     def _check_sl_tp(self, trade: PaperTrade, current_price: float) -> Optional[str]:
         """Vérifie si le SL ou TP est touché. Retourne le status ou None."""

@@ -10,10 +10,12 @@ All notable changes to this project will be documented in this file.
   2. **Seuil stale adapté au profil** — Pour les profils tight (scalping), le seuil de stagnation est élargi à `profit_take_pct` (0.3%) au lieu de 0.1% fixe, sinon les positions à -0.15% n'étaient jamais considérées stagnantes
   3. **Cooldown 1 min** (était 3 min) — Réentrée quasi immédiate après fermeture
 - **Auto-close sur changement de profil** — Quand on passe d'un profil à un autre (ex: conservative → scalping), les positions ouvertes sous l'ancien profil sont fermées automatiquement. Cela évite le blocage par des vieilles positions incompatibles.
+- **Scalping uniquement LONG (jamais de SHORT)** — Le moteur de décision retourne toujours "acheter" en tendance haussière. Ajout du mode **mean reversion bidirectionnel** : quand les oscillateurs (RSI, StochRSI) montrent un surachat, le bot ouvre un SHORT pour capter le pullback, même en tendance haussière. Et inversement, des LONG en survente dans une tendance baissière.
+- **SL/TP defaults pour SHORT incorrects** — Les fallbacks SL/TP étaient codés en dur pour LONG (`price * 0.95` / `price * 1.10`). Les positions SHORT recevaient un SL en dessous de l'entrée (au lieu d'au-dessus). Corrigé avec des defaults direction-aware.
 
 ### Technical
 - `trading_profile_service.py` — Preset scalping : `stale_exit_minutes=10`, `cooldown_minutes=1`, auto-close dans `set_profile()`
-- `paper_trading_service.py` — Stale exit PnL threshold profile-aware (`profit_take_pct` pour tight profiles)
+- `paper_trading_service.py` — Mean reversion via `_scalping_reversal_check()`, SL/TP direction-aware, stale exit profile-aware
 - Tests mis à jour (1005 tests, tous passing)
 
 ## [1.6.1] - 2026-04-08
