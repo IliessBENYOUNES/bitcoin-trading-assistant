@@ -42,10 +42,13 @@ import type {
   PaperTickResult,
   PaperTradeListResponse,
   PaperMetrics,
+} from '../types';
+
+import type {
   DiagnosticResponse,
   MissedOpportunitySummary,
   LeverageAnalysisResponse,
-} from '../types';
+} from '../types/diagnostic';
 
 // -----------------------------------------------------------------------------
 // Configuration

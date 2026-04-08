@@ -106,7 +106,7 @@ export type {
   TradingProfileResponse,
   DurationBucket,
   TradingStyleResult,
-  // Paper Trading — Diagnostic (v1.6)
+  // Paper Trading — Diagnostic (v1.6) - re-exported from api.ts
   NonTradeRankedReason,
   PositionDurationStats,
   ProfileComparisonRow,
@@ -116,6 +116,14 @@ export type {
   MissedOpportunitySummary,
   LeverageAnalysisResponse,
 } from './api';
+
+// Also re-export from diagnostic.ts for direct imports
+export type {
+  NonTradeRankedReason as DiagNonTradeRankedReason,
+  DiagnosticResponse as DiagResponse,
+  MissedOpportunitySummary as DiagMissedSummary,
+  LeverageAnalysisResponse as DiagLeverageAnalysis,
+} from './diagnostic';
 
 // Représente un chandelier (bougie) OHLCV
 export interface Candle {

@@ -26,9 +26,11 @@ import {
 } from '@mui/icons-material';
 import type {
   DiagnosticResponse,
+  NonTradeRankedReason,
+  ProfileComparisonRow,
   MissedOpportunitySummary,
   LeverageAnalysisResponse,
-} from '../types';
+} from '../types/diagnostic';
 import {
   getPaperDiagnostic,
   getPaperMissedOpportunities,
@@ -77,8 +79,9 @@ export default function DiagnosticPanel({ dateFrom, dateTo }: DiagnosticPanelPro
       setDiagnostic(diag);
       setMissed(miss);
       setLeverage(lev);
-    } catch (e: any) {
-      setError(e.message || 'Erreur lors du chargement du diagnostic');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Erreur lors du chargement du diagnostic';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -148,7 +151,7 @@ export default function DiagnosticPanel({ dateFrom, dateTo }: DiagnosticPanelPro
           <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
             📊 Top Raisons de Non-Trade
           </Typography>
-          {diagnostic.top_non_trade_reasons.slice(0, 7).map((r) => (
+          {diagnostic.top_non_trade_reasons.slice(0, 7).map((r: NonTradeRankedReason) => (
             <Box key={r.reason} sx={{ mb: 1 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.3 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -237,7 +240,7 @@ export default function DiagnosticPanel({ dateFrom, dateTo }: DiagnosticPanelPro
                 </TableRow>
               </TableHead>
               <TableBody>
-                {diagnostic.profile_comparison.map((row) => (
+                {diagnostic.profile_comparison.map((row: ProfileComparisonRow) => (
                   <TableRow
                     key={row.profile}
                     sx={{
@@ -345,7 +348,7 @@ export default function DiagnosticPanel({ dateFrom, dateTo }: DiagnosticPanelPro
           <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
             💡 Recommandations
           </Typography>
-          {diagnostic.recommendations.map((rec, i) => (
+          {diagnostic.recommendations.map((rec: string, i: number) => (
             <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 0.5 }}>
               <SpeedIcon sx={{ fontSize: 16, mt: 0.3, color: '#2196f3' }} />
               <Typography variant="body2">{rec}</Typography>
