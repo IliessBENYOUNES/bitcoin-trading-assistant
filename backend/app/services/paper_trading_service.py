@@ -91,15 +91,12 @@ class PaperTradingService:
 
     def reset_account(self, initial_capital: float = 10000.0) -> PaperAccount:
         """
-        Reset complet : supprime tous les trades, logs et remet le capital à zéro.
+        Reset complet : supprime tous les trades et remet le capital à zéro.
         Capture le prix BTC actuel pour le calcul buy & hold.
 
-        [v1.7.1] Supprime aussi les tick_activity_log pour que le diagnostic
-        reparte à zéro (sinon le goulot d'étranglement historique persiste).
+        Note : les tick_activity_log sont conservés pour garder l'historique
+        du diagnostic. Le diagnostic filtre par date automatiquement.
         """
-        # Supprimer les logs d'activité en premier (FK vers paper_account)
-        from app.models.tick_activity_log import TickActivityLog
-        self.db.query(TickActivityLog).delete()
         self.db.query(PaperTrade).delete()
         self.db.query(PaperAccount).delete()
         self.db.commit()
