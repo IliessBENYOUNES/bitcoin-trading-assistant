@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 8 avril 2026
-> **Version :** v1.5.1
+> **Version :** v1.6.0
 > **Branche :** `master`
-> **Dernier commit :** feat(profiles): add auto-profile mode — dynamic profile selection per tick based on signal strength
+> **Dernier commit :** feat(diagnostic): add frequency diagnostic + scalping profile + faster exits
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.5.1** |
+| Version courante | **v1.6.0** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **949 tests**, tous passing ✅ |
+| Tests backend | **1005 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -44,6 +44,7 @@ bitcoin-trading-assistant/
 │   │   │   ├── news.py         # GET /news, GET /news/sentiment
 │   │   │   ├── risk.py         # /risk/config, status, evaluate, kill-switch, record-loss
 │   │   │   ├── paper_trading.py # ← NOUVEAU v1.4 — /paper/account, status, tick, trades, metrics, close
+│   │   │   │                    # + v1.5 journal, style, profile + v1.6 diagnostic, missed-opportunities, leverage-analysis
 │   │   │   └── scheduler.py    # GET /scheduler/status, POST trigger
 │   │   ├── models/
 │   │   │   ├── candle.py       # Modèle Candle (OHLCV + timeframe)
@@ -55,12 +56,14 @@ bitcoin-trading-assistant/
 │   │   │   └── tick_activity_log.py # ← NOUVEAU v1.5 — TickActivityLog (journal ticks)
 │   │   ├── schemas/
 │   │   │   ├── paper_trading.py    # ← NOUVEAU v1.4 — PaperAccountCreate/Response, PaperTradeResponse, PaperMetrics, PaperStatus, PaperTickResult
+│   │   │   ├── diagnostic.py      # ← NOUVEAU v1.6 — DiagnosticResponse, MissedOpportunitySummary, LeverageAnalysisResponse
 │   │   │   └── ...
 │   │   ├── services/
 │   │   │   ├── paper_trading_service.py # ← MAJ v1.5 — Intégration profils, levier, journal tick
 │   │   │   ├── journal_service.py      # ← NOUVEAU v1.5 — Journal d'évaluation multi-jours
-│   │   │   ├── trading_profile_service.py # ← NOUVEAU v1.5 — Conservative/Balanced/Aggressive
+│   │   │   ├── trading_profile_service.py # ← NOUVEAU v1.5 — Conservative/Balanced/Aggressive/Scalping
 │   │   │   ├── leverage_service.py     # ← NOUVEAU v1.5 — Levier auto intelligent
+│   │   │   ├── diagnostic_service.py   # ← NOUVEAU v1.6 — Diagnostic fréquence, opportunités manquées, analyse levier
 │   │   │   ├── price_service.py        # ← v1.4.2 — Prix unifié Binance→CoinGecko→DB
 │   │   │   └── ...
 │   │   ├── tasks/
@@ -76,6 +79,7 @@ bitcoin-trading-assistant/
 │   └── src/
 │       ├── components/
 │       │   ├── JournalPanel.tsx        # ← NOUVEAU v1.5 — Journal d'évaluation UI
+│       │   ├── DiagnosticPanel.tsx     # ← NOUVEAU v1.6 — Diagnostic fréquence UI
 │       │   ├── PaperTradingPanel.tsx   # ← v1.4 — Dashboard paper trading
 │       │   └── ...
 │       ├── hooks/
@@ -156,8 +160,11 @@ bitcoin-trading-assistant/
 | GET | `/paper/journal` | **Journal d'évaluation multi-jours (filtres dates, synthèse, journalier, activité, raisons)** | **✅ NOUVEAU v1.5** |
 | GET | `/paper/style` | **Qualification du style de trading (distribution durées, scalping/intraday/swing)** | **✅ NOUVEAU v1.5** |
 | GET | `/paper/profile` | **Profil de trading actif + paramètres** | **✅ NOUVEAU v1.5** |
-| POST | `/paper/profile` | **Changer de profil (conservative/balanced/aggressive/auto)** | **✅ MAJ v1.5.1** |
+| POST | `/paper/profile` | **Changer de profil (conservative/balanced/aggressive/scalping/auto)** | **✅ MAJ v1.5.1** |
 | GET | `/paper/profile/presets` | **Tous les presets de profils disponibles** | **✅ NOUVEAU v1.5** |
+| **GET** | **`/paper/diagnostic`** | **Diagnostic de fréquence : causes non-trade, durée positions, profils, risk brake** | **✅ NOUVEAU v1.6** |
+| **GET** | **`/paper/missed-opportunities`** | **Opportunités manquées (analyse ex-post des mouvements ratés)** | **✅ NOUVEAU v1.6** |
+| **GET** | **`/paper/leverage-analysis`** | **Analyse comparative avec/sans levier** | **✅ NOUVEAU v1.6** |
 
 ### 3.2 Backend — Services
 
@@ -184,6 +191,7 @@ bitcoin-trading-assistant/
 | **Journal Service** | **Journal d'évaluation : log_tick, agrégations période/jour, activité, raisons non-trade** | **✅ NOUVEAU v1.5** |
 | **Trading Profile Service** | **Profils Conservative/Balanced/Aggressive : seuils, fréquence, levier, sorties** | **✅ NOUVEAU v1.5** |
 | **Leverage Service** | **Levier auto intelligent : score × confiance × volatilité, veto risk engine** | **✅ NOUVEAU v1.5** |
+| **Diagnostic Service** | **Diagnostic fréquence : causes non-trade, comparaison profils, opportunités manquées, analyse levier** | **✅ NOUVEAU v1.6** |
 
 ### 3.3 Backend — Moteur de Backtesting (v1.1)
 
@@ -329,6 +337,7 @@ bitcoin-trading-assistant/
 | **ErrorBoundary** | Protection crash graphique | ✅ |
 | **PaperTradingPanel** | **Dashboard paper trading : statut, exécution manuelle de ticks, journal de trades, métriques** | **✅ NOUVEAU v1.4** |
 | **JournalPanel** | **Journal d'évaluation : filtres, synthèse, journalier, détails ticks, raisons** | **✅ NOUVEAU v1.5** |
+| **DiagnosticPanel** | **Diagnostic fréquence : raisons non-trade, comparaison profils, opportunités manquées, levier, recommandations** | **✅ NOUVEAU v1.6** |
 
 ---
 
@@ -359,7 +368,8 @@ bitcoin-trading-assistant/
 | test_time_buckets.py | 24 | Timeframes, normalisation, buckets, fenêtres |
 | **test_paper_trading.py** | **68** | **Modèles, service, SL/TP, métriques, tick engine, endpoints, shorts** |
 | **test_journal_and_profiles.py** | **64** | **Journal évaluation, profils trading, levier auto, style, endpoints, schémas** |
-| **TOTAL** | **930** | **Tous passing ✅** |
+| **test_diagnostic.py** | **55** | **Diagnostic fréquence, profil scalping, seuils personnalisés, opportunités manquées, levier, sorties rapides, endpoints** |
+| **TOTAL** | **1005** | **Tous passing ✅** |
 
 ---
 
@@ -424,7 +434,7 @@ python -m pytest tests/ -v
 | **2** | INFINI v1 | v1.0 → v1.6 | Assistant intelligent, décisionnel (BTC-first) | 🔄 **En cours (v1.1.1 livré)** |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + Sentiment combiné dans walk-forward (v1.2.4) + **Risk Management Engine (v1.3)** + **Paper Trading System (v1.4)** + **Paper Trading Evaluation Journal + Profils + Levier Auto + Style (v1.5)** livrés, prochaine étape : Robot autonome (v2.0)
+**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + Sentiment combiné dans walk-forward (v1.2.4) + **Risk Management Engine (v1.3)** + **Paper Trading System (v1.4)** + **Paper Trading Evaluation Journal + Profils + Levier Auto + Style (v1.5)** + **Diagnostic fréquence + Scalping + Sorties rapides (v1.6)** livrés, prochaine étape : Robot autonome (v2.0)
 
 ---
 
@@ -452,6 +462,7 @@ python -m pytest tests/ -v
 | ~~Risk management engine~~ | ~~v1.3~~ | ✅ **Livré** |
 | ~~Paper trading~~ | ~~v1.4~~ | ✅ **Livré** |
 | ~~Journal d'évaluation + Profils + Levier auto + Style~~ | ~~v1.5~~ | ✅ **Livré** |
+| ~~Diagnostic fréquence + Scalping + Sorties rapides~~ | ~~v1.6~~ | ✅ **Livré** |
 | CryptoPanic + Santiment (sentiment payant) | v1.2b | ❌ Non commencé |
 | Docker Compose | v1.5 | ❌ Non commencé |
 | CI/CD GitHub Actions | v1.5 | ❌ Non commencé |

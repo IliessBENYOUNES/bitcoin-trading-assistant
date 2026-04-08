@@ -480,13 +480,14 @@ class TestTradingProfileService:
         assert isinstance(params, TradingProfileParams)
 
     def test_get_all_presets(self):
-        """Retourne les 3 presets."""
+        """Retourne les 4 presets (conservative, balanced, aggressive, scalping)."""
         presets = TradingProfileService.get_all_presets()
-        assert len(presets) == 3
+        assert len(presets) == 4
         labels = [p.label for p in presets]
         assert "Conservative" in labels
         assert "Balanced" in labels
         assert "Aggressive" in labels
+        assert "Scalping" in labels
 
     def test_profile_presets_have_correct_keys(self):
         """Tous les presets ont les bons champs."""
@@ -535,19 +536,24 @@ class TestAutoProfileSelection:
         assert result == "balanced"
 
     def test_auto_select_conservative_low_score(self):
-        """Score faible → conservative."""
-        result = TradingProfileService.auto_select_profile(score=10, confidence="low")
+        """Score très faible (< 10) → conservative."""
+        result = TradingProfileService.auto_select_profile(score=5, confidence="low")
         assert result == "conservative"
+
+    def test_auto_select_scalping_moderate_low_score(self):
+        """Score ≥ 10 mais < 30 → scalping."""
+        result = TradingProfileService.auto_select_profile(score=10, confidence="low")
+        assert result == "scalping"
 
     def test_auto_select_conservative_low_confidence(self):
-        """Score correct mais confiance basse → conservative."""
+        """Score correct mais confiance basse → scalping (score 55 ≥ 10)."""
         result = TradingProfileService.auto_select_profile(score=55, confidence="low")
-        assert result == "conservative"
+        assert result == "scalping"
 
     def test_auto_select_conservative_medium_score_low_confidence(self):
-        """Score moyen + confiance basse → conservative."""
+        """Score moyen + confiance basse → scalping (35 ≥ 10)."""
         result = TradingProfileService.auto_select_profile(score=35, confidence="low")
-        assert result == "conservative"
+        assert result == "scalping"
 
     def test_auto_select_boundary_50_high(self):
         """Boundary : score=50 exact + high → aggressive."""
@@ -565,14 +571,14 @@ class TestAutoProfileSelection:
         assert result == "balanced"
 
     def test_auto_select_boundary_29_medium(self):
-        """Boundary : score=29 + medium → conservative (pas balanced)."""
+        """Boundary : score=29 + medium → scalping (pas balanced, mais ≥ 10)."""
         result = TradingProfileService.auto_select_profile(score=29, confidence="medium")
-        assert result == "conservative"
+        assert result == "scalping"
 
     def test_auto_select_unknown_confidence(self):
-        """Confiance inconnue → conservative."""
+        """Confiance inconnue → scalping si score ≥ 10."""
         result = TradingProfileService.auto_select_profile(score=80, confidence="unknown")
-        assert result == "conservative"
+        assert result == "scalping"
 
     def test_set_profile_auto(self, db_session, paper_account):
         """Changement vers auto."""
@@ -606,9 +612,10 @@ class TestAutoProfileSelection:
     def test_get_all_presets_excludes_auto(self):
         """Les presets ne contiennent pas auto (ce n'est pas un preset)."""
         presets = TradingProfileService.get_all_presets()
-        assert len(presets) == 3
+        assert len(presets) == 4
         types = [p.profile_type.value for p in presets]
         assert "auto" not in types
+        assert "scalping" in types
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -830,15 +837,16 @@ class TestJournalEndpoints:
         assert data["params"]["min_score"] == 35
 
     def test_profile_presets(self, client, db_session):
-        """GET /paper/profile/presets retourne les 3 presets."""
+        """GET /paper/profile/presets retourne les 4 presets."""
         resp = client.get("/paper/profile/presets")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 3
+        assert len(data) == 4
         types = [p["profile_type"] for p in data]
         assert "conservative" in types
         assert "balanced" in types
         assert "aggressive" in types
+        assert "scalping" in types
 
 
 # ─────────────────────────────────────────────────────────────────────────────

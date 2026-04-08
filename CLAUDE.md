@@ -15,7 +15,7 @@
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **253 tests** pytest, tous passing |
+| Tests backend | **1005 tests** pytest, tous passing |
 | Frontend build | `tsc --noEmit` sans erreur |
 | Phase courante | **v0.9 livré** — Étape 1 BTC Insight complète, prochaine étape v1.0 |
 
@@ -261,7 +261,7 @@ Avant d'ajouter une feature :
 1. Lire `docs/ROADMAP.md` pour la roadmap complète (phases + vision long terme)
 2. S'assurer que la feature s'inscrit dans la bonne phase
 
-**Phase actuelle : v0.9 livré — Prochaine étape v1.0 Moteur de Décision**
+**Phase actuelle : v1.6 livré — Prochaine étape v2.0 Robot Autonome**
 
 Ne pas implémenter une feature d'une phase future si la phase courante n'est pas terminée.
 

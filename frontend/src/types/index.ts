@@ -106,6 +106,15 @@ export type {
   TradingProfileResponse,
   DurationBucket,
   TradingStyleResult,
+  // Paper Trading — Diagnostic (v1.6)
+  NonTradeRankedReason,
+  PositionDurationStats,
+  ProfileComparisonRow,
+  RiskBrakeAnalysis,
+  DiagnosticResponse,
+  MissedOpportunityItem,
+  MissedOpportunitySummary,
+  LeverageAnalysisResponse,
 } from './api';
 
 // Représente un chandelier (bougie) OHLCV

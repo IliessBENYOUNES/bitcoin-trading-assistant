@@ -77,6 +77,31 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         loss_cut_score_threshold=10,
         leverage_enabled=True,
         max_leverage=3.0,
+        stale_exit_minutes=180,
+    ),
+    "scalping": TradingProfileParams(
+        profile_type=TradingProfileType.scalping,
+        label="Scalping",
+        description="Haute fréquence intraday — petits mouvements, sorties rapides, réentrée immédiate.",
+        min_score=5,
+        min_confidence="low",
+        min_scenario_dominance=0.35,
+        max_trades_per_day=50,
+        cooldown_minutes=3,
+        max_position_duration_hours=2,
+        profit_take_pct=0.3,
+        loss_cut_pct=0.3,
+        loss_cut_score_threshold=5,
+        leverage_enabled=True,
+        max_leverage=2.0,
+        # Analyse sur timeframe court (15m au lieu de 4h)
+        analysis_timeframe="15m",
+        # Seuils de décision abaissés (BUY > +10, SELL < -8)
+        buy_threshold=10,
+        sell_threshold=8,
+        # Sorties rapides
+        momentum_fade_enabled=True,
+        stale_exit_minutes=60,
     ),
 }
 
@@ -94,7 +119,7 @@ class TradingProfileService:
     def __init__(self, db: Session):
         self.db = db
 
-    # Valeurs acceptées pour set_profile (les 3 presets + auto)
+    # Valeurs acceptées pour set_profile (les 4 presets + auto)
     VALID_PROFILES = list(PROFILE_PRESETS.keys()) + ["auto"]
 
     def get_active_profile(self) -> TradingProfileResponse:
@@ -157,6 +182,7 @@ class TradingProfileService:
         Logique :
         - Score ≥ 50 ET confiance "high" → aggressive (opportunité forte)
         - Score ≥ 30 ET confiance ≥ "medium" → balanced (opportunité correcte)
+        - Score ≥ 10 → scalping (opportunité modeste mais exploitable)
         - Sinon → conservative (prudence par défaut)
 
         Args:
@@ -164,7 +190,7 @@ class TradingProfileService:
             confidence: Niveau de confiance ("low", "medium", "high")
 
         Returns:
-            Nom du profil résolu ("conservative", "balanced" ou "aggressive")
+            Nom du profil résolu ("conservative", "balanced", "aggressive" ou "scalping")
         """
         abs_score = abs(score)
         confidence_level = {"low": 0, "medium": 1, "high": 2}.get(confidence, 0)
@@ -176,6 +202,10 @@ class TradingProfileService:
         # Opportunité correcte → équilibré
         if abs_score >= 30 and confidence_level >= 1:
             return "balanced"
+
+        # Opportunité modeste → scalping
+        if abs_score >= 10:
+            return "scalping"
 
         # Par défaut → conservateur
         return "conservative"

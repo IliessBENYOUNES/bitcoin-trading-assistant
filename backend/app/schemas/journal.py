@@ -18,6 +18,7 @@ class TradingProfileType(str, Enum):
     conservative = "conservative"
     balanced = "balanced"
     aggressive = "aggressive"
+    scalping = "scalping"
     auto = "auto"
 
 
@@ -41,6 +42,14 @@ class TradingProfileParams(BaseModel):
     # Levier
     leverage_enabled: bool = Field(description="Levier auto activé pour ce profil")
     max_leverage: float = Field(description="Levier maximum autorisé")
+    # [v1.6] Timeframe d'analyse (None = 4h par défaut)
+    analysis_timeframe: Optional[str] = Field(default=None, description="Timeframe pour le DecisionService (None=4h)")
+    # [v1.6] Seuils de décision personnalisés (None = globaux BUY_THRESHOLD/SELL_THRESHOLD)
+    buy_threshold: Optional[int] = Field(default=None, description="Score min pour BUY (None=global 25)")
+    sell_threshold: Optional[int] = Field(default=None, description="Score min absolu pour SELL (None=global 20)")
+    # [v1.6] Sorties rapides
+    momentum_fade_enabled: bool = Field(default=False, description="Sortie si le momentum s'essouffle")
+    stale_exit_minutes: Optional[int] = Field(default=None, description="Sortie si position stagnante > N min")
 
 
 class TradingProfileResponse(BaseModel):

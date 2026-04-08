@@ -151,6 +151,12 @@ class PaperTradingService:
             profile_name = "conservative"
             profile_params = None
 
+        # [v1.6] Paramètres de décision pilotés par le profil
+        _analysis_tf = getattr(profile_params, "analysis_timeframe", None) or "4h"
+        _analysis_days = 1 if _analysis_tf in ("1m", "3m", "5m", "15m", "30m") else 7
+        _buy_th = getattr(profile_params, "buy_threshold", None)
+        _sell_th = getattr(profile_params, "sell_threshold", None)
+
         # Helper pour journaliser (best-effort, ne bloque pas le tick)
         def _log_tick(**kwargs):
             try:
@@ -229,8 +235,72 @@ class PaperTradingService:
                     open_pos.lowest_price_since_entry = current_price
                     self.db.commit()
 
+            # [v1.6] Sortie rapide — Stale position
+            # Si la position stagne depuis trop longtemps (faible mouvement),
+            # on libère la place pour d'autres opportunités.
+            stale_minutes = getattr(profile_params, "stale_exit_minutes", None) if profile_params else None
+            if stale_minutes and stale_minutes > 0:
+                entry_ts = _ensure_aware(open_pos.entry_ts)
+                elapsed_min = (now - entry_ts).total_seconds() / 60
+                unrealized_pnl_now = self._calc_unrealized_pnl(open_pos, current_price)
+                unrealized_pct = (unrealized_pnl_now / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
+                if elapsed_min >= stale_minutes and abs(unrealized_pct) < 0.1:
+                    signal_reason = f"Position stagnante depuis {elapsed_min:.0f} min, PnL latent {unrealized_pct:.2f}%"
+                    closed = self._close_position(open_pos, current_price, signal_reason, "closed_stale")
+                    _log_tick(action_taken="closed_stale", btc_price=current_price,
+                              had_open_position=True, trade_id=closed.id,
+                              leverage_final=getattr(closed, "leverage", 1.0))
+                    return PaperTickResult(
+                        action_taken="closed_stale",
+                        detail=f"Position fermée (stagnante) : {signal_reason}",
+                        position_closed=PaperTradeResponse.model_validate(closed),
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        leverage_used=getattr(closed, "leverage", 1.0),
+                        profile_type=profile_name,
+                    )
+
+            # [v1.6] Sortie rapide — Momentum fade
+            # Si le profit latent a atteint un pic puis recule significativement,
+            # on prend le profit restant avant qu'il ne disparaisse.
+            mf_enabled = getattr(profile_params, "momentum_fade_enabled", False) if profile_params else False
+            if mf_enabled:
+                unrealized_pnl_now = self._calc_unrealized_pnl(open_pos, current_price)
+                # Le pic de PnL est approximé via highest/lowest price
+                if open_pos.direction == "long" and open_pos.highest_price_since_entry:
+                    peak_pnl = self._calc_unrealized_pnl_at_price(open_pos, open_pos.highest_price_since_entry)
+                elif open_pos.direction == "short" and open_pos.lowest_price_since_entry:
+                    peak_pnl = self._calc_unrealized_pnl_at_price(open_pos, open_pos.lowest_price_since_entry)
+                else:
+                    peak_pnl = 0
+
+                # Déclencher si le peak_pnl était > 0.1% du capital et que
+                # le PnL actuel a reculé de plus de 60% depuis le pic
+                peak_pct = (peak_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
+                if peak_pct > 0.1 and peak_pnl > 0 and unrealized_pnl_now < peak_pnl * 0.4:
+                    signal_reason = (
+                        f"Momentum fade : pic PnL +{peak_pnl:.2f} USD ({peak_pct:.2f}%), "
+                        f"actuel {unrealized_pnl_now:.2f} USD"
+                    )
+                    closed = self._close_position(open_pos, current_price, signal_reason, "closed_momentum_fade")
+                    _log_tick(action_taken="closed_momentum_fade", btc_price=current_price,
+                              had_open_position=True, trade_id=closed.id,
+                              leverage_final=getattr(closed, "leverage", 1.0))
+                    return PaperTickResult(
+                        action_taken="closed_momentum_fade",
+                        detail=f"Position fermée (momentum fade) : {signal_reason}",
+                        position_closed=PaperTradeResponse.model_validate(closed),
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        leverage_used=getattr(closed, "leverage", 1.0),
+                        profile_type=profile_name,
+                    )
+
             # Vérifier si le DecisionService recommande de fermer
-            decision_result = self._get_decision()
+            decision_result = self._get_decision(
+                timeframe=_analysis_tf, history_days=_analysis_days,
+                buy_threshold=_buy_th, sell_threshold=_sell_th,
+            )
             if decision_result:
                 action = decision_result.get("recommendation", {}).get("action", "attendre")
                 score = decision_result.get("combined_score", 0)
@@ -317,7 +387,10 @@ class PaperTradingService:
 
         else:
             # --- Pas de position : évaluer une nouvelle entrée ---
-            decision_result = self._get_decision()
+            decision_result = self._get_decision(
+                timeframe=_analysis_tf, history_days=_analysis_days,
+                buy_threshold=_buy_th, sell_threshold=_sell_th,
+            )
             if decision_result is None:
                 _log_tick(action_taken="no_decision", btc_price=current_price,
                           reason_no_trade="no_decision_available",
@@ -860,14 +933,17 @@ class PaperTradingService:
             return candle.close_price
         return None
 
-    def _get_decision(self) -> Optional[dict]:
+    def _get_decision(self, timeframe: str = "4h", history_days: float = 7,
+                       buy_threshold: int = None, sell_threshold: int = None) -> Optional[dict]:
         """Appelle le DecisionService pour obtenir la recommandation."""
         try:
             service = DecisionService(self.db)
             return service.analyze(
                 symbol="BTC/USD",
-                timeframe="4h",
-                history_days=7,
+                timeframe=timeframe,
+                history_days=history_days,
+                buy_threshold=buy_threshold,
+                sell_threshold=sell_threshold,
             )
         except Exception as e:
             logger.error(f"Erreur DecisionService: {e}")
@@ -880,6 +956,15 @@ class PaperTradingService:
             pnl_pct = (current_price - trade.entry_price) / trade.entry_price
         else:
             pnl_pct = (trade.entry_price - current_price) / trade.entry_price
+        return trade.position_size_usd * leverage * pnl_pct
+
+    def _calc_unrealized_pnl_at_price(self, trade: PaperTrade, price: float) -> float:
+        """Calcule le PnL non réalisé à un prix donné (pour estimer le pic de PnL)."""
+        leverage = getattr(trade, "leverage", None) or 1.0
+        if trade.direction == "long":
+            pnl_pct = (price - trade.entry_price) / trade.entry_price
+        else:
+            pnl_pct = (trade.entry_price - price) / trade.entry_price
         return trade.position_size_usd * leverage * pnl_pct
 
     def _calc_buy_hold(self, account: PaperAccount) -> float:

@@ -42,6 +42,9 @@ import type {
   PaperTickResult,
   PaperTradeListResponse,
   PaperMetrics,
+  DiagnosticResponse,
+  MissedOpportunitySummary,
+  LeverageAnalysisResponse,
 } from '../types';
 
 // -----------------------------------------------------------------------------
@@ -760,5 +763,44 @@ export async function getPaperStyle(
   options: FetchOptions = {}
 ): Promise<TradingStyleResult> {
   return apiFetch<TradingStyleResult>('/paper/style', options);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [v1.6] Diagnostic de fréquence
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getPaperDiagnostic(
+  params: { date_from?: string; date_to?: string } = {},
+  options: FetchOptions = {}
+): Promise<DiagnosticResponse> {
+  const q = new URLSearchParams();
+  if (params.date_from) q.set('date_from', params.date_from);
+  if (params.date_to) q.set('date_to', params.date_to);
+  const qs = q.toString() ? `?${q.toString()}` : '';
+  return apiFetch<DiagnosticResponse>(`/paper/diagnostic${qs}`, options);
+}
+
+export async function getPaperMissedOpportunities(
+  params: { date_from?: string; date_to?: string; lookforward_minutes?: number; min_move_pct?: number } = {},
+  options: FetchOptions = {}
+): Promise<MissedOpportunitySummary> {
+  const q = new URLSearchParams();
+  if (params.date_from) q.set('date_from', params.date_from);
+  if (params.date_to) q.set('date_to', params.date_to);
+  if (params.lookforward_minutes) q.set('lookforward_minutes', String(params.lookforward_minutes));
+  if (params.min_move_pct) q.set('min_move_pct', String(params.min_move_pct));
+  const qs = q.toString() ? `?${q.toString()}` : '';
+  return apiFetch<MissedOpportunitySummary>(`/paper/missed-opportunities${qs}`, options);
+}
+
+export async function getPaperLeverageAnalysis(
+  params: { date_from?: string; date_to?: string } = {},
+  options: FetchOptions = {}
+): Promise<LeverageAnalysisResponse> {
+  const q = new URLSearchParams();
+  if (params.date_from) q.set('date_from', params.date_from);
+  if (params.date_to) q.set('date_to', params.date_to);
+  const qs = q.toString() ? `?${q.toString()}` : '';
+  return apiFetch<LeverageAnalysisResponse>(`/paper/leverage-analysis${qs}`, options);
 }
 

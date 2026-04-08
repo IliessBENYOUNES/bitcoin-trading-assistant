@@ -2,6 +2,70 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-04-08
+
+### Added
+- **Diagnostic de fréquence** — Analyse exhaustive de pourquoi le bot trade peu
+  - Nouveau endpoint `GET /paper/diagnostic` avec hiérarchie des causes de non-trade
+  - Classement des raisons : signal (decision_wait, score_too_low) vs risque vs structure
+  - Analyse de la durée des positions (moy, médiane, distribution < 1h / 1-4h / 4-24h / > 24h)
+  - Comparaison simulée des 4 profils sur les données réelles
+  - Analyse du risk engine comme frein (kill switch, daily loss, levier réduit)
+  - Identification automatique du goulot d'étranglement principal + recommandations
+- **Opportunités manquées** — Détection ex-post des mouvements ratés
+  - Nouveau endpoint `GET /paper/missed-opportunities`
+  - Analyse des ticks non-trade : mouvement favorable dans les N minutes suivantes
+  - Ventilation par seuil (≥ 0.1%, ≥ 0.2%, ≥ 0.3%, ≥ 0.5%)
+  - Avertissement clair : ces chiffres sont ex-post et surestiment les gains réels
+- **Analyse levier** — Comparaison avec/sans levier
+  - Nouveau endpoint `GET /paper/leverage-analysis`
+  - PnL avec levier vs PnL sans levier, bénéfice net, amplification pos/neg
+- **Profil Scalping** — Haute fréquence intraday
+  - Nouveau profil "scalping" : min_score=5, cooldown=3min, max_trades=50/j
+  - Timeframe d'analyse 15m (au lieu de 4h) pour capter les micro-mouvements
+  - Seuils de décision abaissés : BUY > +10, SELL < -8 (vs +25 / -20)
+  - Sorties serrées : profit_take 0.3%, loss_cut 0.3%
+  - Momentum fade : sortie si le profit latent recule de >60% depuis le pic
+  - Stale exit : sortie si position stagnante depuis >60 min (PnL < 0.1%)
+- **Seuils de décision personnalisables** par profil
+  - `buy_threshold` et `sell_threshold` optionnels dans TradingProfileParams
+  - DecisionService.analyze() et generate_recommendation() acceptent ces seuils
+  - Rétrocompatible : None = seuils globaux (BUY_THRESHOLD=25, SELL_THRESHOLD=20)
+- **Timeframe d'analyse par profil**
+  - `analysis_timeframe` optionnel dans TradingProfileParams
+  - Le paper trading utilise le timeframe du profil (scalping→15m, autres→4h)
+- **Sorties rapides**
+  - Momentum fade : détecte quand le profit s'essouffle et ferme avant inversion
+  - Stale position : ferme les positions improductives après N minutes
+  - Configurable par profil via `momentum_fade_enabled` et `stale_exit_minutes`
+  - Aggressive a stale_exit_minutes=180 (3h)
+- **Auto-profil amélioré** — Score ≥ 10 → scalping (nouveau tier)
+- **DiagnosticPanel** — Nouveau composant frontend
+  - Top raisons de non-trade avec barres visuelles
+  - Comparaison des profils en table
+  - Durée des positions avec alertes
+  - Opportunités manquées (KPIs + seuils)
+  - Analyse levier (bénéfice net, amplification)
+  - Recommandations automatiques
+  - Intégré dans l'onglet Trading du Dashboard
+- **55 nouveaux tests backend** couvrant diagnostic, scalping, seuils, sorties rapides, endpoints
+
+### Changed
+- Auto-profil : score ≥ 10 → scalping (avant : → conservative)
+- Aggressive : ajout stale_exit_minutes=180
+- DecisionService : seuils BUY/SELL paramétrables (rétrocompatible)
+
+### Technical
+- Nouveau fichier `diagnostic_service.py` — DiagnosticService complet
+- Nouveau fichier `schemas/diagnostic.py` — 6 schémas Pydantic
+- TradingProfileType enum : ajout `scalping`
+- TradingProfileParams : 5 nouveaux champs optionnels (rétrocompatible)
+- paper_trading_service.py : timeframe dynamique, sorties rapides (stale + momentum fade)
+- 3 nouveaux endpoints : `/paper/diagnostic`, `/paper/missed-opportunities`, `/paper/leverage-analysis`
+- Frontend : DiagnosticPanel.tsx + types + API client
+- **1005 tests backend**, tous passing ✅
+- tsc --noEmit sans erreur ✅
+
 ## [1.5.1] - 2026-04-08
 
 ### Added

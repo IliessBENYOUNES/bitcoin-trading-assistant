@@ -510,17 +510,26 @@ class DecisionService:
         scenarios: list[Scenario],
         rules: list[RuleResult],
         combined_score: int,
+        buy_threshold: Optional[int] = None,
+        sell_threshold: Optional[int] = None,
     ) -> Recommendation:
         """
         Génère une recommandation d'action basée sur les scénarios et règles.
 
         Logique :
-        - Score > +25 ET scénario Hausse dominant → Acheter
-        - Score < -25 ET scénario Baisse dominant → Vendre
+        - Score > buy_threshold ET scénario Hausse dominant → Acheter
+        - Score < -sell_threshold ET scénario Baisse dominant → Vendre
         - Sinon → Attendre
 
         La confiance dépend de la convergence des règles.
+
+        Args:
+            buy_threshold: Seuil pour BUY (défaut: BUY_THRESHOLD=25)
+            sell_threshold: Seuil absolu pour SELL (défaut: SELL_THRESHOLD=20)
         """
+        # Utiliser les seuils personnalisés ou globaux
+        effective_buy = buy_threshold if buy_threshold is not None else BUY_THRESHOLD
+        effective_sell = sell_threshold if sell_threshold is not None else SELL_THRESHOLD
         # Trouver le scénario dominant
         dominant = scenarios[0] if scenarios else None
 
@@ -530,15 +539,15 @@ class DecisionService:
         total_satisfied = bullish_satisfied + bearish_satisfied
 
         # Déterminer l'action
-        # Seuils asymétriques BUY=+25 / SELL=-20 : le biais haussier structurel
+        # Seuils asymétriques BUY/SELL : le biais haussier structurel
         # de Bitcoin rend les signaux bearish plus rares. Un seuil SELL plus bas
         # compense ce biais et permet d'ouvrir des shorts.
         # Chemin additionnel par confluence : ≥3 règles bearish + score négatif → SELL
-        # même si le seuil -20 n'est pas atteint, la convergence des indicateurs
+        # même si le seuil n'est pas atteint, la convergence des indicateurs
         # est un signal fiable pour shorter.
-        if combined_score > BUY_THRESHOLD and dominant and dominant.direction == SignalDirection.BULLISH:
+        if combined_score > effective_buy and dominant and dominant.direction == SignalDirection.BULLISH:
             action = ActionType.BUY
-        elif combined_score < -SELL_THRESHOLD and dominant and dominant.direction == SignalDirection.BEARISH:
+        elif combined_score < -effective_sell and dominant and dominant.direction == SignalDirection.BEARISH:
             action = ActionType.SELL
         elif bearish_satisfied >= SELL_CONFLUENCE_MIN and combined_score < 0:
             # Confluence bearish forte : plusieurs indicateurs convergent
@@ -625,6 +634,8 @@ class DecisionService:
         timeframe: str = "4h",
         history_days: float = 7,
         end_ts: Optional[datetime] = None,
+        buy_threshold: Optional[int] = None,
+        sell_threshold: Optional[int] = None,
     ) -> dict:
         """
         Analyse complète : signaux + sentiment → décision.
@@ -695,7 +706,9 @@ class DecisionService:
 
         # 6. Générer la recommandation
         recommendation = self.generate_recommendation(
-            scenarios, rule_results, combined_score
+            scenarios, rule_results, combined_score,
+            buy_threshold=buy_threshold,
+            sell_threshold=sell_threshold,
         )
 
         # 7. Générer le résumé
