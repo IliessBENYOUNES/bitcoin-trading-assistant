@@ -310,7 +310,7 @@ class TestScalpingRecalibration:
     def test_stale_exit_increased(self):
         """Stale exit augmenté de 10 à 12 min."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 12
+        assert p.stale_exit_minutes == 15
 
     def test_max_leverage_reduced(self):
         """Max leverage réduit de 2.0 à 1.5."""
@@ -318,14 +318,18 @@ class TestScalpingRecalibration:
         assert p.max_leverage == 1.5
 
     def test_unchanged_params(self):
-        """Les paramètres non modifiés restent stables."""
+        """Les paramètres scalping reflètent le recalibrage v1.9.1."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.profit_take_pct == 0.3
-        assert p.loss_cut_pct == 0.3
+        # [v1.9.1] TP/SL élargis pour dépasser le cost model realistic
+        assert p.profit_take_pct == 0.5   # was 0.3
+        assert p.loss_cut_pct == 0.4      # was 0.3
         assert p.max_trades_per_day == 50
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
         assert p.momentum_fade_enabled is True
+        # [v1.9.1] Protection anti-micro-PnL
+        assert p.min_hold_seconds == 30
+        assert p.min_economic_pnl_pct == 0.15
 
 
 # ================================================================

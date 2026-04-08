@@ -47,6 +47,7 @@ SAFETY_BOUNDS = {
     "max_leverage": (1.0, 5.0),
     "profit_take_pct": (0.1, 5.0),
     "loss_cut_pct": (0.1, 5.0),
+    "min_hold_seconds": (0, 120),  # 0 à 2 minutes max
 }
 
 # Nombre minimum d'échantillons pour qu'un pattern soit significatif
@@ -81,17 +82,39 @@ class LearningService:
         """
         Enregistre un échantillon d'apprentissage à la fermeture d'un trade.
 
-        Appelé par PaperTradingService._close_position().
+        [v1.9.1] Calcule aussi le coût estimé, le PnL net et la catégorie
+        d'utilité économique (useful / insignificant / churn / loss_useful / loss_destructive).
         """
         if trade is None or trade.pnl is None:
             return None
 
         duration_min = trade.duration_hours * 60 if trade.duration_hours else None
 
+        # [v1.9.1] Calcul coût et PnL net
+        cost_estimated = 0.0
+        pnl_net = trade.pnl
+        try:
+            from app.services.trading_cost_service import get_cost_model
+            cost_model = get_cost_model("realistic")
+            size = (trade.position_size_usd or 0) * (trade.leverage or 1.0)
+            cost_estimated = cost_model.round_trip_cost_usd(size)
+            pnl_net = trade.pnl - cost_estimated
+        except Exception:
+            cost_estimated = 0.0
+            pnl_net = trade.pnl
+
+        # [v1.9.1] Catégorie d'utilité économique
+        usefulness = self._classify_usefulness(
+            pnl_brut=trade.pnl,
+            pnl_net=pnl_net,
+            pnl_pct=trade.pnl_pct,
+            duration_min=duration_min,
+        )
+
         sample = LearningSignal(
             trade_id=trade.id,
             score=trade.decision_score,
-            confidence=None,  # sera enrichi si disponible
+            confidence=None,
             direction=trade.direction,
             slot=trade.slot,
             profile_type=trade.profile_type,
@@ -105,6 +128,9 @@ class LearningService:
             was_reversal=1 if was_reversal else 0,
             time_since_last_trade_min=time_since_last_trade_min,
             cooldown_configured_min=cooldown_configured_min,
+            cost_estimated=round(cost_estimated, 4),
+            pnl_net_estimated=round(pnl_net, 4),
+            usefulness_category=usefulness,
         )
         self.db.add(sample)
         try:
@@ -116,6 +142,44 @@ class LearningService:
             self.db.rollback()
             return None
 
+    @staticmethod
+    def _classify_usefulness(
+        pnl_brut: float,
+        pnl_net: float,
+        pnl_pct: Optional[float],
+        duration_min: Optional[float],
+    ) -> str:
+        """
+        Classifie un trade en catégorie d'utilité économique.
+
+        Categories :
+        - useful : gagnant net avec un mouvement significatif
+        - insignificant : gagnant brut mais PnL net quasi nul (< coûts)
+        - churn : trade très court et flat (bruit pur)
+        - loss_useful : perte bien coupée (loss cut correcte)
+        - loss_destructive : perte importante qui aurait pu être évitée
+        """
+        # Churn : trade < 1 minute et PnL % < 0.05%
+        if duration_min is not None and duration_min < 1.0:
+            if pnl_pct is not None and abs(pnl_pct) < 0.05:
+                return "churn"
+
+        # Trade brut positif
+        if pnl_brut >= 0:
+            if pnl_net > 0.5:
+                return "useful"
+            elif pnl_net > 0:
+                return "insignificant"
+            else:
+                # Brut positif mais net négatif → insignifiant (coûts > gains)
+                return "insignificant"
+        else:
+            # Trade perdant
+            if pnl_pct is not None and pnl_pct > -0.3:
+                return "loss_useful"  # Perte bien coupée
+            else:
+                return "loss_destructive"  # Grosse perte
+
     # ================================================================
     # ANALYSE ET SUGGESTIONS
     # ================================================================
@@ -124,7 +188,15 @@ class LearningService:
         """Statistiques globales du dataset d'apprentissage."""
         total = self.db.query(func.count(LearningSignal.id)).scalar() or 0
         if total == 0:
-            return LearningDatasetStats()
+            # Calculer le seuil économique même sans données
+            min_move = 0.0
+            try:
+                from app.services.trading_cost_service import get_cost_model
+                cm = get_cost_model("realistic")
+                min_move = cm.round_trip_cost_pct()
+            except Exception:
+                pass
+            return LearningDatasetStats(min_economic_move_pct=round(min_move, 3))
 
         profitable = self.db.query(func.count(LearningSignal.id)).filter(
             LearningSignal.was_profitable == 1
@@ -156,6 +228,32 @@ class LearningService:
         )
         exit_dist = {et: count for et, count in exit_types if et}
 
+        # [v1.9.1] Métriques économiques
+        avg_cost = self.db.query(func.avg(LearningSignal.cost_estimated)).scalar() or 0
+        avg_pnl_net = self.db.query(func.avg(LearningSignal.pnl_net_estimated)).scalar() or 0
+
+        # Comptes par catégorie d'utilité
+        useful_count = self.db.query(func.count(LearningSignal.id)).filter(
+            LearningSignal.usefulness_category == "useful"
+        ).scalar() or 0
+        insignificant_count = self.db.query(func.count(LearningSignal.id)).filter(
+            LearningSignal.usefulness_category == "insignificant"
+        ).scalar() or 0
+        churn_count = self.db.query(func.count(LearningSignal.id)).filter(
+            LearningSignal.usefulness_category == "churn"
+        ).scalar() or 0
+
+        pct_useful = round(useful_count / total * 100, 1) if total > 0 else 0
+
+        # Seuil économique minimum
+        min_move = 0.0
+        try:
+            from app.services.trading_cost_service import get_cost_model
+            cm = get_cost_model("realistic")
+            min_move = cm.round_trip_cost_pct()
+        except Exception:
+            pass
+
         oldest = self.db.query(func.min(LearningSignal.created_at)).scalar()
         newest = self.db.query(func.max(LearningSignal.created_at)).scalar()
 
@@ -169,6 +267,13 @@ class LearningService:
             long_win_rate=round(long_wins / longs * 100, 1) if longs > 0 else 0,
             short_win_rate=round(short_wins / shorts * 100, 1) if shorts > 0 else 0,
             exit_type_distribution=exit_dist,
+            avg_cost_per_trade=round(float(avg_cost), 2),
+            avg_pnl_net=round(float(avg_pnl_net), 2),
+            trades_useful=useful_count,
+            trades_insignificant=insignificant_count,
+            trades_churn=churn_count,
+            pct_economically_useful=pct_useful,
+            min_economic_move_pct=round(min_move, 3),
             oldest_sample=oldest.isoformat() if oldest else None,
             newest_sample=newest.isoformat() if newest else None,
         )
@@ -268,6 +373,57 @@ class LearningService:
                 impact=impact,
             ))
 
+        # Pattern 5 : [v1.9.1] Par catégorie d'utilité économique
+        for category in ["useful", "insignificant", "churn", "loss_useful", "loss_destructive"]:
+            group = [s for s in samples if s.usefulness_category == category]
+            if len(group) < 2:
+                continue
+            wins = sum(1 for s in group if s.was_profitable)
+            wr = wins / len(group) * 100
+            avg_pnl = sum(s.pnl_brut for s in group if s.pnl_brut) / len(group)
+            avg_net = sum(s.pnl_net_estimated for s in group if s.pnl_net_estimated is not None) / len(group) if any(s.pnl_net_estimated is not None for s in group) else avg_pnl
+            impact = "positif" if avg_net > 0.5 else ("négatif" if avg_net < -0.5 else "neutre")
+            patterns.append(PatternInsight(
+                pattern_name=f"economic_{category}",
+                description=(
+                    f"Catégorie '{category}' : {len(group)} trades ({len(group)/len(samples)*100:.0f}%), "
+                    f"PnL brut moy {avg_pnl:.2f}, PnL NET moy {avg_net:.2f}"
+                ),
+                sample_count=len(group),
+                win_rate=round(wr, 1),
+                avg_pnl=round(avg_net, 2),
+                impact=impact,
+            ))
+
+        # Pattern 6 : [v1.9.1] Par bucket de durée
+        dur_buckets = [
+            (0, 1, "< 1min"),
+            (1, 5, "1-5min"),
+            (5, 15, "5-15min"),
+            (15, 60, "15-60min"),
+            (60, 999999, "> 60min"),
+        ]
+        for lo, hi, label in dur_buckets:
+            group = [s for s in samples if s.duration_minutes is not None and lo <= s.duration_minutes < hi]
+            if len(group) < 2:
+                continue
+            wins = sum(1 for s in group if s.was_profitable)
+            wr = wins / len(group) * 100
+            avg_pnl = sum(s.pnl_brut for s in group if s.pnl_brut) / len(group)
+            avg_net = sum(s.pnl_net_estimated for s in group if s.pnl_net_estimated is not None) / len(group) if any(s.pnl_net_estimated is not None for s in group) else avg_pnl
+            impact = "positif" if avg_net > 0.5 else ("négatif" if avg_net < -0.5 else "neutre")
+            patterns.append(PatternInsight(
+                pattern_name=f"duration_{label.replace(' ', '').replace('<', 'lt').replace('>', 'gt')}",
+                description=(
+                    f"Durée {label} : {len(group)} trades, WR {wr:.0f}%, "
+                    f"PnL brut moy {avg_pnl:.2f}, NET moy {avg_net:.2f}"
+                ),
+                sample_count=len(group),
+                win_rate=round(wr, 1),
+                avg_pnl=round(avg_net, 2),
+                impact=impact,
+            ))
+
         return sorted(patterns, key=lambda p: abs(p.avg_pnl), reverse=True)
 
     def suggest_adjustments(self, profile_type: str = "scalping") -> list[StrategyFeedback]:
@@ -363,6 +519,75 @@ class LearningService:
                     profile_type=profile_type,
                     version=version,
                 ))
+
+        # Suggestion 4 : [v1.9.1] Taux de churn trop élevé → allonger le cooldown
+        churn_trades = [s for s in samples if s.usefulness_category == "churn"]
+        if len(churn_trades) >= 3 and len(samples) >= 10:
+            churn_pct = len(churn_trades) / len(samples) * 100
+            if churn_pct > 20:
+                current_val = params.cooldown_minutes or 2
+                suggested = min(current_val + 1, SAFETY_BOUNDS["cooldown_minutes"][1])
+                suggestions.append(self._create_feedback(
+                    parameter_name="cooldown_minutes",
+                    original_value=current_val,
+                    suggested_value=suggested,
+                    reason=(
+                        f"{churn_pct:.0f}% des trades sont du churn ({len(churn_trades)}/{len(samples)}) "
+                        f"— trades < 1 min avec PnL quasi nul → allonger le cooldown base"
+                    ),
+                    sample_size=len(churn_trades),
+                    win_rate_observed=0,
+                    avg_pnl_observed=0,
+                    profile_type=profile_type,
+                    version=version,
+                ))
+
+        # Suggestion 5 : [v1.9.1] Trop de trades insignifiants → élargir le TP
+        insignif_trades = [s for s in samples if s.usefulness_category == "insignificant"]
+        if len(insignif_trades) >= 3 and len(samples) >= 10:
+            insignif_pct = len(insignif_trades) / len(samples) * 100
+            if insignif_pct > 30:
+                current_val = params.profit_take_pct or 0.5
+                suggested = min(current_val + 0.1, SAFETY_BOUNDS["profit_take_pct"][1])
+                avg_insignif_pnl = sum(s.pnl_brut for s in insignif_trades if s.pnl_brut) / len(insignif_trades)
+                suggestions.append(self._create_feedback(
+                    parameter_name="profit_take_pct",
+                    original_value=current_val,
+                    suggested_value=round(suggested, 2),
+                    reason=(
+                        f"{insignif_pct:.0f}% des trades sont insignifiants (brut positif mais net ~ 0) "
+                        f"avec PnL brut moyen {avg_insignif_pnl:.2f} — les gains ne dépassent pas les coûts "
+                        f"→ élargir le TP pour capturer des mouvements plus grands"
+                    ),
+                    sample_size=len(insignif_trades),
+                    win_rate_observed=100,
+                    avg_pnl_observed=avg_insignif_pnl,
+                    profile_type=profile_type,
+                    version=version,
+                ))
+
+        # Suggestion 6 : [v1.9.1] Signal contraire ferme trop vite → allonger min_hold
+        signal_exits = [s for s in samples if s.exit_type == "closed_signal"]
+        if len(signal_exits) >= 5:
+            fast_signal = [s for s in signal_exits if s.duration_minutes is not None and s.duration_minutes < 1]
+            if len(fast_signal) >= 3:
+                fast_avg = sum(s.pnl_brut for s in fast_signal if s.pnl_brut) / len(fast_signal)
+                if fast_avg < 0.5:
+                    suggestions.append(self._create_feedback(
+                        parameter_name="min_hold_seconds",
+                        original_value=getattr(params, "min_hold_seconds", 0) or 0,
+                        suggested_value=45,
+                        reason=(
+                            f"{len(fast_signal)} trades fermés par signal contraire en < 1 min "
+                            f"avec PnL brut moyen {fast_avg:.2f} — la sortie-éclair détruit la valeur "
+                            f"→ allonger le min_hold pour laisser les trades respirer"
+                        ),
+                        sample_size=len(fast_signal),
+                        win_rate_observed=sum(1 for s in fast_signal if s.was_profitable) / len(fast_signal) * 100,
+                        avg_pnl_observed=fast_avg,
+                        profile_type=profile_type,
+                        version=version,
+                    ))
 
         # Sauvegarder les suggestions en mode shadow
         for fb in suggestions:

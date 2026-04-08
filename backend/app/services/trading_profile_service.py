@@ -82,44 +82,47 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
     "scalping": TradingProfileParams(
         profile_type=TradingProfileType.scalping,
         label="Scalping",
-        description="Haute fréquence intraday — petits mouvements, sorties rapides, réentrée immédiate.",
+        description="Haute fréquence intraday — petits mouvements, sorties rapides, réentrée contextuelle.",
         min_score=15,
         min_confidence="low",
         min_scenario_dominance=0.35,
         max_trades_per_day=50,
-        cooldown_minutes=2,           # réentrée rapide mais pas instantanée (évite le bruit)
+        cooldown_minutes=2,           # base cooldown, overridden par smart cooldown
         max_position_duration_hours=2,
-        profit_take_pct=0.3,
-        loss_cut_pct=0.3,
+        # [v1.9.1] TP/SL élargis pour dépasser le cost model realistic
+        # Round-trip cost realistic = ~0.31% (taker 0.10 + spread/2 0.025 + slippage 0.03) × 2
+        # Ancien TP 0.3% ≈ coûts → presque aucune valeur nette extraite
+        # Nouveau TP 0.5% > 0.31% → marge nette ~0.19% par trade gagnant
+        # SL 0.4% → ratio risk/reward 1:1.25 après coûts
+        profit_take_pct=0.5,
+        loss_cut_pct=0.4,
         loss_cut_score_threshold=5,
         leverage_enabled=True,
         max_leverage=1.5,
         # Analyse sur timeframe court (15m au lieu de 4h)
         analysis_timeframe="15m",
-        # Seuils de décision relevés pour meilleure discrimination
-        # Avant : buy=10, sell=8 → trop permissif, score saturé à 72
-        # Après : buy=20, sell=15 → filtre les setups médiocres
+        # Seuils de décision
         buy_threshold=20,
         sell_threshold=15,
-        # Sorties rapides — fermer après 12 min si SL/TP pas touché
-        # (augmenté de 10→12 car stale exit captait du profit)
+        # Sorties rapides — 15 min au lieu de 12 pour laisser le trade respirer
+        # Les stale exits étaient rentables, on allonge un peu
         momentum_fade_enabled=True,
-        stale_exit_minutes=12,
-        # [v1.8.1] Trailing stop recalibré — seuils augmentés pour éviter le bruit
-        # Avant : activation=0.03%, trail=0.05% → sortait au bruit (75% flat)
-        # Après : activation=0.08%, trail=0.12% → laisse respirer le trade
-        # Sur BTC $71k : activation après ~$57, trail de ~$85
+        stale_exit_minutes=15,
+        # Trailing stop inchangé (recalibré en v1.8.1)
         trailing_stop_activation_pct=0.08,
         trailing_stop_pct=0.12,
-        # [v1.9] Smart cooldown — cooldown contextuel basé sur le dernier trade
-        # Au lieu de toujours attendre 2 min, le cooldown s'adapte :
-        # - Après trailing flat ou stale → 0.5 min (réentrée rapide)
-        # - Après SL → 3 min (prudence)
-        # - Après trade gagnant → 1.2 min
-        # Borné entre 0.5 et 5 min pour éviter le spam
+        # Smart cooldown
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
         max_cooldown_minutes=5.0,
+        # [v1.9.1] Protection anti-micro-PnL
+        # Durée minimale de 30 secondes avant qu'une sortie par "signal contraire"
+        # soit autorisée. Empêche les fermetures-éclair à 0.00$ qui churnent.
+        # SL/TP/expiration/trailing restent actifs normalement.
+        min_hold_seconds=30,
+        # Seuil économique : un trade doit capturer au moins ~0.15% pour survivre
+        # au cost model realistic après leverage. Utilisé pour le learning.
+        min_economic_pnl_pct=0.15,
     ),
 }
 

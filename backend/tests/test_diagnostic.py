@@ -279,20 +279,24 @@ class TestScalpingProfile:
     """Tests pour le profil Scalping."""
 
     def test_scalping_preset_exists(self):
-        """Le preset scalping existe avec les bons paramètres (v1.8.1 recalibré)."""
+        """Le preset scalping existe avec les bons paramètres (v1.9.1 recalibré)."""
         assert "scalping" in PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
         assert p.min_score == 15           # recalibré (was 5)
         assert p.cooldown_minutes == 2     # recalibré (was 1)
         assert p.max_trades_per_day == 50
-        assert p.profit_take_pct == 0.3
-        assert p.loss_cut_pct == 0.3
+        # [v1.9.1] TP/SL élargis pour dépasser le cost model realistic
+        assert p.profit_take_pct == 0.5    # was 0.3 → trop proche du round-trip cost
+        assert p.loss_cut_pct == 0.4       # was 0.3 → ratio R/R 1:1.25 après coûts
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
         assert p.buy_threshold == 20       # recalibré (was 10)
         assert p.sell_threshold == 15      # recalibré (was 8)
         assert p.momentum_fade_enabled is True
-        assert p.stale_exit_minutes == 12  # recalibré (was 10)
+        assert p.stale_exit_minutes == 15  # was 12 → laisser le trade respirer
+        # [v1.9.1] min_hold et min_economic_pnl
+        assert p.min_hold_seconds == 30
+        assert p.min_economic_pnl_pct == 0.15
 
     def test_scalping_in_enum(self):
         """TradingProfileType inclut scalping."""
@@ -332,7 +336,7 @@ class TestScalpingProfile:
     def test_scalping_stale_exit(self):
         """Scalping a un stale exit à 12 minutes (recalibré)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 12
+        assert p.stale_exit_minutes == 15
 
     def test_conservative_no_new_fields(self):
         """Conservative n'a pas les nouveaux champs activés."""
@@ -556,7 +560,7 @@ class TestFasterExits:
     def test_stale_exit_configured_for_scalping(self):
         """Scalping a stale_exit_minutes = 12 (recalibré v1.8.1)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 12
+        assert p.stale_exit_minutes == 15
 
     def test_momentum_fade_not_on_conservative(self):
         """Conservative n'active pas momentum_fade."""

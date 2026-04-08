@@ -63,6 +63,13 @@ class TradingProfileParams(BaseModel):
     smart_cooldown_enabled: bool = Field(default=False, description="Active le cooldown intelligent contextuel")
     min_cooldown_minutes: Optional[float] = Field(default=None, description="Borne min du cooldown intelligent (minutes)")
     max_cooldown_minutes: Optional[float] = Field(default=None, description="Borne max du cooldown intelligent (minutes)")
+    # [v1.9.1] Protection anti-micro-PnL
+    # Durée minimale de détention avant que les sorties par signal soient autorisées.
+    # Empêche les "fermetures éclair" à 0.00$ qui churnent sans valeur.
+    min_hold_seconds: Optional[int] = Field(default=None, description="Durée min en secondes avant sortie signal (None=pas de minimum)")
+    # Seuil de mouvement économique minimum : en dessous, le trade n'a presque aucune
+    # chance de survivre au cost model realistic. Utilisé pour le learning et les stats.
+    min_economic_pnl_pct: Optional[float] = Field(default=None, description="Mouvement % minimum pour qu'un trade soit économiquement utile")
 
 
 class TradingProfileResponse(BaseModel):

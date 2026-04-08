@@ -102,11 +102,15 @@ class SmartCooldownService:
                     # Perte modérée → légère prudence
                     multiplier *= 1.2
 
-        # 3. Trade très court et flat → signal de bruit, pas besoin d'attendre
+        # 3. Trade très court et flat → signal de bruit, ALLONGER le cooldown
+        # [v1.9.1] Changement de philosophie : un trade très court et flat est du BRUIT.
+        # Il ne faut PAS réentrer vite après du bruit — c'est du churn.
+        # Avant : multiplier *= 0.5 (réentrait très vite = plus de churn)
+        # Maintenant : multiplier *= 1.5 (attend plus longtemps pour un vrai signal)
         if last_duration_min is not None and last_duration_min < 2.0:
             if last_pnl_pct is not None and abs(last_pnl_pct) < 0.05:
-                # Scratch : trade < 2min et PnL quasi nul
-                multiplier *= 0.5
+                # Scratch : trade < 2min et PnL quasi nul → c'est du bruit
+                multiplier *= 1.5
 
         # 4. Signal fort actuel → cooldown réduit si setup qualitativement bon
         if signal_score is not None and abs(signal_score) > 50:

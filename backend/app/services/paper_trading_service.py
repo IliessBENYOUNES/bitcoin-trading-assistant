@@ -502,24 +502,39 @@ class PaperTradingService:
                     profile_params = PROFILE_PRESETS[resolved_profile]
                     profile_name = f"auto→{resolved_profile}"
 
+                # [v1.9.1] Protection anti-micro-PnL — min_hold_seconds
+                # Si la position est trop jeune, on ne ferme PAS sur signal contraire.
+                # SL/TP/expiration/trailing restent actifs normalement.
+                # Cela empêche les fermetures-éclair qui churnent à 0.00$.
+                min_hold = getattr(profile_params, "min_hold_seconds", None) if profile_params else None
+                entry_ts = _ensure_aware(open_pos.entry_ts)
+                elapsed_seconds = (now - entry_ts).total_seconds()
+                trade_too_young = min_hold is not None and elapsed_seconds < min_hold
+
                 close_signal = False
                 signal_reason = ""
 
                 if open_pos.direction == "long":
-                    if action == "vendre":
+                    if action == "vendre" and not trade_too_young:
                         close_signal = True
                         signal_reason = f"Signal contraire : vendre (score={score})"
-                    elif action == "attendre" and score <= 0:
-                        close_signal = True
-                        signal_reason = f"Signal affaibli : attendre (score={score})"
+                    elif action == "attendre" and score <= 0 and not trade_too_young:
+                        # [v1.9.1] Adouci : ne ferme sur "signal affaibli" que si
+                        # le score est nettement contraire (≤ -10), pas juste 0.
+                        # Un score de 0 n'est pas un signal de sortie fort.
+                        if score <= -10:
+                            close_signal = True
+                            signal_reason = f"Signal nettement contraire : attendre (score={score})"
 
                 elif open_pos.direction == "short":
-                    if action == "acheter":
+                    if action == "acheter" and not trade_too_young:
                         close_signal = True
                         signal_reason = f"Signal contraire : acheter (score={score})"
-                    elif action == "attendre" and score >= 0:
-                        close_signal = True
-                        signal_reason = f"Signal affaibli : attendre (score={score})"
+                    elif action == "attendre" and score >= 0 and not trade_too_young:
+                        # [v1.9.1] Même logique adoucie pour les shorts
+                        if score >= 10:
+                            close_signal = True
+                            signal_reason = f"Signal nettement contraire : attendre (score={score})"
 
                 # Profit taking : seuil piloté par le profil
                 pt_pct = profile_params.profit_take_pct if profile_params else 2.0

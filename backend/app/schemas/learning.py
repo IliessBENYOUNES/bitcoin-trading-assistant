@@ -27,6 +27,10 @@ class LearningSignalItem(BaseModel):
     was_profitable: bool = False
     was_reversal: bool = False
     time_since_last_trade_min: Optional[float] = None
+    # [v1.9.1] Analyse économique
+    cost_estimated: Optional[float] = None
+    pnl_net_estimated: Optional[float] = None
+    usefulness_category: Optional[str] = None  # useful / insignificant / churn / loss_useful / loss_destructive
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
@@ -68,6 +72,14 @@ class LearningDatasetStats(BaseModel):
     short_win_rate: float = 0.0
     # Par exit type
     exit_type_distribution: dict = {}
+    # [v1.9.1] Analyse économique
+    avg_cost_per_trade: float = 0.0
+    avg_pnl_net: float = 0.0
+    trades_useful: int = 0
+    trades_insignificant: int = 0
+    trades_churn: int = 0
+    pct_economically_useful: float = 0.0
+    min_economic_move_pct: float = 0.0  # Seuil calculé du cost model
     # Couverture
     oldest_sample: Optional[str] = None
     newest_sample: Optional[str] = None

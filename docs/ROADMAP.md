@@ -44,12 +44,14 @@
 │  ├── Diagnostic + Scalping + Sorties    ✅ Livré (v1.6)             │
 │  └── Multi-slot + Mean reversion        ✅ Livré (v1.7)             │
 │                                                                      │
-│  ÉTAPE 2b — Reality Gap Closure (v1.8) 🔄 EN COURS                  │
+│  ÉTAPE 2b — Reality Gap Closure (v1.8-v1.9) ✅ COMPLET                │
 │  Validation opérationnelle avant exécution réelle                    │
-│  ├── TradingCostModel (frais/spread/slip) ⬜ v1.8.1                 │
-│  ├── PaperRun (campagnes de validation)   ⬜ v1.8.2                 │
-│  ├── TruthAudit (audit métriques)         ⬜ v1.8.3                 │
-│  └── V2Gate (gate formelle v2.0)          ⬜ v1.8.4                 │
+│  ├── TradingCostModel (frais/spread/slip) ✅ Livré (v1.8.1)         │
+│  ├── PaperRun (campagnes de validation)   ✅ Livré (v1.9.0)         │
+│  ├── TruthAudit (audit métriques)         ✅ Livré (v1.8.3)         │
+│  ├── V2Gate (gate formelle v2.0)          ✅ Livré (v1.8.4)         │
+│  ├── SmartCooldown + Learning Layer       ✅ Livré (v1.9.0)         │
+│  └── Anti-micro-PnL + Valeur économique   ✅ Livré (v1.9.1)         │
 │                                                                      │
 │  ÉTAPE 3 — INFINI v2 (v2.0+) ⛔ BLOQUÉ PAR 2b                     │
 │  Assistant autonome (sous contrôle humain)                           │

@@ -2,6 +2,45 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.1] - 2026-04-09
+
+### Added
+- **Anti-micro-PnL — Valeur économique des trades** : Le système détecte et filtre les trades sans valeur économique.
+  - **Catégories d'utilité** : Chaque trade est classifié (useful / insignificant / churn / loss_useful / loss_destructive)
+  - **Coûts estimés** : LearningSignal enrichi avec `cost_estimated`, `pnl_net_estimated`, `usefulness_category`
+  - **Seuil économique minimum** : `min_economic_pnl_pct=0.15%` dans le profil scalping
+  - **Protection min_hold_seconds** : 30 secondes minimum avant sortie par signal contraire (empêche les fermetures-éclair)
+  - **Patterns économiques** : Le learning détecte les patterns par catégorie d'utilité et par bucket de durée
+  - **Suggestions anti-churn** : Suggestions automatiques quand trop de trades sont du churn (> 20%) ou insignifiants (> 30%)
+  - **Suggestion min_hold** : Détection des signal exits trop rapides (< 1 min) avec PnL insuffisant
+  - **Safety bounds** : `min_hold_seconds` ajouté (0–120s)
+  - **40 nouveaux tests** (`test_economic_value.py`) : seuil économique, min_hold, classification, learning, suggestions
+
+### Changed
+- **Profil scalping recalibré** :
+  - `profit_take_pct` : 0.3% → **0.5%** (l'ancien TP ≈ coût round-trip realistic 0.31% → aucune marge nette)
+  - `loss_cut_pct` : 0.3% → **0.4%** (ratio R/R 1:1.25 après coûts)
+  - `stale_exit_minutes` : 12 → **15** (laisser les trades respirer)
+  - Ajout `min_hold_seconds=30` et `min_economic_pnl_pct=0.15`
+- **Sortie signal contraire adoucie** :
+  - "Signal affaibli" (score ≈ 0) ne ferme plus les positions → il faut un score nettement contraire (≤ -10 ou ≥ 10)
+  - Les positions trop jeunes (< min_hold_seconds) sont protégées des fermetures par signal
+- **Smart Cooldown anti-churn** :
+  - Trade flat/scratch : multiplicateur changé de ×0.5 (réentrait trop vite) → **×1.5** (attend pour un vrai signal)
+  - Un trade sans valeur ne doit plus provoquer une réentrée rapide
+- **LearningDatasetStats enrichi** : `avg_cost_per_trade`, `avg_pnl_net`, `trades_useful/insignificant/churn`, `pct_economically_useful`, `min_economic_move_pct`
+- **LearningSignalItem enrichi** : `cost_estimated`, `pnl_net_estimated`, `usefulness_category`
+
+### Fixed
+- **TP structurellement sous le coût** : L'ancien TP de 0.3% était quasi égal au round-trip cost realistic (0.31%), rendant chaque trade gagnant économiquement nul. Corrigé.
+- **Signal contraire comme machine à tuer** : La sortie "signal contraire : acheter/vendre" fermait des trades en 5–15 secondes avec PnL quasi nul. Maintenant protégé par min_hold et seuil de score.
+- **Smart cooldown encourageait le churn** : Un trade flat réduisait le cooldown (×0.5) au lieu de l'augmenter, provoquant des chaînes de micro-trades sans valeur.
+
+### Technical
+- 1203 tests backend (1163 existants + 40 nouveaux), tous passing ✅
+- Frontend TypeScript clean (tsc --noEmit sans erreur) ✅
+- Aucune régression, aucune donnée existante impactée
+
 ## [1.9.0] - 2026-04-09
 
 ### Added

@@ -60,6 +60,12 @@ class LearningSignal(Base):
     duration_minutes: Mapped[float] = mapped_column(Float, nullable=True)
     was_profitable: Mapped[bool] = mapped_column(Integer, nullable=False, default=0)
 
+    # [v1.9.1] Analyse économique
+    cost_estimated: Mapped[float] = mapped_column(Float, nullable=True)
+    pnl_net_estimated: Mapped[float] = mapped_column(Float, nullable=True)
+    # useful / insignificant / churn / loss_useful / loss_destructive
+    usefulness_category: Mapped[str] = mapped_column(String(30), nullable=True)
+
     # Timestamp
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False

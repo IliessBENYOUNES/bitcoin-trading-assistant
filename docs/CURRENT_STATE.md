@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 9 avril 2026
-> **Version :** v1.9.0
+> **Version :** v1.9.1
 > **Branche :** `master`
-> **Dernier commit :** feat(learning): PaperRun + SmartCooldown + LearningLayer + CooldownDiagnostic
+> **Dernier commit :** feat(economic-value): anti-micro-PnL recalibrage + learning layer économique + min_hold + smart cooldown anti-churn
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.9.0** |
+| Version courante | **v1.9.1** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1163 tests**, tous passing ✅ |
+| Tests backend | **1203 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v1.9.0 livré** — Learning Layer + Smart Cooldown + PaperRun, prochaine étape validation runtime |
+| Phase courante | **v1.9.1 livré** — Anti-micro-PnL + Learning économique, prochaine étape validation runtime prolongée |
 
 ### ⚠️ État de maturité honnête
 
@@ -40,7 +40,11 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v1.9] Smart Cooldown** — cooldown contextuel (réduit après stale/trailing flat, allongé après SL/perte)
 - **[v1.9] Cooldown Diagnostic** — visibilité du cooldown dans le diagnostic (délais, distribution, signaux perdus)
 - **[v1.9] Learning Layer explicable** — LearningSignal + StrategyFeedback, patterns, suggestions shadow, promote/rollback
-- 1163 tests backend, tsc clean
+- **[v1.9.1] Anti-micro-PnL** — TP/SL recalibrés au-dessus du cost model (0.5%/0.4%), min_hold_seconds (30s), sortie signal adoucie
+- **[v1.9.1] Smart Cooldown anti-churn** — pénalise les réentrées après trades flat (×1.5 au lieu de ×0.5)
+- **[v1.9.1] Learning économique** — catégories useful/insignificant/churn/loss_useful/loss_destructive, coûts estimés, PnL net
+- **[v1.9.1] Suggestions anti-churn** — détection automatique du taux de churn + insignifiants → suggestions d'ajustement
+- 1203 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.
