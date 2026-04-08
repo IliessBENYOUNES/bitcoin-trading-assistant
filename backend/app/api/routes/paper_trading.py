@@ -9,6 +9,11 @@ Endpoints pour la simulation de trading en temps réel :
 - GET  /paper/trades   — Journal des trades
 - GET  /paper/metrics  — Métriques de performance
 - POST /paper/close    — Fermeture manuelle de la position ouverte
+- GET  /paper/journal  — [v1.5] Journal d'évaluation multi-jours
+- GET  /paper/style    — [v1.5] Qualification du style de trading
+- GET  /paper/profile  — [v1.5] Profil de trading actif
+- POST /paper/profile  — [v1.5] Changer de profil
+- GET  /paper/profile/presets — [v1.5] Tous les presets disponibles
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -16,6 +21,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.services.paper_trading_service import PaperTradingService
+from app.services.journal_service import JournalService
+from app.services.trading_profile_service import TradingProfileService
 from app.schemas.paper_trading import (
     PaperAccountCreate,
     PaperAccountResponse,
@@ -25,9 +32,20 @@ from app.schemas.paper_trading import (
     PaperStatus,
     PaperTickResult,
 )
+from app.schemas.journal import (
+    TradingProfileParams,
+    TradingProfileResponse,
+    TradingProfileSetRequest,
+    JournalResponse,
+    TradingStyleResult,
+)
 
 router = APIRouter(prefix="/paper", tags=["Paper Trading"])
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Endpoints existants (inchangés)
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/account", response_model=PaperAccountResponse)
 def get_account(db: Session = Depends(get_db)):
@@ -35,7 +53,6 @@ def get_account(db: Session = Depends(get_db)):
     service = PaperTradingService(db)
     account = service.get_or_create_account()
     resp = PaperAccountResponse.model_validate(account)
-    # Ajouter la position ouverte si elle existe
     open_pos = service.get_open_position()
     if open_pos:
         resp.open_position = PaperTradeResponse.model_validate(open_pos)
@@ -47,13 +64,9 @@ def create_or_update_account(
     config: PaperAccountCreate,
     db: Session = Depends(get_db),
 ):
-    """
-    Crée ou met à jour le compte paper trading.
-    Permet de configurer le capital initial et la durée max des positions.
-    """
+    """Crée ou met à jour le compte paper trading."""
     service = PaperTradingService(db)
     account = service.get_or_create_account(config.initial_capital)
-    # Mettre à jour les paramètres
     account.max_open_duration_hours = config.max_open_duration_hours
     if not account.is_active:
         account.is_active = True
@@ -67,10 +80,7 @@ def reset_account(
     config: PaperAccountCreate = PaperAccountCreate(),
     db: Session = Depends(get_db),
 ):
-    """
-    Reset complet du compte paper : supprime tous les trades,
-    remet le capital à la valeur initiale.
-    """
+    """Reset complet du compte paper."""
     service = PaperTradingService(db)
     account = service.reset_account(config.initial_capital)
     account.max_open_duration_hours = config.max_open_duration_hours
@@ -81,28 +91,14 @@ def reset_account(
 
 @router.get("/status", response_model=PaperStatus)
 def get_status(db: Session = Depends(get_db)):
-    """
-    Statut complet du paper trading :
-    - Compte (capital, PnL)
-    - Position ouverte (si active)
-    - Métriques de performance
-    - État du scheduler paper trading
-    """
+    """Statut complet du paper trading."""
     service = PaperTradingService(db)
     return service.get_status()
 
 
 @router.post("/tick", response_model=PaperTickResult)
 def manual_tick(db: Session = Depends(get_db)):
-    """
-    Exécute un tick manuellement (utile pour debug/test).
-
-    Le tick :
-    1. Récupère le prix courant
-    2. Vérifie les SL/TP/expiration de la position ouverte
-    3. Si pas de position → consulte le moteur de décision
-    4. Ouvre/ferme des positions selon les résultats
-    """
+    """Exécute un tick manuellement (utile pour debug/test)."""
     service = PaperTradingService(db)
     return service.tick()
 
@@ -125,10 +121,7 @@ def get_trades(
 
 @router.get("/metrics", response_model=PaperMetrics)
 def get_metrics(db: Session = Depends(get_db)):
-    """
-    Métriques de performance du paper trading :
-    Win rate, PnL, Sharpe, drawdown, profit factor, buy & hold comparison.
-    """
+    """Métriques de performance du paper trading."""
     service = PaperTradingService(db)
     return service.get_metrics()
 
@@ -149,3 +142,68 @@ def close_position(
         )
     return PaperTradeResponse.model_validate(trade)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [v1.5] Journal d'évaluation
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/journal", response_model=JournalResponse)
+def get_journal(
+    date_from: str = Query(default=None, description="Date de début (YYYY-MM-DD)"),
+    date_to: str = Query(default=None, description="Date de fin (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+):
+    """
+    Journal d'évaluation paper trading multi-jours.
+
+    Retourne :
+    - Synthèse de la période (PnL, win rate, expectancy, verdict...)
+    - Résumé jour par jour
+    - Statistiques d'activité (ticks, ratio, fréquence)
+    - Raisons de non-trade agrégées
+    """
+    journal = JournalService(db)
+    return journal.get_journal(date_from=date_from, date_to=date_to)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [v1.5] Qualification du style de trading
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/style", response_model=TradingStyleResult)
+def get_trading_style(db: Session = Depends(get_db)):
+    """
+    Qualification du style de trading :
+    - Distribution des durées de position
+    - Style dominant (scalping-like, intraday, swing)
+    - Statistiques micro-temporelles
+    """
+    journal = JournalService(db)
+    return journal.get_trading_style()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [v1.5] Profils de trading
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/profile", response_model=TradingProfileResponse)
+def get_profile(db: Session = Depends(get_db)):
+    """Retourne le profil de trading actif et ses paramètres."""
+    service = TradingProfileService(db)
+    return service.get_active_profile()
+
+
+@router.post("/profile", response_model=TradingProfileResponse)
+def set_profile(
+    request: TradingProfileSetRequest,
+    db: Session = Depends(get_db),
+):
+    """Change le profil de trading actif (conservative, balanced, aggressive)."""
+    service = TradingProfileService(db)
+    return service.set_profile(request.profile.value)
+
+
+@router.get("/profile/presets", response_model=list[TradingProfileParams])
+def get_presets():
+    """Retourne tous les presets de profils disponibles."""
+    return TradingProfileService.get_all_presets()

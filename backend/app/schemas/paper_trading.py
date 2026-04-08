@@ -140,4 +140,8 @@ class PaperTickResult(BaseModel):
     decision_score: Optional[float] = None
     decision_action: Optional[str] = None
     risk_allowed: Optional[bool] = None
+    # v1.5 — Levier et profil
+    leverage_used: Optional[float] = None
+    profile_type: Optional[str] = None
+    non_trade_reason: Optional[str] = None
 

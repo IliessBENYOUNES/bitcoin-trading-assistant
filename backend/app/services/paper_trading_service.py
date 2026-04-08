@@ -7,6 +7,10 @@ Ce service :
 3. Ouvre/ferme des positions selon les recommandations
 4. Vérifie les SL/TP/expiration à chaque tick
 5. Calcule des métriques de performance en continu
+6. [v1.5] Journalise CHAQUE tick (y compris non-trades)
+7. [v1.5] Applique les paramètres du profil actif (Conservative/Balanced/Aggressive)
+8. [v1.5] Calcule et applique le levier automatique intelligent
+9. [v1.5] Respecte cooldown et max_trades_per_day du profil
 
 Mode simple : 1 seule position ouverte à la fois (pas de hedging).
 
@@ -18,15 +22,19 @@ Le service ne trade PAS avec de l'argent réel. Il simule :
 
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.models.paper_account import PaperAccount, PaperTrade
 from app.models.candle import Candle
 from app.services.decision_service import DecisionService
 from app.services.risk_service import RiskService
+from app.services.trading_profile_service import TradingProfileService
+from app.services.leverage_service import LeverageService
+from app.services.journal_service import JournalService
 from app.schemas.paper_trading import (
     PaperAccountResponse,
     PaperTradeResponse,
@@ -72,7 +80,7 @@ class PaperTradingService:
                 initial_capital=initial_capital,
                 current_capital=initial_capital,
                 peak_capital=initial_capital,
-                is_active=False,  # Inactif par défaut, l'utilisateur doit l'activer
+                is_active=False,
             )
             self.db.add(account)
             self.db.commit()
@@ -85,17 +93,12 @@ class PaperTradingService:
         Reset complet : supprime tous les trades, remet le capital à zéro.
         Capture le prix BTC actuel pour le calcul buy & hold.
         """
-        # Supprimer tous les trades existants
         self.db.query(PaperTrade).delete()
-
-        # Supprimer le compte existant
         self.db.query(PaperAccount).delete()
         self.db.commit()
 
-        # Récupérer le prix BTC actuel pour le buy & hold
         btc_price = self._get_current_price()
 
-        # Créer un nouveau compte
         account = PaperAccount(
             initial_capital=initial_capital,
             current_capital=initial_capital,
@@ -132,27 +135,53 @@ class PaperTradingService:
         3. Si position ouverte → vérifie SL/TP/expiration
         4. Si pas de position → consulte DecisionService + RiskService
         5. Ouvre/ferme des positions selon les résultats
+        6. [v1.5] Journalise le tick, applique profil et levier
         """
         now = datetime.now(timezone.utc)
         account = self.get_or_create_account()
 
+        # [v1.5] Récupérer le profil actif
+        try:
+            profile_svc = TradingProfileService(self.db)
+            profile_params = profile_svc.get_active_params()
+            profile_name = profile_params.profile_type.value
+        except Exception:
+            profile_name = "conservative"
+            profile_params = None
+
+        # Helper pour journaliser (best-effort, ne bloque pas le tick)
+        def _log_tick(**kwargs):
+            try:
+                journal = JournalService(self.db)
+                journal.log_tick(account_id=account.id, profile_type=profile_name, **kwargs)
+            except Exception as e:
+                logger.debug(f"Journal log error (non-blocking): {e}")
+
         # Vérification : compte actif
         if not account.is_active:
+            _log_tick(action_taken="inactive", reason_no_trade="inactive",
+                      reason_detail="Paper trading désactivé")
             return PaperTickResult(
                 action_taken="inactive",
                 detail="Paper trading désactivé. Activez-le via POST /paper/account.",
                 current_price=0.0,
                 timestamp=now.isoformat(),
+                profile_type=profile_name,
+                non_trade_reason="inactive",
             )
 
         # Récupérer le prix courant
         current_price = self._get_current_price()
         if current_price is None or current_price <= 0:
+            _log_tick(action_taken="no_price", reason_no_trade="no_price",
+                      reason_detail="Prix BTC indisponible")
             return PaperTickResult(
                 action_taken="no_price",
                 detail="Prix BTC indisponible. Vérifiez que les données sont chargées.",
                 current_price=0.0,
                 timestamp=now.isoformat(),
+                profile_type=profile_name,
+                non_trade_reason="no_price",
             )
 
         # Capture le prix initial pour buy & hold (si pas encore fait)
@@ -171,21 +200,24 @@ class PaperTradingService:
                 close_reason = self._check_expiration(open_pos, now)
 
             if close_reason is not None:
-                # Déterminer le prix de sortie (SL ou TP exact, sinon prix courant)
                 exit_price = current_price
                 status = close_reason
 
                 closed = self._close_position(open_pos, exit_price, close_reason, status)
+                _log_tick(action_taken=close_reason, btc_price=current_price,
+                          had_open_position=True, trade_id=closed.id,
+                          leverage_final=getattr(closed, "leverage", 1.0))
                 return PaperTickResult(
                     action_taken=close_reason,
                     detail=f"Position fermée : {close_reason} @ {exit_price:.2f}",
                     position_closed=PaperTradeResponse.model_validate(closed),
                     current_price=current_price,
                     timestamp=now.isoformat(),
+                    leverage_used=getattr(closed, "leverage", 1.0),
+                    profile_type=profile_name,
                 )
 
-            # Mettre à jour le highest_price pour trailing stop (long)
-            # ou lowest_price pour trailing stop (short)
+            # Mettre à jour le highest/lowest price pour trailing stop
             if open_pos.direction == "long":
                 if open_pos.highest_price_since_entry is None or current_price > open_pos.highest_price_since_entry:
                     open_pos.highest_price_since_entry = current_price
@@ -195,7 +227,7 @@ class PaperTradingService:
                     open_pos.lowest_price_since_entry = current_price
                     self.db.commit()
 
-            # Vérifier si le DecisionService recommande de fermer (signal contraire ou affaibli)
+            # Vérifier si le DecisionService recommande de fermer
             decision_result = self._get_decision()
             if decision_result:
                 action = decision_result.get("recommendation", {}).get("action", "attendre")
@@ -207,36 +239,33 @@ class PaperTradingService:
                 signal_reason = ""
 
                 if open_pos.direction == "long":
-                    # Fermer un LONG si :
-                    # 1. Signal contraire "vendre" (peu importe la force)
                     if action == "vendre":
                         close_signal = True
                         signal_reason = f"Signal contraire : vendre (score={score})"
-                    # 2. Signal "attendre" avec score devenu négatif (le signal bullish s'est dissipé)
                     elif action == "attendre" and score <= 0:
                         close_signal = True
                         signal_reason = f"Signal affaibli : attendre (score={score})"
 
                 elif open_pos.direction == "short":
-                    # Fermer un SHORT si :
-                    # 1. Signal contraire "acheter"
                     if action == "acheter":
                         close_signal = True
                         signal_reason = f"Signal contraire : acheter (score={score})"
-                    # 2. Signal "attendre" avec score devenu positif
                     elif action == "attendre" and score >= 0:
                         close_signal = True
                         signal_reason = f"Signal affaibli : attendre (score={score})"
 
-                # Profit taking : fermer si PnL latent > 2% (prendre les gains sans attendre le TP)
-                if not close_signal and unrealized_pnl_pct >= 2.0:
+                # Profit taking : seuil piloté par le profil
+                pt_pct = profile_params.profit_take_pct if profile_params else 2.0
+                if not close_signal and unrealized_pnl_pct >= pt_pct:
                     close_signal = True
                     signal_reason = f"Prise de profit : PnL latent {unrealized_pnl_pct:.1f}%"
 
-                # Loss cut : fermer si PnL latent < -1.5% et le signal n'est plus fort
-                if not close_signal and unrealized_pnl_pct <= -1.5:
+                # Loss cut : seuil piloté par le profil
+                lc_pct = profile_params.loss_cut_pct if profile_params else 1.5
+                lc_score = profile_params.loss_cut_score_threshold if profile_params else 30
+                if not close_signal and unrealized_pnl_pct <= -lc_pct:
                     entry_direction_score = score if open_pos.direction == "long" else -score
-                    if entry_direction_score < 30:  # Le signal n'est plus assez fort pour justifier la perte
+                    if entry_direction_score < lc_score:
                         close_signal = True
                         signal_reason = f"Couper les pertes : PnL {unrealized_pnl_pct:.1f}%, signal faible (score={score})"
 
@@ -246,6 +275,10 @@ class PaperTradingService:
                         signal_reason,
                         "closed_signal"
                     )
+                    _log_tick(action_taken="closed_signal", btc_price=current_price,
+                              decision_score=score, decision_action=action,
+                              had_open_position=True, trade_id=closed.id,
+                              leverage_final=getattr(closed, "leverage", 1.0))
                     return PaperTickResult(
                         action_taken="closed_signal",
                         detail=f"Position fermée : {signal_reason}",
@@ -254,25 +287,39 @@ class PaperTradingService:
                         timestamp=now.isoformat(),
                         decision_score=score,
                         decision_action=action,
+                        leverage_used=getattr(closed, "leverage", 1.0),
+                        profile_type=profile_name,
                     )
 
             # Rien à faire, on conserve la position
+            unrealized = self._calc_unrealized_pnl(open_pos, current_price)
+            _log_tick(action_taken="hold", btc_price=current_price,
+                      had_open_position=True, unrealized_pnl=unrealized,
+                      reason_no_trade="position_already_open",
+                      reason_detail=f"Position conservée, PnL latent={unrealized:.2f}")
             return PaperTickResult(
                 action_taken="hold",
-                detail=f"Position ouverte conservée. PnL latent : {self._calc_unrealized_pnl(open_pos, current_price):.2f} USD",
+                detail=f"Position ouverte conservée. PnL latent : {unrealized:.2f} USD",
                 current_price=current_price,
                 timestamp=now.isoformat(),
+                profile_type=profile_name,
+                non_trade_reason="position_already_open",
             )
 
         else:
             # --- Pas de position : évaluer une nouvelle entrée ---
             decision_result = self._get_decision()
             if decision_result is None:
+                _log_tick(action_taken="no_decision", btc_price=current_price,
+                          reason_no_trade="no_decision_available",
+                          reason_detail="Moteur de décision indisponible")
                 return PaperTickResult(
                     action_taken="no_decision",
                     detail="Moteur de décision indisponible.",
                     current_price=current_price,
                     timestamp=now.isoformat(),
+                    profile_type=profile_name,
+                    non_trade_reason="no_decision_available",
                 )
 
             action = decision_result.get("recommendation", {}).get("action", "attendre")
@@ -281,6 +328,11 @@ class PaperTradingService:
             summary = decision_result.get("summary", "")
 
             if action == "attendre":
+                _log_tick(action_taken="hold", btc_price=current_price,
+                          decision_score=score, decision_action=action,
+                          decision_confidence=confidence,
+                          reason_no_trade="decision_wait",
+                          reason_detail=f"attendre (score={score}, conf={confidence})")
                 return PaperTickResult(
                     action_taken="hold",
                     detail=f"Décision : attendre (score={score}, confiance={confidence})",
@@ -288,6 +340,68 @@ class PaperTradingService:
                     timestamp=now.isoformat(),
                     decision_score=score,
                     decision_action=action,
+                    profile_type=profile_name,
+                    non_trade_reason="decision_wait",
+                )
+
+            # [v1.5] Vérification profil — score minimum
+            min_score = profile_params.min_score if profile_params else 35
+            if abs(score) < min_score:
+                reason = "score_too_low"
+                detail = f"Score {score} < seuil profil {min_score}"
+                _log_tick(action_taken="hold", btc_price=current_price,
+                          decision_score=score, decision_action=action,
+                          decision_confidence=confidence,
+                          reason_no_trade=reason, reason_detail=detail)
+                return PaperTickResult(
+                    action_taken="hold",
+                    detail=f"Signal insuffisant pour profil {profile_name} : {detail}",
+                    current_price=current_price,
+                    timestamp=now.isoformat(),
+                    decision_score=score,
+                    decision_action=action,
+                    profile_type=profile_name,
+                    non_trade_reason=reason,
+                )
+
+            # [v1.5] Vérification cooldown
+            cooldown_min = profile_params.cooldown_minutes if profile_params else 120
+            cooldown_reason = self._check_cooldown(account.id, cooldown_min)
+            if cooldown_reason:
+                _log_tick(action_taken="hold", btc_price=current_price,
+                          decision_score=score, decision_action=action,
+                          decision_confidence=confidence,
+                          reason_no_trade="cooldown_active",
+                          reason_detail=cooldown_reason)
+                return PaperTickResult(
+                    action_taken="hold",
+                    detail=f"Cooldown actif : {cooldown_reason}",
+                    current_price=current_price,
+                    timestamp=now.isoformat(),
+                    decision_score=score,
+                    decision_action=action,
+                    profile_type=profile_name,
+                    non_trade_reason="cooldown_active",
+                )
+
+            # [v1.5] Vérification max trades/jour
+            max_tpd = profile_params.max_trades_per_day if profile_params else 3
+            max_check = self._check_max_trades_per_day(account.id, max_tpd)
+            if max_check:
+                _log_tick(action_taken="hold", btc_price=current_price,
+                          decision_score=score, decision_action=action,
+                          decision_confidence=confidence,
+                          reason_no_trade="max_trades_reached",
+                          reason_detail=max_check)
+                return PaperTickResult(
+                    action_taken="hold",
+                    detail=f"Max trades/jour atteint : {max_check}",
+                    current_price=current_price,
+                    timestamp=now.isoformat(),
+                    decision_score=score,
+                    decision_action=action,
+                    profile_type=profile_name,
+                    non_trade_reason="max_trades_reached",
                 )
 
             # Évaluer via le RiskService
@@ -295,15 +409,46 @@ class PaperTradingService:
             evaluation = risk_service.evaluate_trade(action, current_price)
 
             if not evaluation.allowed:
+                reasons_str = "; ".join(evaluation.reasons)
+                reason = "risk_blocked"
+                if "kill switch" in reasons_str.lower():
+                    reason = "kill_switch_active"
+                elif "perte journalière" in reasons_str.lower():
+                    reason = "daily_loss_protection"
+
+                _log_tick(action_taken="blocked", btc_price=current_price,
+                          decision_score=score, decision_action=action,
+                          decision_confidence=confidence,
+                          reason_no_trade=reason, reason_detail=reasons_str[:500])
                 return PaperTickResult(
                     action_taken="blocked",
-                    detail=f"Trade bloqué par le risk engine : {'; '.join(evaluation.reasons)}",
+                    detail=f"Trade bloqué par le risk engine : {reasons_str}",
                     current_price=current_price,
                     timestamp=now.isoformat(),
                     decision_score=score,
                     decision_action=action,
                     risk_allowed=False,
+                    profile_type=profile_name,
+                    non_trade_reason=reason,
                 )
+
+            # [v1.5] Calcul levier automatique
+            leverage_final = 1.0
+            leverage_recommended = 1.0
+            leverage_reasons = ""
+            if profile_params:
+                risk_status = risk_service.get_status()
+                leverage_rec = LeverageService.compute_leverage(
+                    score=score,
+                    confidence=confidence,
+                    profile_params=profile_params,
+                    risk_level=risk_status.risk_level,
+                    daily_loss_remaining=risk_status.daily_loss_remaining_usd,
+                    daily_loss_limit=risk_status.daily_loss_limit_usd,
+                )
+                leverage_final = leverage_rec.final
+                leverage_recommended = leverage_rec.recommended
+                leverage_reasons = "; ".join(leverage_rec.reasons)[:200]
 
             # Ouvrir la position
             direction = "long" if action == "acheter" else "short"
@@ -318,17 +463,30 @@ class PaperTradingService:
                 score=score,
                 direction=direction,
                 now=now,
+                leverage=leverage_final,
+                leverage_reason=leverage_reasons,
+                profile_type=profile_name,
             )
+
+            _log_tick(action_taken=f"opened_{direction}", btc_price=current_price,
+                      decision_score=score, decision_action=action,
+                      decision_confidence=confidence,
+                      leverage_recommended=leverage_recommended,
+                      leverage_final=leverage_final,
+                      leverage_reason=leverage_reasons,
+                      trade_id=position.id)
 
             return PaperTickResult(
                 action_taken=f"opened_{direction}",
-                detail=f"Position {direction} ouverte @ {current_price:.2f} | SL={evaluation.stop_loss_price:.2f} | TP={evaluation.take_profit_price:.2f}",
+                detail=f"Position {direction} ouverte @ {current_price:.2f} | SL={evaluation.stop_loss_price:.2f} | TP={evaluation.take_profit_price:.2f} | Levier x{leverage_final}",
                 position_opened=PaperTradeResponse.model_validate(position),
                 current_price=current_price,
                 timestamp=now.isoformat(),
                 decision_score=score,
                 decision_action=action,
                 risk_allowed=True,
+                leverage_used=leverage_final,
+                profile_type=profile_name,
             )
 
     # ================================================================
@@ -346,10 +504,15 @@ class PaperTradingService:
         score: float,
         direction: str = "long",
         now: Optional[datetime] = None,
+        leverage: float = 1.0,
+        leverage_reason: Optional[str] = None,
+        profile_type: Optional[str] = None,
     ) -> PaperTrade:
         """Ouvre une position paper."""
         if now is None:
             now = datetime.now(timezone.utc)
+
+        effective_size = size_usd * leverage
 
         trade = PaperTrade(
             account_id=account.id,
@@ -361,6 +524,10 @@ class PaperTradingService:
             highest_price_since_entry=price if direction == "long" else None,
             lowest_price_since_entry=price if direction == "short" else None,
             position_size_usd=min(size_usd, account.current_capital),
+            leverage=leverage,
+            effective_size_usd=round(effective_size, 2),
+            leverage_reason=leverage_reason,
+            profile_type=profile_type,
             entry_reason=reason[:500],
             decision_score=score,
             entry_ts=now,
@@ -370,7 +537,8 @@ class PaperTradingService:
         self.db.refresh(trade)
         logger.info(
             f"📈 Position {direction} ouverte @ {price:.2f} | "
-            f"SL={sl:.2f} | TP={tp:.2f} | Size={trade.position_size_usd:.2f} USD"
+            f"SL={sl:.2f} | TP={tp:.2f} | Size={trade.position_size_usd:.2f} USD | "
+            f"Levier=x{leverage}"
         )
         return trade
 
@@ -385,13 +553,15 @@ class PaperTradingService:
         now = datetime.now(timezone.utc)
         account = self.db.query(PaperAccount).get(trade.account_id)
 
-        # Calcul PnL
+        # Calcul PnL — le levier amplifie le PnL
+        leverage = getattr(trade, "leverage", None) or 1.0
         if trade.direction == "long":
             pnl_pct = (exit_price - trade.entry_price) / trade.entry_price * 100
         else:
             pnl_pct = (trade.entry_price - exit_price) / trade.entry_price * 100
 
-        pnl = trade.position_size_usd * pnl_pct / 100
+        # PnL = taille nominale × levier × variation %
+        pnl = trade.position_size_usd * leverage * pnl_pct / 100
 
         # Durée
         entry_ts = _ensure_aware(trade.entry_ts)
@@ -423,7 +593,6 @@ class PaperTradingService:
                 (account.current_capital - account.initial_capital)
                 / account.initial_capital * 100, 2
             )
-            # Mise à jour peak capital et drawdown
             if account.current_capital > account.peak_capital:
                 account.peak_capital = account.current_capital
             if account.peak_capital > 0:
@@ -431,7 +600,6 @@ class PaperTradingService:
                 if dd > account.max_drawdown_pct:
                     account.max_drawdown_pct = round(dd, 2)
 
-            # Enregistrer la perte dans le RiskService si perte
             if pnl < 0:
                 try:
                     risk_service = RiskService(self.db)
@@ -445,7 +613,7 @@ class PaperTradingService:
         emoji = "✅" if pnl >= 0 else "❌"
         logger.info(
             f"{emoji} Position fermée ({status}) @ {exit_price:.2f} | "
-            f"PnL={pnl:+.2f} USD ({pnl_pct:+.2f}%) | Durée={duration:.1f}h"
+            f"PnL={pnl:+.2f} USD ({pnl_pct:+.2f}%) | Levier=x{leverage} | Durée={duration:.1f}h"
         )
         return trade
 
@@ -490,6 +658,48 @@ class PaperTradingService:
         return None
 
     # ================================================================
+    # [v1.5] CONTRÔLES DE FRÉQUENCE
+    # ================================================================
+
+    def _check_cooldown(self, account_id: int, cooldown_minutes: int) -> Optional[str]:
+        """Vérifie le cooldown entre deux trades. Retourne raison si bloqué."""
+        if cooldown_minutes <= 0:
+            return None
+        last_trade = (
+            self.db.query(PaperTrade)
+            .filter(
+                PaperTrade.account_id == account_id,
+                PaperTrade.status != "open",
+            )
+            .order_by(PaperTrade.exit_ts.desc())
+            .first()
+        )
+        if last_trade and last_trade.exit_ts:
+            exit_ts = _ensure_aware(last_trade.exit_ts)
+            elapsed = (datetime.now(timezone.utc) - exit_ts).total_seconds() / 60
+            if elapsed < cooldown_minutes:
+                remaining = int(cooldown_minutes - elapsed)
+                return f"Cooldown : {remaining} min restantes (profil exige {cooldown_minutes} min)"
+        return None
+
+    def _check_max_trades_per_day(self, account_id: int, max_trades: int) -> Optional[str]:
+        """Vérifie le nombre max de trades par jour. Retourne raison si atteint."""
+        if max_trades <= 0:
+            return None
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        count = (
+            self.db.query(func.count(PaperTrade.id))
+            .filter(
+                PaperTrade.account_id == account_id,
+                PaperTrade.entry_ts >= today_start,
+            )
+            .scalar() or 0
+        )
+        if count >= max_trades:
+            return f"{count}/{max_trades} trades aujourd'hui (max atteint)"
+        return None
+
+    # ================================================================
     # MÉTRIQUES
     # ================================================================
 
@@ -505,7 +715,6 @@ class PaperTradingService:
         )
 
         if not closed_trades:
-            # Buy & hold
             bh = self._calc_buy_hold(account)
             return PaperMetrics(buy_hold_pnl_pct=bh)
 
@@ -530,11 +739,9 @@ class PaperTradingService:
             float("inf") if gross_profit > 0 else 0
         )
 
-        # Sharpe ratio (simplifié sur PnL % des trades)
         pnl_pcts = [t.pnl_pct for t in closed_trades if t.pnl_pct is not None]
         sharpe = self._calc_sharpe(pnl_pcts)
 
-        # Buy & hold
         bh = self._calc_buy_hold(account)
 
         return PaperMetrics(
@@ -565,7 +772,6 @@ class PaperTradingService:
         if open_pos and current_price:
             unrealized = self._calc_unrealized_pnl(open_pos, current_price)
 
-        # Construire le PaperAccountResponse avec la position ouverte
         account_resp = PaperAccountResponse.model_validate(account)
         if open_pos:
             account_resp.open_position = PaperTradeResponse.model_validate(open_pos)
@@ -613,14 +819,7 @@ class PaperTradingService:
     # ================================================================
 
     def _get_current_price(self) -> Optional[float]:
-        """
-        Récupère le prix BTC le plus récent possible.
-
-        Priorité :
-        1. API Binance en temps réel (ticker/price — latence ~100ms)
-        2. Fallback : dernier close_price en DB (peut être vieux de plusieurs heures)
-        """
-        # Tentative 1 : prix live via Binance
+        """Récupère le prix BTC le plus récent (Binance → DB fallback)."""
         try:
             import httpx
             resp = httpx.get(
@@ -635,7 +834,6 @@ class PaperTradingService:
         except Exception as e:
             logger.debug(f"Prix live Binance indisponible: {e}")
 
-        # Tentative 2 : fallback DB
         candle = (
             self.db.query(Candle)
             .filter(Candle.symbol == "BTC/USD")
@@ -661,11 +859,12 @@ class PaperTradingService:
 
     def _calc_unrealized_pnl(self, trade: PaperTrade, current_price: float) -> float:
         """Calcule le PnL non réalisé d'une position ouverte."""
+        leverage = getattr(trade, "leverage", None) or 1.0
         if trade.direction == "long":
             pnl_pct = (current_price - trade.entry_price) / trade.entry_price
         else:
             pnl_pct = (trade.entry_price - current_price) / trade.entry_price
-        return trade.position_size_usd * pnl_pct
+        return trade.position_size_usd * leverage * pnl_pct
 
     def _calc_buy_hold(self, account: PaperAccount) -> float:
         """Calcule le % de PnL buy & hold depuis le début."""
@@ -684,7 +883,6 @@ class PaperTradingService:
         std = math.sqrt(variance) if variance > 0 else 0
         if std == 0:
             return None
-        # Annualisation approximative (supposons ~250 trades/an)
         sharpe = (mean / std) * math.sqrt(min(len(pnl_pcts), 250))
         return round(sharpe, 2)
 

@@ -2,6 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-04-08
+
+### Added
+- **Paper Trading Evaluation Journal** — Journal d'évaluation multi-jours
+  - Filtres par plage de dates avec presets (aujourd'hui, 7j, 14j, 30j, tout)
+  - Vue synthétique : PnL, win rate, expectancy, profit factor, Sharpe, drawdown, verdict
+  - Vue journalière : résumé par jour (trades, PnL, meilleur/pire trade, verdict)
+  - Vue activité : fréquence des ticks, ratio tick→trade, répartition visuelle
+  - Raisons de non-trade : agrégation + labels humains en français + barres visuelles
+- **Profils de Trading** — Conservative / Balanced / Aggressive
+  - Conservative : baseline existante, très sélectif, levier OFF
+  - Balanced : seuils plus souples, cooldown réduit, levier auto x2 max
+  - Aggressive : plus de trades, levier auto x3 max, borné par risk engine
+  - Sélection de profil depuis l'UI avec paramètres affichés
+- **Levier Automatique Intelligent** — Décidé par le moteur, pas l'utilisateur
+  - Formule : score_factor × confidence_factor × volatility_factor × max_leverage
+  - Veto risk engine : blocked/danger → x1, caution → cap 50%, marge daily loss → réduction
+  - Journalisation complète : levier recommandé, final, raisons, facteurs
+- **Qualification du Style de Trading**
+  - Distribution des durées (<1min, 1-5min, 5-15min, 15-60min, 1h+)
+  - Qualification : scalping-like / intraday / swing_intraday
+  - Statistiques : durée moyenne/médiane, exits rapides/lents
+- **Modèle TickActivityLog** — Persistance de chaque tick (y compris non-trades)
+  - Journalise : action, score, confiance, raison de non-trade, levier, profil
+  - Table additive, rétrocompatible
+- **Frontend JournalPanel** — Intégré dans l'onglet Trading
+  - 5 sous-vues : Synthèse, Journalier, Activité, Non-trade, Style
+  - Sélecteur de profil avec ToggleButtons
+  - KPIs visuels, tables, barres de distribution
+- **64 nouveaux tests** couvrant journal, profils, levier, style, endpoints, schémas
+
+### Changed
+- `paper_trading_service.py` : intégration profils, levier auto, journalisation tick
+- `paper_account.py` : ajout colonne `active_profile` (default "conservative")
+- `test_paper_trading.py` : score short ajusté -30→-45 pour compatibilité profil
+
+### Technical
+- Backend : `journal_service.py`, `trading_profile_service.py`, `leverage_service.py`
+- Schemas : `journal.py` (TradingProfileParams, JournalResponse, LeverageRecommendation, etc.)
+- Models : `tick_activity_log.py` (TickActivityLog)
+- Routes : `/paper/journal`, `/paper/style`, `/paper/profile`, `/paper/profile/presets`
+- Frontend : `JournalPanel.tsx`, types API étendus, marketApi étendu
+- 930 tests backend (avant : 866), tous passing ✅
+- `tsc --noEmit` sans erreur ✅
+
 ## [1.4.1] - 2026-04-07
 
 ### Added

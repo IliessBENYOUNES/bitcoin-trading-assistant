@@ -38,6 +38,11 @@ class PaperAccount(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     max_open_duration_hours: Mapped[float] = mapped_column(Float, nullable=False, default=168.0)
 
+    # Profil de trading actif (conservative, balanced, aggressive) — v1.5
+    active_profile: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="conservative"
+    )
+
     # Prix BTC au moment du reset/création (pour calcul buy & hold)
     btc_price_at_start: Mapped[float] = mapped_column(Float, nullable=True)
 
@@ -95,6 +100,14 @@ class PaperTrade(Base):
 
     # --- Sizing ---
     position_size_usd: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # --- Levier (v1.5 — additif, default 1.0 = comportement identique à l'existant) ---
+    leverage: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    effective_size_usd: Mapped[float] = mapped_column(Float, nullable=True)
+    leverage_reason: Mapped[str] = mapped_column(String(200), nullable=True)
+
+    # --- Profil de trading au moment de l'entrée (v1.5) ---
+    profile_type: Mapped[str] = mapped_column(String(20), nullable=True)
 
     # --- PnL ---
     pnl: Mapped[float] = mapped_column(Float, nullable=True)

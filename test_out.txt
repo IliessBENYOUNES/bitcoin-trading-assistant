@@ -1,0 +1,69 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.4, pytest-7.4.4, pluggy-1.6.0 -- C:\Users\ilies\git\bitcoin-trading-assistant\backend\venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\ilies\git\bitcoin-trading-assistant\backend
+configfile: pytest.ini
+plugins: anyio-4.12.0, asyncio-0.23.4
+asyncio: mode=Mode.STRICT
+collecting ... collected 68 items
+
+tests/test_paper_trading.py::TestPaperAccountModel::test_create_default_account PASSED [  1%]
+tests/test_paper_trading.py::TestPaperAccountModel::test_account_custom_capital PASSED [  2%]
+tests/test_paper_trading.py::TestPaperAccountModel::test_account_repr PASSED [  4%]
+tests/test_paper_trading.py::TestPaperAccountModel::test_account_relationship_to_trades PASSED [  5%]
+tests/test_paper_trading.py::TestPaperTradeModel::test_create_trade PASSED [  7%]
+tests/test_paper_trading.py::TestPaperTradeModel::test_trade_repr PASSED [  8%]
+tests/test_paper_trading.py::TestPaperTradeModel::test_trade_fk_account PASSED [ 10%]
+tests/test_paper_trading.py::TestPaperTradeModel::test_trade_pnl_initially_none PASSED [ 11%]
+tests/test_paper_trading.py::TestPaperTradingServiceAccount::test_get_or_create_account_creates_default PASSED [ 13%]
+tests/test_paper_trading.py::TestPaperTradingServiceAccount::test_get_or_create_account_returns_same PASSED [ 14%]
+tests/test_paper_trading.py::TestPaperTradingServiceAccount::test_get_or_create_with_custom_capital PASSED [ 16%]
+tests/test_paper_trading.py::TestPaperTradingServiceAccount::test_reset_account PASSED [ 17%]
+tests/test_paper_trading.py::TestPaperTradingServiceAccount::test_reset_captures_btc_price PASSED [ 19%]
+tests/test_paper_trading.py::TestPaperTradingServiceAccount::test_get_open_position_none PASSED [ 20%]
+tests/test_paper_trading.py::TestPaperTradingServiceAccount::test_get_open_position_exists PASSED [ 22%]
+tests/test_paper_trading.py::TestPaperTradingServicePositions::test_open_position PASSED [ 23%]
+tests/test_paper_trading.py::TestPaperTradingServicePositions::test_close_position_profit PASSED [ 25%]
+tests/test_paper_trading.py::TestPaperTradingServicePositions::test_close_position_loss PASSED [ 26%]
+tests/test_paper_trading.py::TestPaperTradingServicePositions::test_close_position_updates_win_rate PASSED [ 27%]
+tests/test_paper_trading.py::TestPaperTradingServicePositions::test_close_position_updates_drawdown PASSED [ 29%]
+tests/test_paper_trading.py::TestPaperTradingServicePositions::test_close_position_manual PASSED [ 30%]
+tests/test_paper_trading.py::TestPaperTradingServicePositions::test_close_position_manual_no_position PASSED [ 32%]
+tests/test_paper_trading.py::TestPaperTradingServicePositions::test_position_size_capped_by_capital PASSED [ 33%]
+tests/test_paper_trading.py::TestPaperTradingSLTP::test_check_sl_long_hit PASSED [ 35%]
+tests/test_paper_trading.py::TestPaperTradingSLTP::test_check_tp_long_hit PASSED [ 36%]
+tests/test_paper_trading.py::TestPaperTradingSLTP::test_check_sl_tp_none PASSED [ 38%]
+tests/test_paper_trading.py::TestPaperTradingSLTP::test_check_sl_short_hit PASSED [ 39%]
+tests/test_paper_trading.py::TestPaperTradingSLTP::test_check_tp_short_hit PASSED [ 41%]
+tests/test_paper_trading.py::TestPaperTradingSLTP::test_check_expiration_not_expired PASSED [ 42%]
+tests/test_paper_trading.py::TestPaperTradingSLTP::test_check_expiration_expired PASSED [ 44%]
+tests/test_paper_trading.py::TestPaperTradingMetrics::test_metrics_empty PASSED [ 45%]
+tests/test_paper_trading.py::TestPaperTradingMetrics::test_metrics_with_trades PASSED [ 47%]
+tests/test_paper_trading.py::TestPaperTradingMetrics::test_metrics_profit_factor PASSED [ 48%]
+tests/test_paper_trading.py::TestPaperTradingMetrics::test_buy_hold_pnl PASSED [ 50%]
+tests/test_paper_trading.py::TestPaperTradingMetrics::test_status_complete PASSED [ 51%]
+tests/test_paper_trading.py::TestPaperTradingMetrics::test_sharpe_ratio_none_with_few_trades PASSED [ 52%]
+tests/test_paper_trading.py::TestPaperTradingMetrics::test_sharpe_ratio_calculated PASSED [ 54%]
+tests/test_paper_trading.py::TestPaperTradingTick::test_tick_inactive_account PASSED [ 55%]
+tests/test_paper_trading.py::TestPaperTradingTick::test_tick_no_price PASSED [ 57%]
+tests/test_paper_trading.py::TestPaperTradingTick::test_tick_hold_no_signal PASSED [ 58%]
+tests/test_paper_trading.py::TestPaperTradingTick::test_tick_opens_position_on_buy_signal PASSED [ 60%]
+tests/test_paper_trading.py::TestPaperTradingTick::test_tick_opens_short_position_on_sell_signal FAILED [ 61%]
+
+================================== FAILURES ===================================
+_____ TestPaperTradingTick.test_tick_opens_short_position_on_sell_signal ______
+tests\test_paper_trading.py:644: in test_tick_opens_short_position_on_sell_signal
+    assert result.action_taken == "opened_short"
+E   AssertionError: assert 'hold' == 'opened_short'
+E     - opened_short
+E     + hold
+============================== warnings summary ===============================
+tests/test_paper_trading.py::TestPaperTradingServiceAccount::test_reset_account
+  C:\Users\ilies\git\bitcoin-trading-assistant\backend\app\services\paper_trading_service.py:110: SAWarning: Identity map already had an identity for (<class 'app.models.paper_account.PaperAccount'>, (1,), None), replacing it with newly flushed object.   Are there load operations occurring inside of an event handler within the flush?
+    self.db.commit()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_paper_trading.py::TestPaperTradingTick::test_tick_opens_short_position_on_sell_signal
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+=================== 1 failed, 41 passed, 1 warning in 4.20s ===================

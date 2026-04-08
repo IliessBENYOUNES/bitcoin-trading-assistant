@@ -94,6 +94,18 @@ export type {
   PaperStatus,
   PaperTickResult,
   PaperTradeListResponse,
+  // Paper Trading — Journal & Profils (v1.5)
+  JournalPeriodSummary,
+  JournalDaySummary,
+  JournalActivityStats,
+  NonTradeReasonItem,
+  JournalNonTradeReasons,
+  JournalResponse,
+  TradingProfileType,
+  TradingProfileParams,
+  TradingProfileResponse,
+  DurationBucket,
+  TradingStyleResult,
 } from './api';
 
 // Représente un chandelier (bougie) OHLCV

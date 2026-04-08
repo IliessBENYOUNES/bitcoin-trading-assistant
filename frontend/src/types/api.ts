@@ -741,3 +741,133 @@ export interface PaperTradeListResponse {
   trades: PaperTradeItem[];
   total: number;
 }
+
+// -----------------------------------------------------------------------------
+// Paper Trading — Journal d'Évaluation (v1.5)
+// -----------------------------------------------------------------------------
+
+export interface JournalPeriodSummary {
+  date_from: string;
+  date_to: string;
+  total_ticks: number;
+  total_trades: number;
+  trades_per_day: number;
+  trades_per_hour_avg: number;
+  win_rate: number;
+  pnl_realized: number;
+  pnl_latent: number | null;
+  pnl_pct: number;
+  avg_win: number;
+  avg_loss: number;
+  expectancy: number;
+  profit_factor: number;
+  sharpe: number | null;
+  max_drawdown_pct: number;
+  best_streak: number;
+  worst_streak: number;
+  avg_position_duration_hours: number;
+  buy_hold_pct: number;
+  delta_vs_buy_hold: number;
+  verdict: string;
+}
+
+export interface JournalDaySummary {
+  date: string;
+  total_ticks: number;
+  total_trades: number;
+  pnl_realized: number;
+  pnl_pct: number;
+  win_rate: number;
+  drawdown_pct: number;
+  best_trade_pnl: number;
+  worst_trade_pnl: number;
+  avg_position_duration_hours: number;
+  verdict: string;
+}
+
+export interface JournalActivityStats {
+  total_ticks: number;
+  ticks_with_signal: number;
+  ticks_opened: number;
+  ticks_closed: number;
+  ticks_hold: number;
+  ticks_blocked_risk: number;
+  ticks_ignored_signal: number;
+  ticks_position_held: number;
+  ticks_exit_tp: number;
+  ticks_exit_sl: number;
+  ticks_exit_signal: number;
+  ticks_exit_expired: number;
+  tick_to_trade_ratio: number;
+}
+
+export interface NonTradeReasonItem {
+  reason: string;
+  label: string;
+  count: number;
+  pct: number;
+}
+
+export interface JournalNonTradeReasons {
+  total_non_trade_ticks: number;
+  reasons: NonTradeReasonItem[];
+}
+
+export interface JournalResponse {
+  period: JournalPeriodSummary;
+  daily: JournalDaySummary[];
+  activity: JournalActivityStats;
+  non_trade_reasons: JournalNonTradeReasons;
+  profile_type: string;
+}
+
+// -----------------------------------------------------------------------------
+// Paper Trading — Profils (v1.5)
+// -----------------------------------------------------------------------------
+
+export type TradingProfileType = 'conservative' | 'balanced' | 'aggressive';
+
+export interface TradingProfileParams {
+  profile_type: TradingProfileType;
+  label: string;
+  description: string;
+  min_score: number;
+  min_confidence: string;
+  min_scenario_dominance: number;
+  max_trades_per_day: number;
+  cooldown_minutes: number;
+  max_position_duration_hours: number;
+  profit_take_pct: number;
+  loss_cut_pct: number;
+  loss_cut_score_threshold: number;
+  leverage_enabled: boolean;
+  max_leverage: number;
+}
+
+export interface TradingProfileResponse {
+  active_profile: TradingProfileType;
+  params: TradingProfileParams;
+}
+
+// -----------------------------------------------------------------------------
+// Paper Trading — Style de Trading (v1.5)
+// -----------------------------------------------------------------------------
+
+export interface DurationBucket {
+  label: string;
+  count: number;
+  pct: number;
+}
+
+export interface TradingStyleResult {
+  total_closed_trades: number;
+  duration_distribution: DurationBucket[];
+  dominant_style: string;
+  avg_duration_minutes: number;
+  median_duration_minutes: number;
+  signals_strong_per_hour: number;
+  signals_ignored_per_hour: number;
+  exits_fast_count: number;
+  exits_slow_count: number;
+}
+

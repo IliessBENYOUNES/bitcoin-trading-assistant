@@ -703,3 +703,62 @@ export async function closePaperPosition(
   }
   return response.json();
 }
+
+// -----------------------------------------------------------------------------
+// Paper Trading — Journal d'Évaluation (v1.5)
+// -----------------------------------------------------------------------------
+
+import type {
+  JournalResponse,
+  TradingProfileResponse,
+  TradingProfileParams,
+  TradingStyleResult,
+} from '../types';
+
+export async function getPaperJournal(
+  params: { date_from?: string; date_to?: string } = {},
+  options: FetchOptions = {}
+): Promise<JournalResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.date_from) searchParams.set('date_from', params.date_from);
+  if (params.date_to) searchParams.set('date_to', params.date_to);
+  const qs = searchParams.toString();
+  return apiFetch<JournalResponse>(`/paper/journal${qs ? `?${qs}` : ''}`, options);
+}
+
+export async function getPaperProfile(
+  options: FetchOptions = {}
+): Promise<TradingProfileResponse> {
+  return apiFetch<TradingProfileResponse>('/paper/profile', options);
+}
+
+export async function setPaperProfile(
+  profile: string,
+  options: FetchOptions = {}
+): Promise<TradingProfileResponse> {
+  const url = `${BASE_URL}/paper/profile`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ profile }),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<TradingProfileResponse>;
+}
+
+export async function getPaperProfilePresets(
+  options: FetchOptions = {}
+): Promise<TradingProfileParams[]> {
+  return apiFetch<TradingProfileParams[]>('/paper/profile/presets', options);
+}
+
+export async function getPaperStyle(
+  options: FetchOptions = {}
+): Promise<TradingStyleResult> {
+  return apiFetch<TradingStyleResult>('/paper/style', options);
+}
+

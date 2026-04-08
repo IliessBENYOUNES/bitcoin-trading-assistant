@@ -626,7 +626,7 @@ class TestPaperTradingTick:
 
         mock_decision = {
             "recommendation": {"action": "vendre", "confidence": "medium"},
-            "combined_score": -30,
+            "combined_score": -45,
             "summary": "Signal baissier",
         }
         mock_evaluation = MagicMock()
@@ -644,7 +644,7 @@ class TestPaperTradingTick:
         assert result.action_taken == "opened_short"
         assert result.position_opened is not None
         assert result.position_opened.direction == "short"
-        assert result.decision_score == -30
+        assert result.decision_score == -45
 
     def test_tick_blocked_by_risk(self, db_session):
         """Tick bloqué par le risk engine."""

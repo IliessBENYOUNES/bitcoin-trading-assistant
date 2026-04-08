@@ -1,23 +1,23 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
-> **Dernière mise à jour :** 7 avril 2026
-> **Version :** v1.4.2
+> **Dernière mise à jour :** 8 avril 2026
+> **Version :** v1.5.0
 > **Branche :** `master`
-> **Dernier commit :** feat(price): unified PriceService (Binance→CoinGecko→DB) + live candlestick update
+> **Dernier commit :** feat(journal): add paper trading evaluation journal, trading profiles, auto leverage, style qualification
 
 ---
 
 ## 1. Vue d'ensemble
 
-Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'aide à la lecture et à la **décision** sur le marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur **14 timeframes**, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, affiche un **prix BTC temps réel via WebSocket Binance**, **produit des recommandations explicables via un moteur de décision combinant analyse technique et sentiment**, **valide empiriquement les décisions via un moteur de backtesting**, **vérifie les prédictions sur l'historique profond via un système de time-travel backtest + walk-forward**, **applique des garde-fous de risque (SL/TP, daily loss, kill switch)**, et **simule le trading en temps réel via un paper trading automatisé**.
+Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'aide à la lecture et à la **décision** sur le marché Bitcoin. Il collecte des données OHLCV depuis **Binance (prioritaire)** et CoinGecko (fallback), les stocke en base, les agrège sur **14 timeframes**, calcule des indicateurs techniques, **les interprète en signaux structurés avec un score composite**, **surveille des alertes configurables**, **collecte les news crypto avec analyse de sentiment**, affiche un **prix BTC temps réel via WebSocket Binance**, **produit des recommandations explicables via un moteur de décision combinant analyse technique et sentiment**, **valide empiriquement les décisions via un moteur de backtesting**, **vérifie les prédictions sur l'historique profond via un système de time-travel backtest + walk-forward**, **applique des garde-fous de risque (SL/TP, daily loss, kill switch)**, **simule le trading en temps réel via un paper trading automatisé**, et **fournit un journal d'évaluation multi-jours avec profils de trading, levier auto intelligent et qualification du style**.
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.4.2** |
+| Version courante | **v1.5.0** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **866 tests**, tous passing ✅ |
+| Tests backend | **930 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 
 ---
@@ -56,21 +56,26 @@ bitcoin-trading-assistant/
 │   │   │   ├── paper_trading.py    # ← NOUVEAU v1.4 — PaperAccountCreate/Response, PaperTradeResponse, PaperMetrics, PaperStatus, PaperTickResult
 │   │   │   └── ...
 │   │   ├── services/
-│   │   │   ├── paper_trading_service.py # ← NOUVEAU v1.4 — Tick engine, SL/TP check, métriques, buy & hold
-│   │   │   ├── price_service.py    # ← NOUVEAU v1.4.2 — Prix unifié Binance→CoinGecko→DB
+│   │   │   ├── paper_trading_service.py # ← MAJ v1.5 — Intégration profils, levier, journal tick
+│   │   │   ├── journal_service.py      # ← NOUVEAU v1.5 — Journal d'évaluation multi-jours
+│   │   │   ├── trading_profile_service.py # ← NOUVEAU v1.5 — Conservative/Balanced/Aggressive
+│   │   │   ├── leverage_service.py     # ← NOUVEAU v1.5 — Levier auto intelligent
+│   │   │   ├── price_service.py        # ← v1.4.2 — Prix unifié Binance→CoinGecko→DB
 │   │   │   └── ...
 │   │   ├── tasks/
 │   │   │   └── scheduler.py    # APScheduler quad-jobs (4h + 30m + news + paper)
 │   │   └── utils/
 │   └── tests/
-│       ├── test_paper_trading.py   # ← NOUVEAU v1.4 — 64 tests
-│       ├── test_price_service.py  # ← NOUVEAU v1.4.2 — 13 tests
+│       ├── test_journal_and_profiles.py # ← NOUVEAU v1.5 — 64 tests
+│       ├── test_paper_trading.py       # ← MAJ v1.5 — 64 tests
+│       ├── test_price_service.py       # ← v1.4.2 — 13 tests
 │       └── ...
 │
 ├── frontend/
 │   └── src/
 │       ├── components/
-│       │   ├── PaperTradingPanel.tsx # ← NOUVEAU v1.4 — Dashboard paper trading
+│       │   ├── JournalPanel.tsx        # ← NOUVEAU v1.5 — Journal d'évaluation UI
+│       │   ├── PaperTradingPanel.tsx   # ← v1.4 — Dashboard paper trading
 │       │   └── ...
 │       ├── hooks/
 │       │   ├── usePaperTrading.ts   # ← NOUVEAU v1.4 — Hook paper trading
@@ -147,6 +152,11 @@ bitcoin-trading-assistant/
 | **GET** | **`/paper/trades`** | **Journal des trades (filtres: status, pagination)** | **✅ NOUVEAU v1.4** |
 | **GET** | **`/paper/metrics`** | **Métriques de performance + buy & hold** | **✅ NOUVEAU v1.4** |
 | **POST** | **`/paper/close`** | **Fermeture manuelle de la position ouverte** | **✅ NOUVEAU v1.4** |
+| GET | `/paper/journal` | **Journal d'évaluation multi-jours (filtres dates, synthèse, journalier, activité, raisons)** | **✅ NOUVEAU v1.5** |
+| GET | `/paper/style` | **Qualification du style de trading (distribution durées, scalping/intraday/swing)** | **✅ NOUVEAU v1.5** |
+| GET | `/paper/profile` | **Profil de trading actif + paramètres** | **✅ NOUVEAU v1.5** |
+| POST | `/paper/profile` | **Changer de profil (conservative/balanced/aggressive)** | **✅ NOUVEAU v1.5** |
+| GET | `/paper/profile/presets` | **Tous les presets de profils disponibles** | **✅ NOUVEAU v1.5** |
 
 ### 3.2 Backend — Services
 
@@ -170,6 +180,9 @@ bitcoin-trading-assistant/
 | **Resample Service** | Agrégation OHLCV 14 timeframes, idempotent | ✅ |
 | **Scheduler Dual-Jobs** | Job 4h + Job 30m via DataSourceRouter | ✅ |
 | **Paper Trading Service** | Moteur de paper trading : exécution temps réel, SL/TP, métriques | ✅ **NOUVEAU v1.4** |
+| **Journal Service** | **Journal d'évaluation : log_tick, agrégations période/jour, activité, raisons non-trade** | **✅ NOUVEAU v1.5** |
+| **Trading Profile Service** | **Profils Conservative/Balanced/Aggressive : seuils, fréquence, levier, sorties** | **✅ NOUVEAU v1.5** |
+| **Leverage Service** | **Levier auto intelligent : score × confiance × volatilité, veto risk engine** | **✅ NOUVEAU v1.5** |
 
 ### 3.3 Backend — Moteur de Backtesting (v1.1)
 
@@ -290,6 +303,7 @@ bitcoin-trading-assistant/
 - **Panel backtesting avec config, métriques, journal de trades** ← v1.1
 - **Panel vérification historique avec chargement, date picker, walk-forward** ← NOUVEAU v1.1.1
 - **Panel paper trading avec statut, exécution manuelle de ticks, journal de trades, métriques** ← NOUVEAU v1.4
+- **Panel journal d'évaluation avec filtres, synthèse, détails ticks, raisons** ← NOUVEAU v1.5
 
 ### 3.10 Frontend — Composants (v1.1.1)
 
@@ -313,6 +327,7 @@ bitcoin-trading-assistant/
 | **SchedulerChip** | Chip scheduler ON / OFF | ✅ |
 | **ErrorBoundary** | Protection crash graphique | ✅ |
 | **PaperTradingPanel** | **Dashboard paper trading : statut, exécution manuelle de ticks, journal de trades, métriques** | **✅ NOUVEAU v1.4** |
+| **JournalPanel** | **Journal d'évaluation : filtres, synthèse, journalier, détails ticks, raisons** | **✅ NOUVEAU v1.5** |
 
 ---
 
@@ -339,9 +354,8 @@ bitcoin-trading-assistant/
 | **test_news_history.py** | **33** | **Modèle, scoring, persist idempotent, queries, range, coverage, endpoints** |
 | **test_risk.py** | **55** | **Config CRUD, évaluation trades, ATR SL, daily loss, kill switch, endpoints, edge cases** |
 | test_time_buckets.py | 17 | Timeframes, normalisation, buckets, fenêtres |
-| **test_paper_trading.py** | **64** | **Paper trading : création compte, exécution ticks, journal, métriques, réinitialisation** |
-| **test_price_service.py** | **13** | **PriceService : chaîne fallback Binance→CoinGecko→DB, ticker 24h, endpoint** |
-| **TOTAL** | **866** | **Tous passing ✅** |
+| **test_journal_and_profiles.py** | **64** | **Journal évaluation, profils trading, levier auto, style, endpoints, schémas** |
+| **TOTAL** | **930** | **Tous passing ✅** |
 
 ---
 
@@ -406,11 +420,11 @@ python -m pytest tests/ -v
 | **2** | INFINI v1 | v1.0 → v1.6 | Assistant intelligent, décisionnel (BTC-first) | 🔄 **En cours (v1.1.1 livré)** |
 | **3** | INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Non commencé |
 
-**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + Sentiment combiné dans walk-forward (v1.2.4) + **Risk Management Engine (v1.3)** + **Paper Trading System (v1.4)** livrés, prochaine étape : Robot autonome (v2.0)
+**Position actuelle :** **Étape 2 en cours** — Moteur de décision (v1.0) + Backtesting (v1.1) + Vérification historique (v1.1.1) + Sentiment historique (v1.2.1) + Intégrité & Compare mode (v1.2.2) + Persistance news RSS (v1.2.3a) + CryptoCompare News (v1.2.3b) + Sentiment combiné dans walk-forward (v1.2.4) + **Risk Management Engine (v1.3)** + **Paper Trading System (v1.4)** + **Paper Trading Evaluation Journal + Profils + Levier Auto + Style (v1.5)** livrés, prochaine étape : Robot autonome (v2.0)
 
 ---
 
-## 8. Prochaine étape : v1.5 — Robot autonome
+## 8. Prochaine étape : v1.6 — Robot autonome
 
 > **Objectif** : Développer un robot de trading autonome, capable de prendre des décisions et d'exécuter des ordres sans intervention humaine, en s'appuyant sur le moteur de décision et le système de gestion des risques.
 
@@ -433,6 +447,7 @@ python -m pytest tests/ -v
 | ~~Intégration news historique dans walk-forward~~ | ~~v1.2.4~~ | ✅ **Livré** |
 | ~~Risk management engine~~ | ~~v1.3~~ | ✅ **Livré** |
 | ~~Paper trading~~ | ~~v1.4~~ | ✅ **Livré** |
+| ~~Journal d'évaluation + Profils + Levier auto + Style~~ | ~~v1.5~~ | ✅ **Livré** |
 | CryptoPanic + Santiment (sentiment payant) | v1.2b | ❌ Non commencé |
 | Docker Compose | v1.5 | ❌ Non commencé |
 | CI/CD GitHub Actions | v1.5 | ❌ Non commencé |

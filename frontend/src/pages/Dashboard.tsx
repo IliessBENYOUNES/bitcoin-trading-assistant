@@ -58,6 +58,7 @@ import { VerificationPanel } from '../components/VerificationPanel';
 import { QuickMetricsBar } from '../components/QuickMetricsBar';
 import RiskPanel from '../components/RiskPanel';
 import PaperTradingPanel from '../components/PaperTradingPanel';
+import JournalPanel from '../components/JournalPanel';
 import CandlestickChart from '../components/CandlestickChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
 import { PriceTicker } from '../components/PriceTicker';
@@ -890,7 +891,7 @@ const Dashboard: React.FC = () => {
           </TabPanel>
 
           {/* ============================================================= */}
-          {/* TAB 2 — TRADING (Risk + Paper Trading)                         */}
+          {/* TAB 2 — TRADING (Risk + Paper Trading + Journal)               */}
           {/* ============================================================= */}
           <TabPanel value={activeTab} index={2}>
             <Grid container spacing={2.5}>
@@ -913,6 +914,17 @@ const Dashboard: React.FC = () => {
                   border: '1px solid rgba(255,255,255,0.06)',
                 }}>
                   <PaperTradingPanel />
+                </Box>
+              </Grid>
+              {/* Journal d'évaluation — Pleine largeur */}
+              <Grid item xs={12}>
+                <Box sx={{
+                  bgcolor: 'rgba(255,255,255,0.03)',
+                  borderRadius: 2,
+                  p: 2,
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}>
+                  <JournalPanel />
                 </Box>
               </Grid>
             </Grid>

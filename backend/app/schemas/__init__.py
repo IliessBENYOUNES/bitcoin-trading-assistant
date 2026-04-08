@@ -101,7 +101,24 @@ from app.schemas.paper_trading import (
     PaperTickResult,
 )
 
+from app.schemas.journal import (
+    TradingProfileType,
+    TradingProfileParams,
+    TradingProfileResponse,
+    TradingProfileSetRequest,
+    JournalPeriodSummary,
+    JournalDaySummary,
+    JournalActivityStats,
+    NonTradeReasonItem,
+    JournalNonTradeReasons,
+    JournalResponse,
+    DurationBucket,
+    TradingStyleResult,
+    LeverageRecommendation,
+)
+
 __all__ = [
+    # ...existing exports...
     "CandleBase",
     "CandleCreate",
     "CandleResponse",
@@ -169,4 +186,18 @@ __all__ = [
     "PaperMetrics",
     "PaperStatus",
     "PaperTickResult",
+    # v1.5 — Journal, Profils, Levier, Style
+    "TradingProfileType",
+    "TradingProfileParams",
+    "TradingProfileResponse",
+    "TradingProfileSetRequest",
+    "JournalPeriodSummary",
+    "JournalDaySummary",
+    "JournalActivityStats",
+    "NonTradeReasonItem",
+    "JournalNonTradeReasons",
+    "JournalResponse",
+    "DurationBucket",
+    "TradingStyleResult",
+    "LeverageRecommendation",
 ]
