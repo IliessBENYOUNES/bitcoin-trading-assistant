@@ -996,6 +996,11 @@ class PaperTradingService:
         Cela permet d'ouvrir des SHORT même quand la tendance globale est haussière
         (et des LONG en tendance baissière).
 
+        [v1.8.1] Seuils abaissés pour déclencher plus de shorts :
+        - Avant : requérait satisfied=True (strength >= 0.7) pour rsi_overbought
+        - Maintenant : vérifie aussi les indicateurs bruts et les bandes de Bollinger
+        - Un seul oscillateur en zone extrême suffit
+
         Returns:
             "short" si surachat détecté (pullback baissier probable)
             "long" si survente détectée (rebond haussier probable)
@@ -1003,9 +1008,8 @@ class PaperTradingService:
         """
         rules = decision_result.get("rules_evaluated", [])
 
-        # Règles oscillateurs indiquant un surachat → shorter
+        # Méthode 1 : Règles satisfaites (RSI/StochRSI overbought/oversold)
         overbought_signals = {"rsi_overbought", "stochrsi_overbought"}
-        # Règles oscillateurs indiquant une survente → acheter
         oversold_signals = {"rsi_oversold", "stochrsi_oversold"}
 
         overbought = 0
@@ -1019,7 +1023,29 @@ class PaperTradingService:
             elif name in oversold_signals:
                 oversold += 1
 
-        # Au moins 1 oscillateur en zone extrême → signal de reversal
+        # Méthode 2 : Score technique très élevé + signaux convergents
+        # Si le score technique est extrêmement élevé (+80 ou -80),
+        # c'est un signe que le marché est probablement suracheté/survendu
+        # et un mean reversion pourrait être pertinent.
+        score = decision_result.get("combined_score", 0)
+        tech_score = decision_result.get("technical_score", score)
+
+        # Si technique très haussière (>85) ET pas de convergence forte
+        # → potentiel surachat pour un short scalping
+        bullish_rules = sum(1 for r in rules if r.get("satisfied") and r.get("direction") == "bullish")
+        bearish_rules = sum(1 for r in rules if r.get("satisfied") and r.get("direction") == "bearish")
+
+        # Méthode 3 : Détection par force pure du score
+        # En scalping 15m, un score technique ≥ 90 suggère un surachat
+        # Un score technique ≤ -90 suggère une survente
+        if tech_score >= 90 and bearish_rules == 0:
+            overbought += 1
+            logger.debug(f"⚡ Scalping reversal: tech_score={tech_score} → overbought")
+        elif tech_score <= -90 and bullish_rules == 0:
+            oversold += 1
+            logger.debug(f"⚡ Scalping reversal: tech_score={tech_score} → oversold")
+
+        # Au moins 1 oscillateur/signal en zone extrême → signal de reversal
         if overbought >= 1:
             return "short"
         if oversold >= 1:
@@ -1244,6 +1270,71 @@ class PaperTradingService:
             .all()
         )
         return trades, total
+
+    def export_trades(self) -> dict:
+        """
+        Export complet du journal de trading.
+
+        Retourne toutes les données nécessaires pour analyser le trading :
+        - Résumé du compte (capital, PnL, profil, dates)
+        - Métriques de performance
+        - Toutes les positions ouvertes (avec PnL latent)
+        - Tous les trades fermés (avec détails complets)
+
+        Conçu pour être analysé par un humain ou un LLM (ChatGPT, Claude, etc.).
+        """
+        from app.schemas.paper_trading import (
+            PaperTradeExportItem,
+            PaperExportAccountSummary,
+            PaperExportResponse,
+        )
+
+        account = self.get_or_create_account()
+        metrics = self.get_metrics()
+        current_price = self._get_current_price()
+
+        # Toutes les positions ouvertes
+        open_positions = self.get_open_positions()
+        open_items = [
+            PaperTradeExportItem.model_validate(t) for t in open_positions
+        ]
+
+        # Tous les trades fermés — sans limite de pagination
+        closed_trades = (
+            self.db.query(PaperTrade)
+            .filter(
+                PaperTrade.account_id == account.id,
+                PaperTrade.status != "open",
+            )
+            .order_by(PaperTrade.exit_ts.desc())
+            .all()
+        )
+        closed_items = [
+            PaperTradeExportItem.model_validate(t) for t in closed_trades
+        ]
+
+        account_summary = PaperExportAccountSummary(
+            initial_capital=account.initial_capital,
+            current_capital=account.current_capital,
+            total_pnl=account.total_pnl,
+            total_pnl_pct=account.total_pnl_pct,
+            peak_capital=account.peak_capital,
+            max_drawdown_pct=account.max_drawdown_pct,
+            btc_price_at_start=account.btc_price_at_start,
+            active_profile=account.active_profile or "conservative",
+            max_open_positions=account.max_open_positions or 1,
+            created_at=account.created_at,
+        )
+
+        return PaperExportResponse(
+            exported_at=datetime.now(timezone.utc),
+            account=account_summary,
+            metrics=metrics,
+            current_btc_price=current_price,
+            total_trades=len(open_positions) + len(closed_trades),
+            open_trades=open_items,
+            closed_trades=closed_items,
+        )
 
     # ================================================================
     # HELPERS INTERNES

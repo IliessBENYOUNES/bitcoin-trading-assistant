@@ -14,9 +14,9 @@
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1005 tests** pytest, tous passing |
+| Tests backend | **1090 tests** pytest, tous passing |
 | Frontend build | `tsc --noEmit` sans erreur |
-| Phase courante | **v1.7.2 livré** — Étape 2 INFINI v1 complète, prochaine étape v2.0 Robot Autonome |
+| Phase courante | **v1.8.1 livré** — Scalping recalibré, prochaine étape v2.0 Robot Autonome |
 
 **Documents à lire en premier :**
 1. Ce fichier (`CLAUDE.md`) — Règles de l'agent
@@ -89,7 +89,7 @@ npx tsc --noEmit
 ```
 
 Vérifier :
-- ✅ **1005+ tests** backend passent (le nombre ne doit jamais diminuer)
+- ✅ **1090+ tests** backend passent (le nombre ne doit jamais diminuer)
 - ✅ Aucun nouveau test en échec
 - ✅ `tsc --noEmit` sans erreur
 - Si des tests échouent → **corriger avant de commit**
@@ -260,7 +260,7 @@ Avant d'ajouter une feature :
 1. Lire `docs/ROADMAP.md` pour la roadmap complète (phases + vision long terme)
 2. S'assurer que la feature s'inscrit dans la bonne phase
 
-**Phase actuelle : v1.7.2 livré — Prochaine étape v2.0 Robot Autonome**
+**Phase actuelle : v1.8.1 livré — Prochaine étape v2.0 Robot Autonome**
 
 Ne pas implémenter une feature d'une phase future si la phase courante n'est pas terminée.
 

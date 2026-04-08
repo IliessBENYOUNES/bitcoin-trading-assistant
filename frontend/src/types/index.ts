@@ -95,6 +95,10 @@ export type {
   PaperTickResult,
   SlotTickResult,
   PaperTradeListResponse,
+  // Paper Trading — Export (v1.7.3)
+  PaperTradeExportItem,
+  PaperExportAccountSummary,
+  PaperExportResponse,
   // Paper Trading — Journal & Profils (v1.5)
   JournalPeriodSummary,
   JournalDaySummary,

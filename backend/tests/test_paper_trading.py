@@ -999,3 +999,55 @@ class TestPaperTradingEndpoints:
         assert data["open_position"] is not None
         assert data["unrealized_pnl"] is not None
 
+    def test_export_trades_empty(self, client, db_session):
+        """GET /paper/trades/export sans trades → structure valide vide."""
+        client.post("/paper/account", json={"initial_capital": 10000.0})
+        resp = client.get("/paper/trades/export")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["export_version"] == "1.0"
+        assert data["exported_at"] is not None
+        assert data["account"]["initial_capital"] == 10000.0
+        assert data["total_trades"] == 0
+        assert data["open_trades"] == []
+        assert data["closed_trades"] == []
+        assert "metrics" in data
+
+    def test_export_trades_with_closed_trades(self, client, db_session):
+        """GET /paper/trades/export avec trades fermés → contient les détails complets."""
+        _insert_btc_candle(db_session, price=90000.0)
+        account = _create_active_account(db_session)
+        service = PaperTradingService(db_session)
+        trade = _create_open_trade(db_session, account.id, entry_price=85000.0)
+        service._close_position(trade, 90000.0, "TP hit", "closed_tp")
+
+        resp = client.get("/paper/trades/export")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_trades"] >= 1
+        assert len(data["closed_trades"]) >= 1
+        closed = data["closed_trades"][0]
+        # Vérifier tous les champs enrichis sont présents
+        assert "entry_price" in closed
+        assert "exit_price" in closed
+        assert "leverage" in closed
+        assert "stop_loss_price" in closed
+        assert "take_profit_price" in closed
+        assert "entry_reason" in closed
+        assert "exit_reason" in closed
+        assert "direction" in closed
+        assert "pnl" in closed
+        assert "duration_hours" in closed
+
+    def test_export_trades_with_open_position(self, client, db_session):
+        """GET /paper/trades/export avec position ouverte → listée dans open_trades."""
+        _insert_btc_candle(db_session, price=86000.0)
+        account = _create_active_account(db_session)
+        _create_open_trade(db_session, account.id, entry_price=85000.0)
+
+        resp = client.get("/paper/trades/export")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["open_trades"]) >= 1
+        assert data["open_trades"][0]["status"] == "open"
+

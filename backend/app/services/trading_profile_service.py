@@ -83,29 +83,34 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         profile_type=TradingProfileType.scalping,
         label="Scalping",
         description="Haute fréquence intraday — petits mouvements, sorties rapides, réentrée immédiate.",
-        min_score=5,
+        min_score=15,
         min_confidence="low",
         min_scenario_dominance=0.35,
         max_trades_per_day=50,
-        cooldown_minutes=1,           # réentrée rapide après fermeture
+        cooldown_minutes=2,           # réentrée rapide mais pas instantanée (évite le bruit)
         max_position_duration_hours=2,
         profit_take_pct=0.3,
         loss_cut_pct=0.3,
         loss_cut_score_threshold=5,
         leverage_enabled=True,
-        max_leverage=2.0,
+        max_leverage=1.5,
         # Analyse sur timeframe court (15m au lieu de 4h)
         analysis_timeframe="15m",
-        # Seuils de décision abaissés (BUY > +10, SELL < -8)
-        buy_threshold=10,
-        sell_threshold=8,
-        # Sorties rapides — fermer après 10 min si SL/TP pas touché
+        # Seuils de décision relevés pour meilleure discrimination
+        # Avant : buy=10, sell=8 → trop permissif, score saturé à 72
+        # Après : buy=20, sell=15 → filtre les setups médiocres
+        buy_threshold=20,
+        sell_threshold=15,
+        # Sorties rapides — fermer après 12 min si SL/TP pas touché
+        # (augmenté de 10→12 car stale exit captait du profit)
         momentum_fade_enabled=True,
-        stale_exit_minutes=10,
-        # [v1.7.2] Trailing stop sur profit — protège les gains acquis
-        # Active dès que le PnL atteint +0.03%, et sort si recul de 0.05% depuis le pic
-        trailing_stop_activation_pct=0.03,
-        trailing_stop_pct=0.05,
+        stale_exit_minutes=12,
+        # [v1.8.1] Trailing stop recalibré — seuils augmentés pour éviter le bruit
+        # Avant : activation=0.03%, trail=0.05% → sortait au bruit (75% flat)
+        # Après : activation=0.08%, trail=0.12% → laisse respirer le trade
+        # Sur BTC $71k : activation après ~$57, trail de ~$85
+        trailing_stop_activation_pct=0.08,
+        trailing_stop_pct=0.12,
     ),
 }
 

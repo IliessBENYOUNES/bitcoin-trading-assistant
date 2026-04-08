@@ -3,6 +3,7 @@ Routes API pour l'audit de vérité et la gate v2.0.
 
 Endpoints :
 - GET /audit/truth : Audit complet de vérité des métriques
+- GET /audit/scalping : Audit dédié du sous-système scalping
 - GET /audit/costs : Presets de coûts disponibles
 - GET /audit/costs/impact : Impact des coûts sur les trades existants
 - GET /v2/readiness : Gate formelle de passage vers v2.0
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.services.truth_audit_service import TruthAuditService
+from app.services.scalping_audit_service import ScalpingAuditService
 from app.services.v2_gate_service import V2GateService
 from app.services.trading_cost_service import (
     COST_PRESETS, get_cost_model,
@@ -41,6 +43,30 @@ def get_truth_audit(
     - Verdict global (DANGEROUS / FRAGILE / VIABLE / SOLID)
     """
     service = TruthAuditService(db)
+    return service.run_audit(cost_preset=cost_preset)
+
+
+@router.get("/audit/scalping", summary="Audit dédié scalping")
+def get_scalping_audit(
+    cost_preset: str = Query(
+        default="realistic",
+        description="Preset de coûts : optimistic, realistic, stressed",
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    Audit ciblé du sous-système scalping.
+
+    Retourne :
+    - Métriques scalping brut/net (après coûts)
+    - Distribution des sorties (trailing, stale, signal, etc.)
+    - Audit du trailing stop
+    - Distribution des scores d'entrée (saturation ?)
+    - Comparaison long vs short
+    - Impact du levier en scalping
+    - Recommandations d'optimisation
+    """
+    service = ScalpingAuditService(db)
     return service.run_audit(cost_preset=cost_preset)
 
 

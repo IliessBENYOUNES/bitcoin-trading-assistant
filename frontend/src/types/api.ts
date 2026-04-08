@@ -756,6 +756,57 @@ export interface PaperTradeListResponse {
   total: number;
 }
 
+// Export complet du journal de trading
+export interface PaperTradeExportItem {
+  id: number;
+  status: string;
+  direction: string;
+  entry_price: number;
+  exit_price: number | null;
+  stop_loss_price: number;
+  take_profit_price: number;
+  highest_price_since_entry: number | null;
+  lowest_price_since_entry: number | null;
+  position_size_usd: number;
+  leverage: number;
+  effective_size_usd: number | null;
+  leverage_reason: string | null;
+  profile_type: string | null;
+  slot: string | null;
+  pnl: number | null;
+  pnl_pct: number | null;
+  entry_reason: string;
+  exit_reason: string | null;
+  decision_score: number | null;
+  entry_ts: string;
+  exit_ts: string | null;
+  duration_hours: number | null;
+}
+
+export interface PaperExportAccountSummary {
+  initial_capital: number;
+  current_capital: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+  peak_capital: number;
+  max_drawdown_pct: number;
+  btc_price_at_start: number | null;
+  active_profile: string;
+  max_open_positions: number;
+  created_at: string | null;
+}
+
+export interface PaperExportResponse {
+  export_version: string;
+  exported_at: string;
+  account: PaperExportAccountSummary;
+  metrics: PaperMetrics;
+  current_btc_price: number | null;
+  total_trades: number;
+  open_trades: PaperTradeExportItem[];
+  closed_trades: PaperTradeExportItem[];
+}
+
 // -----------------------------------------------------------------------------
 // Paper Trading — Journal d'Évaluation (v1.5)
 // -----------------------------------------------------------------------------

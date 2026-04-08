@@ -9,6 +9,7 @@ Endpoints pour la simulation de trading en temps réel :
 - GET  /paper/trades   — Journal des trades
 - GET  /paper/metrics  — Métriques de performance
 - POST /paper/close    — Fermeture manuelle de la position ouverte
+- GET  /paper/trades/export — Export complet du journal (tous trades, sans pagination)
 - GET  /paper/journal  — [v1.5] Journal d'évaluation multi-jours
 - GET  /paper/style    — [v1.5] Qualification du style de trading
 - GET  /paper/profile  — [v1.5] Profil de trading actif
@@ -35,6 +36,7 @@ from app.schemas.paper_trading import (
     PaperMetrics,
     PaperStatus,
     PaperTickResult,
+    PaperExportResponse,
 )
 from app.schemas.journal import (
     TradingProfileParams,
@@ -152,6 +154,25 @@ def close_position(
             detail="Aucune position ouverte à fermer"
         )
     return PaperTradeResponse.model_validate(trade)
+
+
+@router.get("/trades/export", response_model=PaperExportResponse)
+def export_trades(db: Session = Depends(get_db)):
+    """
+    Export complet du journal de trading (tous les trades, sans pagination).
+
+    Retourne un JSON structuré contenant :
+    - Résumé du compte (capital, PnL, profil, dates)
+    - Métriques de performance agrégées
+    - Prix BTC actuel
+    - Toutes les positions ouvertes
+    - Tous les trades fermés avec détails complets
+
+    Conçu pour être copié/collé dans un LLM (ChatGPT, Claude)
+    ou sauvegardé en fichier JSON pour analyse.
+    """
+    service = PaperTradingService(db)
+    return service.export_trades()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
-> **Dernière mise à jour :** 8 avril 2026
-> **Version :** v1.8.0
+> **Dernière mise à jour :** 9 avril 2026
+> **Version :** v1.8.1
 > **Branche :** `master`
-> **Dernier commit :** fix(paper): reset clears tick logs + risk config, diagnostic uses account creation date
+> **Dernier commit :** feat(scalping): audit service + recalibrage trailing/score/levier + reset protection
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.8.0** |
+| Version courante | **v1.8.1** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1053 tests**, tous passing ✅ |
+| Tests backend | **1090 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **Étape 2 fonctionnellement livrée** — Reality gap closure en cours avant v2.0 |
+| Phase courante | **Étape 2 fonctionnellement livrée** — Scalping recalibré, Reality gap closure en cours avant v2.0 |
 
 ### ⚠️ État de maturité honnête
 
@@ -32,8 +32,11 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - Diagnostic fréquence et opportunités manquées
 - **Modèle de coûts de trading** (presets optimistic/realistic/stressed)
 - **Audit de vérité** (expectancy nette, drawdown vérifié, impact levier/trailing, verdict)
+- **Audit scalping dédié** (exit distribution, trailing, score saturation, long/short, levier)
+- **Scalping recalibré v1.8.1** (trailing stop élargi, scoring plus sélectif, levier conservateur, short amélioré)
+- **Protection Reset UI** (bouton Full Reset séparé avec confirmation typed "RESET")
 - **Gate formelle v2.0** (8 critères objectifs, status READY/PARTIAL/NOT_READY)
-- 1053 tests backend, tsc clean
+- 1090 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ❌ **Campagnes de validation (PaperRun)** : Pas de concept de "run" borné pour comparer rigoureusement des profils sur des périodes identiques.

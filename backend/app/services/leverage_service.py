@@ -133,6 +133,26 @@ class LeverageService:
 
         # ─── Calcul du levier recommandé ───
         combined = score_factor * confidence_factor * vol_factor
+
+        # [v1.8.1] En mode scalping (max_leverage ≤ 1.5), être plus conservateur
+        # Le levier ne se justifie que si le signal est fort ET la confiance est haute
+        # Sinon, forcer x1.0 pour ne pas amplifier les pertes sur un edge faible
+        is_scalping_mode = max_leverage <= 1.5
+        if is_scalping_mode and (confidence_factor < 0.8 or score_factor < 0.7):
+            reasons.append(
+                f"Score={abs_score:.0f} → {score_factor:.1f}, "
+                f"Confiance={confidence} → {confidence_factor:.1f}, "
+                f"Vol → {vol_factor:.1f}; Scalping conservateur → x1.0"
+            )
+            return LeverageRecommendation(
+                recommended=1.0,
+                final=1.0,
+                max_allowed=max_leverage,
+                risk_adjusted=True,
+                reasons=reasons,
+                factors={**factors, "scalping_conservative": True},
+            )
+
         recommended = 1.0 + combined * (max_leverage - 1.0)
         # Arrondir au 0.5 le plus proche, minimum 1.0
         recommended = max(1.0, round(recommended * 2) / 2)

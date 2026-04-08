@@ -42,6 +42,7 @@ import type {
   PaperTickResult,
   PaperTradeListResponse,
   PaperMetrics,
+  PaperExportResponse,
 } from '../types';
 
 import type {
@@ -691,6 +692,12 @@ export async function getPaperMetrics(
   options: FetchOptions = {}
 ): Promise<PaperMetrics> {
   return apiFetch<PaperMetrics>('/paper/metrics', options);
+}
+
+export async function getPaperTradesExport(
+  options: FetchOptions = {}
+): Promise<PaperExportResponse> {
+  return apiFetch<PaperExportResponse>('/paper/trades/export', options);
 }
 
 export async function closePaperPosition(

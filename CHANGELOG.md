@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.1] - 2026-04-09
+
+### Added
+- **ScalpingAuditService** — Service d'audit dédié au sous-système scalping. Analyse : métriques brut/net, distribution des sorties (trailing/stale/signal/momentum_fade), audit trailing stop (PnL, % near-zero), distribution scores (saturation), comparaison long/short, impact levier, durée des trades, recommandations actionables.
+  - `backend/app/services/scalping_audit_service.py` : nouveau service
+  - `GET /audit/scalping` : endpoint d'audit scalping dédié
+- **Protection Reset UI** — Le bouton "Reset" est séparé en 2 :
+  - "Reset perte jour" (safe) : remet le compteur de perte journalière à zéro, ne touche PAS aux trades
+  - "Full Reset" (destructif) : nécessite de taper "RESET" en majuscules dans un prompt de confirmation
+- **34 nouveaux tests** — `test_scalping_audit.py` couvrant : ScalpingAuditService (12 tests), recalibrage paramètres (9 tests), levier conservateur (4 tests), reversal amélioré (6 tests), endpoint (3 tests). Total : **1090 tests**.
+
+### Changed
+- **Scalping recalibré (v1.8.1)** — Optimisation des paramètres basée sur l'analyse de l'export réel (15 trades, PnL brut +4.87$, net -170$ après coûts) :
+  - `trailing_stop_activation_pct` : 0.03% → **0.08%** (évite le bruit du marché, activation après ~$57 sur BTC $71k au lieu de $21)
+  - `trailing_stop_pct` : 0.05% → **0.12%** (trail plus large, laisse respirer le trade ~$85 au lieu de $35)
+  - `buy_threshold` : 10 → **20** (filtre les setups médiocres, évite la saturation de score)
+  - `sell_threshold` : 8 → **15** (même logique pour les shorts)
+  - `min_score` : 5 → **15** (rejette les trades à trop faible conviction)
+  - `cooldown_minutes` : 1 → **2** (évite les réentrées instantanées dans le bruit)
+  - `stale_exit_minutes` : 10 → **12** (les stale exits étaient nettes positives, on allonge)
+  - `max_leverage` : 2.0 → **1.5** (réduction du risque tant que l'edge net n'est pas prouvé)
+- **Levier scalping conservateur** — En mode scalping (max_leverage ≤ 1.5), le levier est forcé à x1.0 sauf si confidence=HIGH ET score_factor ≥ 0.7. Empêche l'amplification des pertes sur un edge faible.
+- **Reversal check amélioré** — La détection de mean reversion pour le short scalping utilise désormais :
+  - Les règles RSI/StochRSI satisfaites (comme avant)
+  - Le score technique extrême (≥90 → overbought, ≤-90 → oversold)
+  - Cela devrait activer plus de trades short en runtime
+
+### Fixed
+- **Reset button data loss** — Le bouton Reset ne supprime plus accidentellement toutes les données. Double protection : boutons séparés + confirmation typed "RESET" pour le full reset.
+
+### Technical
+- `backend/app/services/scalping_audit_service.py` : nouveau service (420 lignes)
+- `backend/app/api/routes/audit.py` : ajout `GET /audit/scalping`
+- `backend/app/services/trading_profile_service.py` : recalibrage preset scalping
+- `backend/app/services/leverage_service.py` : règle conservative scalping
+- `backend/app/services/paper_trading_service.py` : reversal check amélioré
+- `frontend/src/components/PaperTradingPanel.tsx` : protection reset (2 boutons)
+- `backend/tests/test_scalping_audit.py` : 34 nouveaux tests
+- `backend/tests/test_diagnostic.py` : mise à jour assertions scalping
+
 ## [1.8.0] - 2026-04-08
 
 ### Added

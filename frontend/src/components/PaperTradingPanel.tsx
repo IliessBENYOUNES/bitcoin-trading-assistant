@@ -44,9 +44,10 @@ import {
   AutoMode as AutoModeIcon,
   Timer as TimerIcon,
   SmartToy as RobotIcon,
+  FileDownload as ExportIcon,
 } from '@mui/icons-material';
 import { usePaperTrading } from '../hooks/usePaperTrading';
-import { setPaperProfile, getPaperProfile, createPaperAccount, closePaperPosition } from '../api/marketApi';
+import { setPaperProfile, getPaperProfile, createPaperAccount, closePaperPosition, getPaperTradesExport, resetDailyLoss } from '../api/marketApi';
 import type { PaperTradeItem, TradingProfileType } from '../types';
 
 // Couleur selon PnL
@@ -175,6 +176,7 @@ export default function PaperTradingPanel({ onTradeExecuted }: { onTradeExecuted
   const [selectedProfile, setSelectedProfile] = useState<TradingProfileType>('auto');
   const [activeProfile, setActiveProfile] = useState<TradingProfileType | null>(null);
   const [launching, setLaunching] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Countdown timer pour le prochain tick auto
   const [countdown, setCountdown] = useState(0);
@@ -262,8 +264,27 @@ export default function PaperTradingPanel({ onTradeExecuted }: { onTradeExecuted
     stopAuto();
   };
 
-  const handleReset = async () => {
-    if (window.confirm('Réinitialiser le compte paper ? Tous les trades seront supprimés.')) {
+  // Reset Daily Loss — ne touche PAS aux trades ni au capital
+  const handleResetDailyLoss = async () => {
+    if (window.confirm('Remettre le compteur de perte journalière à zéro ?')) {
+      try {
+        await resetDailyLoss();
+        await refresh();
+      } catch (err) {
+        console.error('Reset daily loss failed:', err);
+      }
+    }
+  };
+
+  // Reset COMPLET — DESTRUCTIF : supprime tous les trades et remet le capital à zéro
+  // Protégé par saisie obligatoire du mot "RESET"
+  const handleFullReset = async () => {
+    const confirmation = window.prompt(
+      '⚠️ ATTENTION : Ceci supprime TOUS les trades et remet le capital à zéro.\n\n' +
+      'Cette action est IRRÉVERSIBLE.\n\n' +
+      'Pour confirmer, tapez RESET en majuscules :'
+    );
+    if (confirmation === 'RESET') {
       await reset(Number(capital) || 10000);
     }
   };
@@ -282,6 +303,31 @@ export default function PaperTradingPanel({ onTradeExecuted }: { onTradeExecuted
 
   const handleStartAuto = () => {
     startAuto(selectedInterval);
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 📥 EXPORT — Télécharge le journal complet en JSON
+  // ═══════════════════════════════════════════════════════════════════════════
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const data = await getPaperTradesExport();
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const now = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `btc-trading-journal-${now}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Export failed:', e);
+    } finally {
+      setExporting(false);
+    }
   };
 
 
@@ -673,16 +719,31 @@ export default function PaperTradingPanel({ onTradeExecuted }: { onTradeExecuted
             </Button>
           </Tooltip>
         )}
-        <Button
-          variant="outlined"
-          size="small"
-          color="error"
-          startIcon={<Stop />}
-          onClick={handleReset}
-          disabled={loading || autoMode}
-        >
-          Reset
-        </Button>
+        <Tooltip title="Remettre à zéro le compteur de perte journalière (ne touche PAS aux trades)">
+          <Button
+            variant="outlined"
+            size="small"
+            color="warning"
+            startIcon={<Refresh />}
+            onClick={handleResetDailyLoss}
+            disabled={loading || autoMode}
+          >
+            Reset perte jour
+          </Button>
+        </Tooltip>
+        <Tooltip title="⚠️ DESTRUCTIF : Supprime TOUS les trades et remet le capital à zéro">
+          <Button
+            variant="outlined"
+            size="small"
+            color="error"
+            startIcon={<Stop />}
+            onClick={handleFullReset}
+            disabled={loading || autoMode}
+            sx={{ opacity: 0.7, fontSize: '0.75rem' }}
+          >
+            Full Reset
+          </Button>
+        </Tooltip>
         <Button
           variant="outlined"
           size="small"
@@ -692,6 +753,18 @@ export default function PaperTradingPanel({ onTradeExecuted }: { onTradeExecuted
         >
           Actualiser
         </Button>
+        <Tooltip title="Exporter le journal complet (JSON) pour analyse par un LLM ou sauvegarde">
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={exporting ? <CircularProgress size={14} /> : <ExportIcon />}
+            onClick={handleExport}
+            disabled={exporting || loading}
+            sx={{ borderColor: '#F7931A', color: '#F7931A', '&:hover': { borderColor: '#E65100', bgcolor: 'rgba(247,147,26,0.06)' } }}
+          >
+            {exporting ? 'Export...' : '📥 Exporter Journal'}
+          </Button>
+        </Tooltip>
         {/* Mode avancé : intervalle custom */}
         {isActive && !autoMode && (
           <>

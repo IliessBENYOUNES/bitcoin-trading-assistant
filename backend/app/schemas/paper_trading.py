@@ -13,6 +13,7 @@ from typing import Optional
 from datetime import datetime
 
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Configuration du compte
 # ─────────────────────────────────────────────────────────────────────────────
@@ -61,6 +62,54 @@ class PaperTradeListResponse(BaseModel):
     """Liste paginée de trades."""
     trades: list[PaperTradeResponse]
     total: int
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Export complet du journal de trading
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PaperTradeExportItem(BaseModel):
+    """Un trade enrichi pour l'export (tous les champs utiles à l'analyse)."""
+    id: int
+    status: str
+    direction: str
+    entry_price: float
+    exit_price: Optional[float] = None
+    stop_loss_price: float
+    take_profit_price: float
+    highest_price_since_entry: Optional[float] = None
+    lowest_price_since_entry: Optional[float] = None
+    position_size_usd: float
+    leverage: float = 1.0
+    effective_size_usd: Optional[float] = None
+    leverage_reason: Optional[str] = None
+    profile_type: Optional[str] = None
+    slot: Optional[str] = None
+    pnl: Optional[float] = None
+    pnl_pct: Optional[float] = None
+    entry_reason: str
+    exit_reason: Optional[str] = None
+    decision_score: Optional[float] = None
+    entry_ts: datetime
+    exit_ts: Optional[datetime] = None
+    duration_hours: Optional[float] = None
+
+    model_config = {"from_attributes": True}
+
+
+class PaperExportAccountSummary(BaseModel):
+    """Résumé du compte pour l'export."""
+    initial_capital: float
+    current_capital: float
+    total_pnl: float
+    total_pnl_pct: float
+    peak_capital: float
+    max_drawdown_pct: float
+    btc_price_at_start: Optional[float] = None
+    active_profile: str = "conservative"
+    max_open_positions: int = 1
+    created_at: Optional[datetime] = None
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -113,6 +162,28 @@ class PaperMetrics(BaseModel):
     worst_trade_pnl: float = 0.0
     profit_factor: float = 0.0
     buy_hold_pnl_pct: float = 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Export complet du journal de trading (après PaperMetrics pour référence)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PaperExportResponse(BaseModel):
+    """
+    Export complet du journal de trading.
+
+    Conçu pour être analysé par un humain ou un LLM.
+    Contient toutes les informations nécessaires pour comprendre
+    chaque décision prise par le robot.
+    """
+    export_version: str = "1.0"
+    exported_at: datetime
+    account: PaperExportAccountSummary
+    metrics: PaperMetrics
+    current_btc_price: Optional[float] = None
+    total_trades: int = 0
+    open_trades: list[PaperTradeExportItem] = []
+    closed_trades: list[PaperTradeExportItem] = []
 
 
 # ─────────────────────────────────────────────────────────────────────────────

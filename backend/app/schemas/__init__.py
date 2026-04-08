@@ -99,6 +99,9 @@ from app.schemas.paper_trading import (
     PaperMetrics,
     PaperStatus,
     PaperTickResult,
+    PaperTradeExportItem,
+    PaperExportAccountSummary,
+    PaperExportResponse,
 )
 
 from app.schemas.journal import (
@@ -194,6 +197,9 @@ __all__ = [
     "PaperMetrics",
     "PaperStatus",
     "PaperTickResult",
+    "PaperTradeExportItem",
+    "PaperExportAccountSummary",
+    "PaperExportResponse",
     # v1.5 — Journal, Profils, Levier, Style
     "TradingProfileType",
     "TradingProfileParams",

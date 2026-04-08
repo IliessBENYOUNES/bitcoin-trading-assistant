@@ -279,20 +279,20 @@ class TestScalpingProfile:
     """Tests pour le profil Scalping."""
 
     def test_scalping_preset_exists(self):
-        """Le preset scalping existe avec les bons paramètres."""
+        """Le preset scalping existe avec les bons paramètres (v1.8.1 recalibré)."""
         assert "scalping" in PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_score == 5
-        assert p.cooldown_minutes == 1
+        assert p.min_score == 15           # recalibré (was 5)
+        assert p.cooldown_minutes == 2     # recalibré (was 1)
         assert p.max_trades_per_day == 50
         assert p.profit_take_pct == 0.3
         assert p.loss_cut_pct == 0.3
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
-        assert p.buy_threshold == 10
-        assert p.sell_threshold == 8
+        assert p.buy_threshold == 20       # recalibré (was 10)
+        assert p.sell_threshold == 15      # recalibré (was 8)
         assert p.momentum_fade_enabled is True
-        assert p.stale_exit_minutes == 10
+        assert p.stale_exit_minutes == 12  # recalibré (was 10)
 
     def test_scalping_in_enum(self):
         """TradingProfileType inclut scalping."""
@@ -315,14 +315,14 @@ class TestScalpingProfile:
         assert p.analysis_timeframe == "15m"
 
     def test_scalping_params_buy_threshold(self):
-        """Scalping a un seuil BUY abaissé."""
+        """Scalping a un seuil BUY recalibré."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.buy_threshold == 10  # vs 25 par défaut
+        assert p.buy_threshold == 20  # recalibré (was 10)
 
     def test_scalping_params_sell_threshold(self):
-        """Scalping a un seuil SELL abaissé."""
+        """Scalping a un seuil SELL recalibré."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.sell_threshold == 8  # vs 20 par défaut
+        assert p.sell_threshold == 15  # recalibré (was 8)
 
     def test_scalping_momentum_fade_enabled(self):
         """Scalping active le momentum fade."""
@@ -330,9 +330,9 @@ class TestScalpingProfile:
         assert p.momentum_fade_enabled is True
 
     def test_scalping_stale_exit(self):
-        """Scalping a un stale exit à 10 minutes."""
+        """Scalping a un stale exit à 12 minutes (recalibré)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 10
+        assert p.stale_exit_minutes == 12
 
     def test_conservative_no_new_fields(self):
         """Conservative n'a pas les nouveaux champs activés."""
@@ -554,9 +554,9 @@ class TestFasterExits:
         assert p.stale_exit_minutes is None
 
     def test_stale_exit_configured_for_scalping(self):
-        """Scalping a stale_exit_minutes = 10."""
+        """Scalping a stale_exit_minutes = 12 (recalibré v1.8.1)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 10
+        assert p.stale_exit_minutes == 12
 
     def test_momentum_fade_not_on_conservative(self):
         """Conservative n'active pas momentum_fade."""
