@@ -86,6 +86,18 @@ class DiagnosticService:
             )
 
         dt_from, dt_to = self._parse_dates(date_from, date_to)
+
+        # Garantir que le diagnostic ne regarde pas avant la création du compte
+        # Sinon, après un reset, des ticks orphelins de l'ancien compte
+        # (avec position_already_open) peuvent polluer les résultats.
+        account_created = account.created_at
+        if account_created:
+            if account_created.tzinfo is None:
+                from datetime import timezone as _tz
+                account_created = account_created.replace(tzinfo=_tz.utc)
+            if account_created > dt_from:
+                dt_from = account_created
+
         days_span = max(1, (dt_to - dt_from).total_seconds() / 86400)
 
         # 1. Récupérer tous les ticks de la période
@@ -333,12 +345,35 @@ class DiagnosticService:
         top = reasons[0]
 
         # Position déjà ouverte = frein structurel majeur
+        # Mais seulement si c'est un vrai problème (positions trop longues),
+        # pas juste un effet normal d'avoir une position ouverte pendant un moment.
         if top.reason == "position_already_open" and top.pct > 40:
+            # Vérifier si les positions sont réellement trop longues
+            # (moy > 2h = potentiellement un problème)
+            avg_dur = pos_duration.avg_duration_hours if pos_duration.avg_duration_hours > 0 else 0
+            med_dur = pos_duration.median_duration_hours if pos_duration.median_duration_hours > 0 else 0
+
+            # Si des positions sont ouvertes en ce moment, vérifier s'il y a aussi
+            # des trades fermés. Si oui, le système fonctionne, c'est normal.
+            if total_trades > 0 and avg_dur < 1.0:
+                # Positions courtes + trades exécutés = le système fonctionne bien
+                # Le % élevé est juste parce que le bot tick très souvent
+                return (
+                    "normal_operation",
+                    f"Le système fonctionne normalement. {total_trades} trades exécutés, "
+                    f"durée moyenne {avg_dur:.1f}h. Le taux élevé de ticks avec position ouverte "
+                    f"({top.pct:.0f}%) est normal avec des ticks fréquents.",
+                    [
+                        "C'est un comportement normal — le bot trade et garde ses positions",
+                        "Augmenter l'intervalle de tick pour réduire les ticks 'en attente'",
+                    ],
+                )
+
             return (
                 "position_blocking",
                 f"{top.pct:.0f}% des ticks sont bloqués par une position déjà ouverte. "
-                f"Les positions sont gardées trop longtemps (moy: {pos_duration.avg_duration_hours:.1f}h, "
-                f"med: {pos_duration.median_duration_hours:.1f}h).",
+                f"Les positions sont gardées trop longtemps (moy: {avg_dur:.1f}h, "
+                f"med: {med_dur:.1f}h).",
                 [
                     "Activer le profil Scalping pour des sorties plus rapides",
                     "Réduire la durée max de position",

@@ -90,10 +90,11 @@ def reset_account(
     config: PaperAccountCreate = PaperAccountCreate(),
     db: Session = Depends(get_db),
 ):
-    """Reset complet du compte paper."""
+    """Reset complet du compte paper (trades, logs, risk config)."""
     service = PaperTradingService(db)
     account = service.reset_account(config.initial_capital)
     account.max_open_duration_hours = config.max_open_duration_hours
+    account.max_open_positions = config.max_open_positions
     db.commit()
     db.refresh(account)
     return PaperAccountResponse.model_validate(account)

@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 8 avril 2026
 > **Version :** v1.8.0
 > **Branche :** `master`
-> **Dernier commit :** docs: reality gap closure — honest documentation rewrite
+> **Dernier commit :** fix(paper): reset clears tick logs + risk config, diagnostic uses account creation date
 
 ---
 
@@ -198,6 +198,8 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | 3 | ~~Métriques non auditées~~ | ~~🟠 Haute~~ | ✅ Résolu v1.8.0 : TruthAuditService |
 | 4 | Warnings pytest `_fetch_and_store` non awaited | ⚠️ Low | Cosmétique |
 | 5 | Vite build warning chunk > 500 kB | ⚠️ Low | Code-splitting possible |
+| 6 | ~~Diagnostic "93% bloqué par positions" persistant après fermeture~~ | ~~🔴 Haute~~ | ✅ Résolu : reset supprime TickActivityLog + diagnostic filtre par date création compte |
+| 7 | ~~P&L / RiskConfig non remis à zéro au reset~~ | ~~🔴 Haute~~ | ✅ Résolu : reset remet daily_loss, kill_switch, portfolio_value à zéro |
 
 ---
 

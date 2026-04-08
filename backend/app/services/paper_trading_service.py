@@ -91,15 +91,34 @@ class PaperTradingService:
 
     def reset_account(self, initial_capital: float = 10000.0) -> PaperAccount:
         """
-        Reset complet : supprime tous les trades et remet le capital à zéro.
+        Reset complet : supprime tous les trades, logs de ticks et remet le capital à zéro.
         Capture le prix BTC actuel pour le calcul buy & hold.
-
-        Note : les tick_activity_log sont conservés pour garder l'historique
-        du diagnostic. Le diagnostic filtre par date automatiquement.
+        Réinitialise aussi le RiskConfig (daily loss, kill switch, portfolio value)
+        pour éviter que les anciens états bloquent le nouveau compte.
         """
+        from app.models.tick_activity_log import TickActivityLog
+        from app.models.risk_config import RiskConfig
+
+        # Supprimer les tick_activity_log pour éviter que les anciens logs
+        # (position_already_open accumulés) polluent le diagnostic du nouveau compte.
+        # Sans cela, SQLite réutilise le même account_id et le diagnostic
+        # voit des milliers d'anciens ticks "position_already_open".
+        self.db.query(TickActivityLog).delete()
         self.db.query(PaperTrade).delete()
         self.db.query(PaperAccount).delete()
         self.db.commit()
+
+        # Réinitialiser le RiskConfig : daily loss, kill switch, portfolio value
+        # Si on ne fait pas ça, un kill switch déclenché par l'ancien compte
+        # continue de bloquer les trades du nouveau compte.
+        risk_config = self.db.query(RiskConfig).first()
+        if risk_config:
+            risk_config.daily_loss_current = 0.0
+            risk_config.kill_switch_active = False
+            risk_config.kill_switch_reason = None
+            risk_config.kill_switch_triggered_at = None
+            risk_config.total_portfolio_value = initial_capital
+            self.db.commit()
 
         btc_price = self._get_current_price()
 
@@ -115,7 +134,7 @@ class PaperTradingService:
         self.db.refresh(account)
         logger.info(
             f"Compte paper réinitialisé : capital={initial_capital}, "
-            f"btc_price_start={btc_price}"
+            f"btc_price_start={btc_price}, risk_config remis à zéro"
         )
         return account
 
