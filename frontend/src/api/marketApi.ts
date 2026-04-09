@@ -877,3 +877,50 @@ export async function getRunValueAudit(
   return apiFetch<RunValueAuditResponse>(`/audit/run-value?cost_preset=${costPreset}`, options);
 }
 
+
+// -----------------------------------------------------------------------------
+// Mode Autonome Backend (Headless) — v1.9.7
+// -----------------------------------------------------------------------------
+
+import type { AutonomousStatus } from '../types';
+
+export async function startAutonomous(
+  params: { interval_seconds: number; profile: string },
+  options: FetchOptions = {}
+): Promise<AutonomousStatus> {
+  const url = `${BASE_URL}/paper/autonomous/start`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(params),
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<AutonomousStatus>;
+}
+
+export async function stopAutonomous(
+  options: FetchOptions = {}
+): Promise<AutonomousStatus> {
+  const url = `${BASE_URL}/paper/autonomous/stop`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+    signal: options.signal,
+  });
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+  return response.json() as Promise<AutonomousStatus>;
+}
+
+export async function getAutonomousStatus(
+  options: FetchOptions = {}
+): Promise<AutonomousStatus> {
+  return apiFetch<AutonomousStatus>('/paper/autonomous/status', options);
+}
+

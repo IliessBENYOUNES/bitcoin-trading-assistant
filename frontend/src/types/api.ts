@@ -808,6 +808,29 @@ export interface PaperExportResponse {
 }
 
 // -----------------------------------------------------------------------------
+// Mode Autonome Backend (Headless) — v1.9.7
+// -----------------------------------------------------------------------------
+
+export interface AutonomousStatus {
+  running: boolean;
+  interval_seconds: number | null;
+  profile: string | null;
+  tick_count: number;
+  trade_count: number;
+  last_tick_time: string | null;
+  last_result: {
+    action: string;
+    detail: string;
+    price: number;
+    timestamp: string;
+  } | null;
+  started_at: string | null;
+  uptime_seconds: number | null;
+  frontend_required: boolean;
+  headless_capable: boolean;
+}
+
+// -----------------------------------------------------------------------------
 // Paper Trading — Journal d'Évaluation (v1.5)
 // -----------------------------------------------------------------------------
 

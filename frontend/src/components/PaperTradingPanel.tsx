@@ -45,10 +45,12 @@ import {
   Timer as TimerIcon,
   SmartToy as RobotIcon,
   FileDownload as ExportIcon,
+  Cloud as HeadlessIcon,
+  CloudOff as HeadlessOffIcon,
 } from '@mui/icons-material';
 import { usePaperTrading } from '../hooks/usePaperTrading';
-import { setPaperProfile, getPaperProfile, createPaperAccount, closePaperPosition, getPaperTradesExport, resetDailyLoss } from '../api/marketApi';
-import type { PaperTradeItem, TradingProfileType } from '../types';
+import { setPaperProfile, getPaperProfile, createPaperAccount, closePaperPosition, getPaperTradesExport, resetDailyLoss, startAutonomous, stopAutonomous, getAutonomousStatus } from '../api/marketApi';
+import type { PaperTradeItem, TradingProfileType, AutonomousStatus } from '../types';
 
 // Couleur selon PnL
 const pnlColor = (pnl: number | null): string => {
@@ -177,6 +179,54 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
   const [activeProfile, setActiveProfile] = useState<TradingProfileType | null>(null);
   const [launching, setLaunching] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // ── Mode Headless (autonome backend) ──────────────────────────────────────
+  const [headlessStatus, setHeadlessStatus] = useState<AutonomousStatus | null>(null);
+  const headlessPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchHeadlessStatus = useCallback(async () => {
+    try {
+      const status = await getAutonomousStatus();
+      setHeadlessStatus(status);
+    } catch {
+      // Ignore — endpoint peut ne pas exister sur ancien backend
+    }
+  }, []);
+
+  // Polling du statut headless toutes les 10s (léger)
+  useEffect(() => {
+    fetchHeadlessStatus();
+    headlessPollRef.current = setInterval(fetchHeadlessStatus, 10000);
+    return () => {
+      if (headlessPollRef.current) clearInterval(headlessPollRef.current);
+    };
+  }, [fetchHeadlessStatus]);
+
+  const handleStartHeadless = async () => {
+    setLaunching(true);
+    try {
+      const profileOpt = PROFILE_OPTIONS.find(p => p.value === selectedProfile);
+      const interval = profileOpt?.autoInterval ?? 30;
+      await startAutonomous({
+        interval_seconds: interval,
+        profile: selectedProfile,
+      });
+      await fetchHeadlessStatus();
+    } catch (err) {
+      console.error('Start headless failed:', err);
+    } finally {
+      setLaunching(false);
+    }
+  };
+
+  const handleStopHeadless = async () => {
+    try {
+      await stopAutonomous();
+      await fetchHeadlessStatus();
+    } catch (err) {
+      console.error('Stop headless failed:', err);
+    }
+  };
 
   // Countdown timer pour le prochain tick auto
   const [countdown, setCountdown] = useState(0);
@@ -587,6 +637,115 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
               sx={{ fontWeight: 700 }}
             >
               Arrêter le Robot
+            </Button>
+          </Stack>
+        </Box>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* ☁️ MODE HEADLESS — Robot autonome backend                        */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {headlessStatus?.running && (
+        <Box sx={{
+          mb: 2,
+          p: 1.5,
+          borderRadius: 2,
+          border: '1px solid #00E676',
+          bgcolor: 'rgba(0, 230, 118, 0.06)',
+        }}>
+          <Stack direction="row" alignItems="center" spacing={1.5} flexWrap="wrap" useFlexGap>
+            <HeadlessIcon sx={{ color: '#00E676', fontSize: 20 }} />
+            <Typography variant="body2" fontWeight={700} sx={{ color: '#00E676' }}>
+              🌙 Mode Headless actif
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Le robot tourne côté serveur — vous pouvez fermer ce navigateur.
+            </Typography>
+            <Box sx={{ flex: 1 }} />
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Chip
+                size="small"
+                label={`${headlessStatus.tick_count} ticks`}
+                variant="outlined"
+                sx={{ fontWeight: 700, fontFamily: 'monospace' }}
+              />
+              <Chip
+                size="small"
+                label={`${headlessStatus.trade_count} trades`}
+                color="success"
+                variant="outlined"
+                sx={{ fontWeight: 700, fontFamily: 'monospace' }}
+              />
+              {headlessStatus.profile && (
+                <Chip
+                  size="small"
+                  label={headlessStatus.profile}
+                  sx={{ fontWeight: 600 }}
+                />
+              )}
+              {headlessStatus.uptime_seconds != null && (
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={headlessStatus.uptime_seconds > 3600
+                    ? `${Math.floor(headlessStatus.uptime_seconds / 3600)}h${Math.floor((headlessStatus.uptime_seconds % 3600) / 60)}m`
+                    : `${Math.floor(headlessStatus.uptime_seconds / 60)}m`
+                  }
+                />
+              )}
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                startIcon={<HeadlessOffIcon />}
+                onClick={handleStopHeadless}
+                sx={{ fontWeight: 700 }}
+              >
+                Arrêter Headless
+              </Button>
+            </Stack>
+          </Stack>
+          {headlessStatus.last_result && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+              Dernier tick : {headlessStatus.last_result.action} — {headlessStatus.last_result.detail?.slice(0, 80)}
+              {headlessStatus.last_result.price > 0 && ` | BTC $${headlessStatus.last_result.price.toLocaleString()}`}
+            </Typography>
+          )}
+        </Box>
+      )}
+
+      {/* Bouton lancer en mode headless (visible quand ni auto ni headless actif) */}
+      {!autoMode && !headlessStatus?.running && (
+        <Box sx={{
+          mb: 2,
+          p: 1.5,
+          borderRadius: 2,
+          border: '1px dashed rgba(0, 230, 118, 0.3)',
+          bgcolor: 'rgba(0, 230, 118, 0.02)',
+        }}>
+          <Stack direction="row" alignItems="center" spacing={1.5} flexWrap="wrap" useFlexGap>
+            <HeadlessIcon sx={{ color: '#00E676', fontSize: 20 }} />
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="body2" fontWeight={600} sx={{ color: '#00E676' }}>
+                🌙 Mode Headless (nuit / low-bandwidth)
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Le robot tourne côté serveur uniquement. Fermez le navigateur, réduisez la data.
+              </Typography>
+            </Box>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={launching ? <CircularProgress size={14} color="inherit" /> : <HeadlessIcon />}
+              onClick={handleStartHeadless}
+              disabled={launching}
+              sx={{
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #00C853, #00E676)',
+                '&:hover': { background: 'linear-gradient(135deg, #00E676, #69F0AE)' },
+              }}
+            >
+              {launching ? 'Démarrage...' : 'Lancer Headless'}
             </Button>
           </Stack>
         </Box>

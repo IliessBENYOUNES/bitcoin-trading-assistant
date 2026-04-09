@@ -99,6 +99,8 @@ export type {
   PaperTradeExportItem,
   PaperExportAccountSummary,
   PaperExportResponse,
+  // Paper Trading — Mode Autonome Backend (v1.9.7)
+  AutonomousStatus,
   // Paper Trading — Journal & Profils (v1.5)
   JournalPeriodSummary,
   JournalDaySummary,

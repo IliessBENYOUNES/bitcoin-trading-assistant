@@ -260,3 +260,30 @@ class PaperTickResult(BaseModel):
     # v1.7 — Multi-slot
     slot_results: list[SlotTickResult] = []
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mode autonome backend (headless)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AutonomousStartRequest(BaseModel):
+    """Requête de démarrage du mode autonome backend."""
+    interval_seconds: int = Field(default=30, ge=5, le=3600,
+                                   description="Intervalle entre les ticks en secondes (5-3600)")
+    profile: str = Field(default="scalping",
+                         description="Profil de trading (scalping, balanced, aggressive, conservative, auto)")
+
+
+class AutonomousStatusResponse(BaseModel):
+    """Statut du mode autonome backend."""
+    running: bool
+    interval_seconds: Optional[int] = None
+    profile: Optional[str] = None
+    tick_count: int = 0
+    trade_count: int = 0
+    last_tick_time: Optional[str] = None
+    last_result: Optional[dict] = None
+    started_at: Optional[str] = None
+    uptime_seconds: Optional[float] = None
+    frontend_required: bool = False
+    headless_capable: bool = True
+

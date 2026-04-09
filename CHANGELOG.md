@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.7] - 2026-04-09
+
+### Added
+- **Mode autonome backend (headless)** — Le robot peut tourner sans navigateur ouvert
+  - **AutonomousManager** : singleton thread-safe qui exécute des ticks automatiques côté serveur à intervalle configurable (5s–3600s)
+  - **POST /paper/autonomous/start** : démarre le mode headless avec profil et intervalle configurables
+  - **POST /paper/autonomous/stop** : arrête le mode headless (positions ouvertes conservées)
+  - **GET /paper/autonomous/status** : retourne l'état complet (running, tick_count, trade_count, uptime, last_result)
+  - **Chaîne d'exécution clarifiée** : le prix BTC est fetché directement par le backend via Binance HTTP API — aucune dépendance au frontend
+  - **15 tests** : singleton, start/stop, validation intervalle, endpoints HTTP
+
+- **Mode low-bandwidth frontend** — Réduction de la consommation réseau
+  - **Toggle 🌙** dans la toolbar : coupe le WebSocket Binance et réduit tous les pollings
+  - **useLivePrice({ enabled })** : le WebSocket peut être désactivé dynamiquement
+  - **Pollings réduits** : alertes 60s→300s, news 300s→900s en mode low-bandwidth
+
+- **UI headless dans PaperTradingPanel** — Contrôle du mode autonome
+  - Bandeau vert "🌙 Mode Headless actif" avec tick_count, trade_count, uptime, dernière action
+  - Bouton "Lancer Headless" visible quand ni auto-tick ni headless actif
+  - Bouton "Arrêter Headless" dans le bandeau actif
+  - Polling léger du statut headless toutes les 10s
+
+### Technical
+- 1371 tests backend, tous passants ✅ (+15 nouveaux)
+- `tsc --noEmit` sans erreur ✅
+- Nouveau fichier : `backend/app/services/autonomous_manager.py`
+- Nouveau fichier : `backend/tests/test_autonomous.py`
+- Types TS ajoutés : `AutonomousStatus`
+- API client ajouté : `startAutonomous()`, `stopAutonomous()`, `getAutonomousStatus()`
+
 ## [1.9.6] - 2026-04-09
 
 ### Fixed

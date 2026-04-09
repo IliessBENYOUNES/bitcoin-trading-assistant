@@ -43,6 +43,7 @@ import {
   AccountBalance as TradingIcon,
   Science as BacktestIcon,
   Newspaper as NewsIcon,
+  BatteryChargingFull as LowBandwidthIcon,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -166,6 +167,10 @@ const Dashboard: React.FC = () => {
   const [alertDrawerOpen, setAlertDrawerOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState<string | null>(null);
 
+  // Mode low-bandwidth — désactive le WebSocket et réduit les pollings
+  // Utile pour les runs de nuit ou connexion mobile limitée
+  const [lowBandwidth, setLowBandwidth] = useState(false);
+
   // Compteur de trades — incrémenté à chaque trade exécuté dans PaperTradingPanel
   // Utilisé pour déclencher le rafraîchissement automatique du JournalPanel et DiagnosticPanel
   const [tradeVersion, setTradeVersion] = useState(0);
@@ -190,11 +195,11 @@ const Dashboard: React.FC = () => {
   const candles = useCandles({ timeframe, days: effectiveDays });
   const signals = useSignals({ timeframe, historyDays: effectiveDays });
   const decision = useDecision({ timeframe, historyDays: effectiveDays });
-  const alertsHook = useAlerts({ timeframe, pollInterval: 60000 });
-  const news = useNews({ limit: 20, pollInterval: 300000 });
+  const alertsHook = useAlerts({ timeframe, pollInterval: lowBandwidth ? 300000 : 60000 });
+  const news = useNews({ limit: 20, pollInterval: lowBandwidth ? 900000 : 300000 });
   const backtest = useBacktest();
 
-  const livePrice = useLivePrice();
+  const livePrice = useLivePrice({ enabled: !lowBandwidth });
   const currentPrice = livePrice.price ?? indicators.data?.latest?.close ?? null;
 
   const alertNotificationCount = alertsHook.notifications.length;
@@ -542,6 +547,30 @@ const Dashboard: React.FC = () => {
                 size="small"
               >
                 <RefreshIcon />
+              </IconButton>
+            </Tooltip>
+
+            {/* Bouton Low-Bandwidth Mode */}
+            <Tooltip title={lowBandwidth
+              ? '🌙 Mode Low-Bandwidth actif — WebSocket OFF, polling réduit. Cliquer pour désactiver.'
+              : '🌙 Activer le mode Low-Bandwidth (coupe le WebSocket, réduit le polling)'
+            }>
+              <IconButton
+                onClick={() => {
+                  setLowBandwidth(prev => !prev);
+                  setSnackbarMsg(lowBandwidth ? '🔌 Mode normal rétabli' : '🌙 Mode Low-Bandwidth activé');
+                }}
+                size="small"
+                sx={{
+                  color: lowBandwidth ? '#00E676' : 'text.secondary',
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    color: '#00E676',
+                    backgroundColor: 'rgba(0, 230, 118, 0.08)',
+                  },
+                }}
+              >
+                <LowBandwidthIcon sx={{ fontSize: 20 }} />
               </IconButton>
             </Tooltip>
 

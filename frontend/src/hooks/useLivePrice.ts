@@ -51,7 +51,9 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 // pour éviter de re-render le Dashboard trop souvent
 const THROTTLE_MS = 2000;
 
-export function useLivePrice(): LivePriceData {
+export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
+  const enabled = options?.enabled !== false; // activé par défaut
+
   // Un seul state objet pour batcher les updates en un seul re-render
   const [state, setState] = useState<LivePriceData>({
     price: null,
@@ -156,6 +158,16 @@ export function useLivePrice(): LivePriceData {
   }, []);
 
   useEffect(() => {
+    if (!enabled) {
+      // Mode low-bandwidth : ne pas connecter le WebSocket
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      setState(prev => ({ ...prev, connected: false }));
+      return;
+    }
+
     connect();
 
     return () => {
@@ -171,7 +183,7 @@ export function useLivePrice(): LivePriceData {
         wsRef.current = null;
       }
     };
-  }, [connect]);
+  }, [connect, enabled]);
 
   return state;
 }

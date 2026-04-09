@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 9 avril 2026
-> **Version :** v1.9.6
+> **Version :** v1.9.7
 > **Branche :** `master`
-> **Dernier commit :** fix(paper): correction bug critique double ouverture slot + stale exit + short rebalance
+> **Dernier commit :** feat(headless): mode autonome backend + low-bandwidth frontend
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.9.6** |
+| Version courante | **v1.9.7** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1356 tests**, tous passing ✅ |
+| Tests backend | **1371 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v1.9.6 livré** — Bug critique slot corrigé, stabilisation en cours |
+| Phase courante | **v1.9.7 livré** — Mode headless backend, robot autonome sans frontend |
 
 ### ⚠️ État de maturité honnête
 
@@ -77,7 +77,14 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
   - **SL encore resserré 0.25%→0.20%** : R:R théorique 3:1. Perte max $6.25→$5.00.
   - **Stale exit perte accéléré 8min→5min** : positions en perte sortent encore plus vite.
   - **Short rebalancé** : min_score 30→25, exit threshold 25→30, min hold 60→45s.
-- 1356 tests backend, tsc clean
+- **[v1.9.7] Mode autonome backend (headless / low-bandwidth)** — Le robot peut tourner sans frontend
+  - **AutonomousManager** : singleton thread-safe qui exécute des ticks côté serveur à intervalle configurable (5s-1h)
+  - **Endpoints** : `POST /paper/autonomous/start`, `POST /paper/autonomous/stop`, `GET /paper/autonomous/status`
+  - **Mode headless** : le robot trade de manière autonome côté backend. Fermer le navigateur n'arrête PAS le robot.
+  - **Low-bandwidth frontend** : toggle dans la toolbar qui coupe le WebSocket Binance et réduit les pollings (alertes 60s→300s, news 300s→900s)
+  - **useLivePrice paramétrable** : le WebSocket peut être désactivé via `{ enabled: false }`
+  - **15 tests** pour le mode autonome (unitaires + endpoints)
+- 1371 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.
@@ -127,7 +134,7 @@ bitcoin-trading-assistant/
 
 ## 3. Fonctionnalités livrées (résumé)
 
-### 3.1 Backend — Endpoints (56 au total)
+### 3.1 Backend — Endpoints (59 au total)
 
 | Groupe | Count | Exemples |
 |--------|-------|----------|
@@ -139,7 +146,7 @@ bitcoin-trading-assistant/
 | Alerts | 6 | CRUD + check + notifications |
 | News | 6 | list, sentiment, history/persist, range, coverage, at-date |
 | Risk | 7 | config CRUD, status, evaluate, kill-switch, record-loss |
-| Paper Trading | 14 | account, status, tick, trades, metrics, close, journal, style, profile, diagnostic, missed-opps, leverage-analysis |
+| Paper Trading | 17 | account, status, tick, trades, metrics, close, journal, style, profile, diagnostic, missed-opps, leverage-analysis, **autonomous/start, stop, status** |
 | Scheduler | 3 | status, trigger/4h, trigger/30m |
 
 ### 3.2 Multi-Slot Paper Trading (v1.7)
@@ -189,7 +196,8 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | test_journal_and_profiles.py | 84 |
 | test_diagnostic.py | 55 |
 | test_reality_gap.py | 48 |
-| **TOTAL** | **1356** ✅ |
+| test_autonomous.py | 15 |
+| **TOTAL** | **1371** ✅ |
 
 ---
 
@@ -312,4 +320,13 @@ cd backend && python -m pytest tests/ -v
 
 # TypeScript check
 cd frontend && npx tsc --noEmit
+
+# Mode headless (via API — pas besoin de frontend)
+# 1. Démarrer le backend
+# 2. Lancer le robot autonome :
+curl -X POST http://localhost:8000/paper/autonomous/start -H "Content-Type: application/json" -d '{"interval_seconds": 10, "profile": "scalping"}'
+# 3. Vérifier le statut :
+curl http://localhost:8000/paper/autonomous/status
+# 4. Arrêter :
+curl -X POST http://localhost:8000/paper/autonomous/stop
 ```

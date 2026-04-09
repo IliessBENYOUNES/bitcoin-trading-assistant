@@ -40,7 +40,10 @@ from app.schemas.paper_trading import (
     PaperStatus,
     PaperTickResult,
     PaperExportResponse,
+    AutonomousStartRequest,
+    AutonomousStatusResponse,
 )
+from app.services.autonomous_manager import AutonomousManager
 from app.schemas.journal import (
     TradingProfileParams,
     TradingProfileResponse,
@@ -371,4 +374,70 @@ def get_leverage_analysis(
     """
     service = DiagnosticService(db)
     return service.get_leverage_analysis(date_from=date_from, date_to=date_to)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [v1.9.7] Mode autonome backend (headless / low-bandwidth)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/autonomous/start", response_model=AutonomousStatusResponse)
+def start_autonomous(
+    request: AutonomousStartRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Démarre le mode autonome backend.
+
+    Le robot exécutera des ticks automatiquement côté serveur,
+    sans nécessiter le frontend ouvert. Permet le mode headless
+    pour les runs de nuit ou sur connexion limitée.
+
+    Args:
+        interval_seconds: Intervalle entre les ticks (5-3600s).
+        profile: Profil de trading à utiliser.
+    """
+    # S'assurer que le compte est actif
+    service = PaperTradingService(db)
+    account = service.get_or_create_account()
+    if not account.is_active:
+        account.is_active = True
+        account.max_open_positions = 3
+        db.commit()
+
+    manager = AutonomousManager()
+    result = manager.start(
+        interval_seconds=request.interval_seconds,
+        profile=request.profile,
+    )
+    status = manager.get_status()
+    return AutonomousStatusResponse(**status)
+
+
+@router.post("/autonomous/stop", response_model=AutonomousStatusResponse)
+def stop_autonomous():
+    """
+    Arrête le mode autonome backend.
+
+    Les positions ouvertes ne sont PAS fermées automatiquement.
+    Elles seront gérées au prochain tick (scheduler ou manuel).
+    """
+    manager = AutonomousManager()
+    manager.stop()
+    status = manager.get_status()
+    return AutonomousStatusResponse(**status)
+
+
+@router.get("/autonomous/status", response_model=AutonomousStatusResponse)
+def get_autonomous_status():
+    """
+    Retourne le statut du mode autonome backend.
+
+    Permet de savoir si le robot tourne en headless,
+    combien de ticks ont été exécutés, le dernier résultat, etc.
+    """
+    manager = AutonomousManager()
+    status = manager.get_status()
+    return AutonomousStatusResponse(**status)
+
+
 
