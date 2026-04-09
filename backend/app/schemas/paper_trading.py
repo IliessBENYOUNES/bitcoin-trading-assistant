@@ -26,6 +26,32 @@ class PaperAccountCreate(BaseModel):
                                     description="Nombre max de positions simultanées (1=mono, >1=multi-slot)")
 
 
+class FullResetRequest(BaseModel):
+    """Requête de full reset — confirmation obligatoire.
+
+    Le champ `confirm` doit valoir exactement "RESET" pour que le backend
+    accepte la purge totale. Ceci évite les appels accidentels.
+    """
+    confirm: str = Field(..., description="Doit valoir 'RESET' pour confirmer")
+    initial_capital: float = Field(default=10000.0, ge=100, le=10_000_000)
+    max_open_duration_hours: float = Field(default=168.0, ge=1, le=8760)
+    max_open_positions: int = Field(default=1, ge=1, le=10)
+
+
+class FullResetResponse(BaseModel):
+    """Résultat détaillé du full reset — montre exactement ce qui a été purgé/recréé."""
+    account: Optional["PaperAccountResponse"] = None
+    purged: dict = Field(
+        default_factory=dict,
+        description="Nombre d'enregistrements supprimés par table",
+    )
+    reset_details: list[str] = Field(
+        default_factory=list,
+        description="Description textuelle de chaque action effectuée",
+    )
+    message: str = "Full reset effectué"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Réponse trade
 # ─────────────────────────────────────────────────────────────────────────────

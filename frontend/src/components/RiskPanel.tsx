@@ -3,7 +3,7 @@
 // Affiche : état du risque, kill switch, config SL/TP, perte journalière
 // =============================================================================
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -48,11 +48,20 @@ const RISK_LABELS: Record<string, string> = {
   blocked: '🟣 Bloqué',
 };
 
-export default function RiskPanel() {
+export default function RiskPanel({ refreshTrigger }: { refreshTrigger?: number }) {
   const { config, status, loading, error, refresh, updateConfig, toggleKillSwitch, resetDailyLoss } = useRisk();
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Auto-refresh quand refreshTrigger change (après un reset)
+  const prevTriggerRef = useRef(refreshTrigger);
+  useEffect(() => {
+    if (refreshTrigger !== undefined && refreshTrigger !== prevTriggerRef.current) {
+      prevTriggerRef.current = refreshTrigger;
+      refresh();
+    }
+  }, [refreshTrigger, refresh]);
 
   // Form state
   const [formData, setFormData] = useState<RiskConfigCreate>({});

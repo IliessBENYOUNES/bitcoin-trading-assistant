@@ -221,8 +221,8 @@ class TestPaperTradingServiceAccount:
         account = _create_active_account(db_session)
         _create_open_trade(db_session, account.id)
 
-        # Reset
-        new_account = service.reset_account(initial_capital=20000.0)
+        # Reset — retourne (account, purged)
+        new_account, purged = service.reset_account(initial_capital=20000.0)
         assert new_account.initial_capital == 20000.0
         assert new_account.current_capital == 20000.0
         assert new_account.total_pnl == 0.0
@@ -230,12 +230,15 @@ class TestPaperTradingServiceAccount:
         # Vérifier que les trades sont supprimés
         trades = db_session.query(PaperTrade).all()
         assert len(trades) == 0
+        # Vérifier le compteur de purge
+        assert purged["paper_trade"] >= 1
+        assert purged["paper_account"] >= 1
 
     def test_reset_captures_btc_price(self, db_session):
         """Reset capture le prix BTC pour le buy & hold."""
         _insert_btc_candle(db_session, price=90000.0)
         service = PaperTradingService(db_session)
-        account = service.reset_account()
+        account, _purged = service.reset_account()
         assert account.btc_price_at_start == 90000.0
 
     def test_get_open_position_none(self, db_session):
@@ -902,15 +905,40 @@ class TestPaperTradingEndpoints:
         assert data["is_active"] is True
 
     def test_reset_account(self, client, db_session):
-        """POST /paper/account/reset reset le compte."""
+        """POST /paper/account/reset reset le compte (exige confirm='RESET')."""
         # Créer d'abord un compte
         client.post("/paper/account", json={"initial_capital": 10000.0})
-        # Reset
-        resp = client.post("/paper/account/reset", json={"initial_capital": 50000.0})
+        # Reset avec confirmation
+        resp = client.post("/paper/account/reset", json={
+            "confirm": "RESET",
+            "initial_capital": 50000.0,
+        })
         assert resp.status_code == 200
         data = resp.json()
-        assert data["initial_capital"] == 50000.0
-        assert data["total_trades"] == 0
+        # FullResetResponse contient account, purged, reset_details, message
+        assert data["account"]["initial_capital"] == 50000.0
+        assert data["account"]["total_trades"] == 0
+        assert "purged" in data
+        assert "reset_details" in data
+        assert "message" in data
+
+    def test_reset_account_without_confirm_rejected(self, client, db_session):
+        """POST /paper/account/reset sans confirm='RESET' doit être refusé."""
+        client.post("/paper/account", json={"initial_capital": 10000.0})
+        resp = client.post("/paper/account/reset", json={
+            "confirm": "no",
+            "initial_capital": 50000.0,
+        })
+        assert resp.status_code == 400
+
+    def test_reset_account_missing_confirm_rejected(self, client, db_session):
+        """POST /paper/account/reset sans champ confirm doit être refusé (422)."""
+        client.post("/paper/account", json={"initial_capital": 10000.0})
+        resp = client.post("/paper/account/reset", json={
+            "initial_capital": 50000.0,
+        })
+        # confirm est required → 422 Unprocessable Entity
+        assert resp.status_code == 422
 
     def test_get_status(self, client, db_session):
         """GET /paper/status retourne le statut complet."""
@@ -1050,4 +1078,413 @@ class TestPaperTradingEndpoints:
         data = resp.json()
         assert len(data["open_trades"]) >= 1
         assert data["open_trades"][0]["status"] == "open"
+
+
+# ============================================================
+# 10. RESET COMPLET — CONTRAT MÉTIER (Full Reset + Daily Loss Reset)
+# ============================================================
+
+class TestFullResetContract:
+    """
+    Tests du contrat métier Full Reset.
+
+    Vérifie que le full reset purge TOUTES les tables liées au paper trading :
+    - paper_trade
+    - paper_account
+    - tick_activity_log
+    - learning_signal
+    - strategy_feedback
+    - paper_run
+    - risk_config (reset, pas supprimé)
+    """
+
+    def test_full_reset_purges_learning_signal(self, db_session):
+        """Full reset supprime les learning_signal orphelins."""
+        from app.models.learning import LearningSignal
+        _insert_btc_candle(db_session, price=85000.0)
+
+        account = _create_active_account(db_session)
+        trade = _create_open_trade(db_session, account.id)
+
+        # Ajouter un learning signal
+        ls = LearningSignal(
+            trade_id=trade.id,
+            score=42.0,
+            direction="long",
+            exit_type="tp",
+            pnl_brut=50.0,
+            was_profitable=1,
+            was_reversal=0,
+        )
+        db_session.add(ls)
+        db_session.commit()
+        assert db_session.query(LearningSignal).count() == 1
+
+        service = PaperTradingService(db_session)
+        _account, purged = service.reset_account()
+        assert purged["learning_signal"] == 1
+        assert db_session.query(LearningSignal).count() == 0
+
+    def test_full_reset_purges_strategy_feedback(self, db_session):
+        """Full reset supprime les strategy_feedback obsolètes."""
+        from app.models.learning import StrategyFeedback
+        _insert_btc_candle(db_session, price=85000.0)
+
+        # Ajouter un strategy_feedback
+        fb = StrategyFeedback(
+            parameter_name="buy_threshold",
+            original_value=30.0,
+            suggested_value=35.0,
+            current_value=30.0,
+            reason="test feedback",
+            sample_size=10,
+            mode="shadow",
+        )
+        db_session.add(fb)
+        db_session.commit()
+        assert db_session.query(StrategyFeedback).count() == 1
+
+        service = PaperTradingService(db_session)
+        _account, purged = service.reset_account()
+        assert purged["strategy_feedback"] == 1
+        assert db_session.query(StrategyFeedback).count() == 0
+
+    def test_full_reset_purges_paper_run(self, db_session):
+        """Full reset supprime les paper_run fantômes."""
+        from app.models.paper_run import PaperRun
+        _insert_btc_candle(db_session, price=85000.0)
+
+        run = PaperRun(name="test-run", profile_type="scalping", status="running")
+        db_session.add(run)
+        db_session.commit()
+        assert db_session.query(PaperRun).count() == 1
+
+        service = PaperTradingService(db_session)
+        _account, purged = service.reset_account()
+        assert purged["paper_run"] == 1
+        assert db_session.query(PaperRun).count() == 0
+
+    def test_full_reset_purges_tick_activity_log(self, db_session):
+        """Full reset supprime les tick_activity_log."""
+        from app.models.tick_activity_log import TickActivityLog
+        _insert_btc_candle(db_session, price=85000.0)
+
+        account = _create_active_account(db_session)
+        tick = TickActivityLog(
+            account_id=account.id,
+            timestamp=datetime.now(timezone.utc),
+            action_taken="hold",
+            reason_no_trade="score_too_low",
+            profile_type="scalping",
+        )
+        db_session.add(tick)
+        db_session.commit()
+        assert db_session.query(TickActivityLog).count() == 1
+
+        service = PaperTradingService(db_session)
+        _account, purged = service.reset_account()
+        assert purged["tick_activity_log"] == 1
+        assert db_session.query(TickActivityLog).count() == 0
+
+    def test_full_reset_resets_risk_config(self, db_session):
+        """Full reset remet le risk config à zéro."""
+        from app.models.risk_config import RiskConfig
+        _insert_btc_candle(db_session, price=85000.0)
+
+        # Créer un risk config avec kill switch actif
+        config = RiskConfig(
+            daily_loss_current=500.0,
+            kill_switch_active=True,
+            kill_switch_reason="Perte journalière atteinte",
+            total_portfolio_value=8000.0,
+        )
+        db_session.add(config)
+        db_session.commit()
+
+        service = PaperTradingService(db_session)
+        new_account, purged = service.reset_account(initial_capital=20000.0)
+        assert purged["risk_config_reset"] == 1
+
+        config = db_session.query(RiskConfig).first()
+        assert config.daily_loss_current == 0.0
+        assert config.kill_switch_active is False
+        assert config.kill_switch_reason is None
+        assert config.total_portfolio_value == 20000.0
+
+    def test_full_reset_creates_clean_account(self, db_session):
+        """Full reset crée un compte vierge avec les bonnes valeurs."""
+        _insert_btc_candle(db_session, price=85000.0)
+
+        # Créer un compte avec des stats
+        account = _create_active_account(db_session)
+        _create_open_trade(db_session, account.id)
+
+        service = PaperTradingService(db_session)
+        new_account, _purged = service.reset_account(initial_capital=25000.0)
+        assert new_account.initial_capital == 25000.0
+        assert new_account.current_capital == 25000.0
+        assert new_account.peak_capital == 25000.0
+        assert new_account.total_pnl == 0.0
+        assert new_account.total_trades == 0
+        assert new_account.winning_trades == 0
+        assert new_account.losing_trades == 0
+        assert new_account.is_active is False
+
+    def test_full_reset_returns_purge_counts(self, db_session):
+        """Full reset retourne le dictionnaire complet des compteurs de purge."""
+        _insert_btc_candle(db_session, price=85000.0)
+        _create_active_account(db_session)
+
+        service = PaperTradingService(db_session)
+        _account, purged = service.reset_account()
+        expected_keys = {
+            "tick_activity_log",
+            "learning_signal",
+            "strategy_feedback",
+            "paper_run",
+            "paper_trade",
+            "paper_account",
+            "risk_config_reset",
+        }
+        assert set(purged.keys()) == expected_keys
+
+
+class TestFullResetEndpoint:
+    """Tests endpoint POST /paper/account/reset avec confirmation."""
+
+    def test_full_reset_endpoint_returns_purge_details(self, client, db_session):
+        """L'endpoint retourne les détails de purge."""
+        _insert_btc_candle(db_session, price=85000.0)
+        client.post("/paper/account", json={"initial_capital": 10000.0})
+
+        resp = client.post("/paper/account/reset", json={
+            "confirm": "RESET",
+            "initial_capital": 30000.0,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "purged" in data
+        assert "reset_details" in data
+        assert "message" in data
+        assert "account" in data
+        assert data["account"]["initial_capital"] == 30000.0
+
+    def test_full_reset_endpoint_rejects_wrong_confirm(self, client, db_session):
+        """L'endpoint rejette un confirm != 'RESET'."""
+        resp = client.post("/paper/account/reset", json={
+            "confirm": "WRONG",
+            "initial_capital": 10000.0,
+        })
+        assert resp.status_code == 400
+        assert "Confirmation invalide" in resp.json()["detail"]
+
+
+class TestDailyLossResetContract:
+    """
+    Tests du contrat métier Reset Perte Jour.
+
+    Vérifie que le reset daily loss :
+    - Remet daily_loss_current à 0
+    - Désactive le kill switch si lié à "Perte journalière"
+    - NE désactive PAS le kill switch si lié à une autre raison
+    - NE touche PAS aux trades, learning, runs, logs
+    """
+
+    def test_daily_loss_reset_zeroes_counter(self, db_session):
+        """Reset perte jour remet daily_loss_current à zéro."""
+        from app.services.risk_service import RiskService
+        service = RiskService(db_session)
+        config = service.get_config()
+        config.daily_loss_current = 300.0
+        db_session.commit()
+
+        result = service.reset_daily_loss()
+        assert result.daily_loss_current == 0.0
+
+    def test_daily_loss_reset_deactivates_kill_switch_if_daily_loss(self, db_session):
+        """Reset perte jour désactive le kill switch si déclenché par perte journalière."""
+        from app.services.risk_service import RiskService
+        service = RiskService(db_session)
+        config = service.get_config()
+        config.daily_loss_current = 500.0
+        config.kill_switch_active = True
+        config.kill_switch_reason = "Perte journalière atteinte (500.00 / 500.00 USD)"
+        config.kill_switch_triggered_at = datetime.utcnow()
+        db_session.commit()
+
+        result = service.reset_daily_loss()
+        assert result.daily_loss_current == 0.0
+        assert result.kill_switch_active is False
+        assert result.kill_switch_reason is None
+        assert result.kill_switch_triggered_at is None
+
+    def test_daily_loss_reset_keeps_manual_kill_switch(self, db_session):
+        """Reset perte jour ne désactive PAS un kill switch manuel."""
+        from app.services.risk_service import RiskService
+        service = RiskService(db_session)
+        config = service.get_config()
+        config.daily_loss_current = 100.0
+        config.kill_switch_active = True
+        config.kill_switch_reason = "Activation manuelle"
+        config.kill_switch_triggered_at = datetime.utcnow()
+        db_session.commit()
+
+        result = service.reset_daily_loss()
+        assert result.daily_loss_current == 0.0
+        # Le kill switch reste actif car il n'est pas lié à la perte journalière
+        assert result.kill_switch_active is True
+        assert result.kill_switch_reason == "Activation manuelle"
+
+    def test_daily_loss_reset_does_not_touch_trades(self, db_session):
+        """Reset perte jour ne supprime aucun trade."""
+        from app.services.risk_service import RiskService
+        _insert_btc_candle(db_session, price=85000.0)
+        account = _create_active_account(db_session)
+        _create_open_trade(db_session, account.id)
+
+        risk_service = RiskService(db_session)
+        config = risk_service.get_config()
+        config.daily_loss_current = 200.0
+        db_session.commit()
+
+        risk_service.reset_daily_loss()
+
+        # Les trades sont toujours là
+        trades = db_session.query(PaperTrade).all()
+        assert len(trades) == 1
+
+    def test_daily_loss_reset_does_not_touch_learning(self, db_session):
+        """Reset perte jour ne supprime aucun learning_signal."""
+        from app.models.learning import LearningSignal
+        from app.services.risk_service import RiskService
+
+        ls = LearningSignal(
+            trade_id=999,
+            score=42.0,
+            direction="long",
+            exit_type="tp",
+            pnl_brut=50.0,
+            was_profitable=1,
+            was_reversal=0,
+        )
+        db_session.add(ls)
+        db_session.commit()
+
+        risk_service = RiskService(db_session)
+        risk_service.reset_daily_loss()
+
+        assert db_session.query(LearningSignal).count() == 1
+
+    def test_daily_loss_reset_does_not_touch_paper_run(self, db_session):
+        """Reset perte jour ne supprime aucun paper_run."""
+        from app.models.paper_run import PaperRun
+        from app.services.risk_service import RiskService
+
+        run = PaperRun(name="test-run", profile_type="scalping", status="running")
+        db_session.add(run)
+        db_session.commit()
+
+        risk_service = RiskService(db_session)
+        risk_service.reset_daily_loss()
+
+        assert db_session.query(PaperRun).count() == 1
+
+    def test_daily_loss_reset_does_not_touch_tick_logs(self, db_session):
+        """Reset perte jour ne supprime aucun tick_activity_log."""
+        from app.models.tick_activity_log import TickActivityLog
+        from app.services.risk_service import RiskService
+
+        account = _create_active_account(db_session)
+        tick = TickActivityLog(
+            account_id=account.id,
+            timestamp=datetime.now(timezone.utc),
+            action_taken="hold",
+            reason_no_trade="score_too_low",
+            profile_type="scalping",
+        )
+        db_session.add(tick)
+        db_session.commit()
+
+        risk_service = RiskService(db_session)
+        risk_service.reset_daily_loss()
+
+        assert db_session.query(TickActivityLog).count() == 1
+
+
+class TestDiagnosticAfterFullReset:
+    """
+    Tests que le diagnostic est propre après un full reset.
+
+    Le diagnostic ne doit pas afficher de données de l'ancien état :
+    - pas de "position_already_open" résiduel
+    - pas de goulot d'étranglement fantôme
+    - ticks = 0, trades = 0 après reset
+    """
+
+    def test_diagnostic_clean_after_full_reset(self, db_session):
+        """Après full reset, le diagnostic retourne un état propre sans artefacts."""
+        from app.models.tick_activity_log import TickActivityLog
+        from app.services.diagnostic_service import DiagnosticService
+        _insert_btc_candle(db_session, price=85000.0)
+
+        # Créer un état avec beaucoup de ticks "position_already_open"
+        account = _create_active_account(db_session)
+        for i in range(50):
+            tick = TickActivityLog(
+                account_id=account.id,
+                timestamp=datetime.now(timezone.utc) - timedelta(hours=i),
+                action_taken="blocked",
+                reason_no_trade="position_already_open",
+                profile_type="scalping",
+                had_open_position=1,
+            )
+            db_session.add(tick)
+        db_session.commit()
+        assert db_session.query(TickActivityLog).count() == 50
+
+        # Full reset
+        service = PaperTradingService(db_session)
+        _new_account, _purged = service.reset_account()
+        assert db_session.query(TickActivityLog).count() == 0
+
+        # Le diagnostic doit être propre
+        diag_service = DiagnosticService(db_session)
+        diag = diag_service.get_diagnostic()
+        # Le bottleneck ne doit PAS être "position_already_open"
+        assert diag.main_bottleneck != "position_already_open"
+        assert diag.total_ticks == 0
+        assert diag.total_trades == 0
+
+    def test_diagnostic_endpoint_clean_after_full_reset(self, client, db_session):
+        """GET /paper/diagnostic retourne un diagnostic propre après full reset."""
+        from app.models.tick_activity_log import TickActivityLog
+        _insert_btc_candle(db_session, price=85000.0)
+
+        # Créer un état initial
+        account = _create_active_account(db_session)
+        for i in range(20):
+            tick = TickActivityLog(
+                account_id=account.id,
+                timestamp=datetime.now(timezone.utc) - timedelta(hours=i),
+                action_taken="blocked",
+                reason_no_trade="position_already_open",
+                profile_type="scalping",
+                had_open_position=1,
+            )
+            db_session.add(tick)
+        db_session.commit()
+
+        # Full reset via endpoint
+        resp = client.post("/paper/account/reset", json={
+            "confirm": "RESET",
+            "initial_capital": 10000.0,
+        })
+        assert resp.status_code == 200
+
+        # Vérifier que le diagnostic est propre
+        diag_resp = client.get("/paper/diagnostic")
+        assert diag_resp.status_code == 200
+        diag_data = diag_resp.json()
+        assert diag_data["total_ticks"] == 0
+        assert diag_data["total_trades"] == 0
 

@@ -636,22 +636,34 @@ export async function createPaperAccount(
   return response.json() as Promise<PaperAccountItem>;
 }
 
+export interface FullResetResponse {
+  account: PaperAccountItem | null;
+  purged: Record<string, number>;
+  reset_details: string[];
+  message: string;
+}
+
 export async function resetPaperAccount(
-  config: { initial_capital?: number; max_open_duration_hours?: number } = {},
+  config: { initial_capital?: number; max_open_duration_hours?: number; max_open_positions?: number } = {},
   options: FetchOptions = {}
-): Promise<PaperAccountItem> {
+): Promise<FullResetResponse> {
   const url = `${BASE_URL}/paper/account/reset`;
+  // Confirmation obligatoire côté backend — on envoie confirm: "RESET"
+  const body = {
+    confirm: "RESET",
+    ...config,
+  };
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify(config),
+    body: JSON.stringify(body),
     signal: options.signal,
   });
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(`API Error ${response.status}: ${errorText}`);
   }
-  return response.json() as Promise<PaperAccountItem>;
+  return response.json() as Promise<FullResetResponse>;
 }
 
 export async function getPaperStatus(

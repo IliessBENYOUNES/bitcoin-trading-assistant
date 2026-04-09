@@ -93,6 +93,8 @@ from app.schemas.risk import (
 
 from app.schemas.paper_trading import (
     PaperAccountCreate,
+    FullResetRequest,
+    FullResetResponse,
     PaperAccountResponse,
     PaperTradeResponse,
     PaperTradeListResponse,
@@ -191,6 +193,8 @@ __all__ = [
     "RiskEvaluation",
     "RiskStatus",
     "PaperAccountCreate",
+    "FullResetRequest",
+    "FullResetResponse",
     "PaperAccountResponse",
     "PaperTradeResponse",
     "PaperTradeListResponse",

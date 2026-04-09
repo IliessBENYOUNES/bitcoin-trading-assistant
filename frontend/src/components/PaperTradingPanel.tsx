@@ -142,7 +142,7 @@ const PROFILE_OPTIONS: {
   },
 ];
 
-export default function PaperTradingPanel({ onTradeExecuted }: { onTradeExecuted?: () => void }) {
+export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: { onTradeExecuted?: () => void; onResetComplete?: () => void }) {
   const {
     status,
     trades,
@@ -265,27 +265,53 @@ export default function PaperTradingPanel({ onTradeExecuted }: { onTradeExecuted
   };
 
   // Reset Daily Loss — ne touche PAS aux trades ni au capital
+  // Contrat métier : remet daily_loss_current à zéro,
+  // désactive le kill switch SEULEMENT si déclenché par "Perte journalière"
   const handleResetDailyLoss = async () => {
-    if (window.confirm('Remettre le compteur de perte journalière à zéro ?')) {
+    if (window.confirm(
+      'Remettre le compteur de perte journalière à zéro ?\n\n' +
+      'Ceci ne touche PAS :\n' +
+      '• Au capital\n' +
+      '• Aux trades\n' +
+      '• Au learning\n' +
+      '• Aux runs\n\n' +
+      'Le kill switch sera désactivé seulement s\'il avait été déclenché par la perte journalière.'
+    )) {
       try {
         await resetDailyLoss();
         await refresh();
+        // Notifier le parent pour rafraîchir RiskPanel et DiagnosticPanel
+        onResetComplete?.();
       } catch (err) {
         console.error('Reset daily loss failed:', err);
       }
     }
   };
 
-  // Reset COMPLET — DESTRUCTIF : supprime tous les trades et remet le capital à zéro
+  // Reset COMPLET — DESTRUCTIF : supprime TOUT (trades, learning, runs, logs, risk)
   // Protégé par saisie obligatoire du mot "RESET"
   const handleFullReset = async () => {
     const confirmation = window.prompt(
-      '⚠️ ATTENTION : Ceci supprime TOUS les trades et remet le capital à zéro.\n\n' +
+      '⚠️ ATTENTION : Ceci effectue un FULL RESET TOTAL.\n\n' +
+      'Seront supprimés :\n' +
+      '• Tous les trades paper\n' +
+      '• Tout le journal de ticks\n' +
+      '• Tous les learning signals\n' +
+      '• Toutes les suggestions IA\n' +
+      '• Toutes les campagnes de validation (runs)\n' +
+      '• Le risk config sera réinitialisé\n\n' +
       'Cette action est IRRÉVERSIBLE.\n\n' +
       'Pour confirmer, tapez RESET en majuscules :'
     );
     if (confirmation === 'RESET') {
-      await reset(Number(capital) || 10000);
+      const result = await reset(Number(capital) || 10000);
+      // Notifier le parent pour rafraîchir RiskPanel et autres panels
+      onResetComplete?.();
+      if (result) {
+        // Afficher un résumé de ce qui a été purgé
+        const summary = result.reset_details.join('\n');
+        window.alert(`✅ ${result.message}\n\n${summary}`);
+      }
     }
   };
 

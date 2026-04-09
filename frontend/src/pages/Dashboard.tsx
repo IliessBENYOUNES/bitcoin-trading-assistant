@@ -173,6 +173,12 @@ const Dashboard: React.FC = () => {
     setTradeVersion(prev => prev + 1);
   }, []);
 
+  // Appelé après un reset (daily loss ou full reset) pour forcer le refresh
+  // de tous les panels dépendants : JournalPanel, DiagnosticPanel, RiskPanel
+  const handleResetComplete = useCallback(() => {
+    setTradeVersion(prev => prev + 1);
+  }, []);
+
   const symbol = 'BTC/USD';
   const effectiveDays = days;
 
@@ -911,7 +917,7 @@ const Dashboard: React.FC = () => {
                   border: '1px solid rgba(255,255,255,0.06)',
                   height: '100%',
                 }}>
-                  <RiskPanel />
+                  <RiskPanel refreshTrigger={tradeVersion} />
                 </Box>
               </Grid>
               <Grid item xs={12} lg={7}>
@@ -921,7 +927,7 @@ const Dashboard: React.FC = () => {
                   p: 2,
                   border: '1px solid rgba(255,255,255,0.06)',
                 }}>
-                  <PaperTradingPanel onTradeExecuted={handleTradeExecuted} />
+                  <PaperTradingPanel onTradeExecuted={handleTradeExecuted} onResetComplete={handleResetComplete} />
                 </Box>
               </Grid>
               {/* Journal d'évaluation — Pleine largeur */}

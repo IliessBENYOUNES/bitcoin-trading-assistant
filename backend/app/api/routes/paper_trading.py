@@ -30,6 +30,8 @@ from app.services.trading_profile_service import TradingProfileService
 from app.services.diagnostic_service import DiagnosticService
 from app.schemas.paper_trading import (
     PaperAccountCreate,
+    FullResetRequest,
+    FullResetResponse,
     PaperAccountResponse,
     PaperTradeResponse,
     PaperTradeListResponse,
@@ -87,19 +89,58 @@ def create_or_update_account(
     return PaperAccountResponse.model_validate(account)
 
 
-@router.post("/account/reset", response_model=PaperAccountResponse)
+@router.post("/account/reset", response_model=FullResetResponse)
 def reset_account(
-    config: PaperAccountCreate = PaperAccountCreate(),
+    config: FullResetRequest,
     db: Session = Depends(get_db),
 ):
-    """Reset complet du compte paper (trades, logs, risk config)."""
+    """
+    Full reset du compte paper — DESTRUCTIF.
+
+    Exige confirm="RESET" pour éviter les appels accidentels.
+
+    Purge complète :
+    - trades paper
+    - tick_activity_log
+    - learning_signal
+    - strategy_feedback
+    - paper_run
+    - risk config (daily loss, kill switch)
+
+    Recrée un compte vierge.
+    """
+    from fastapi import HTTPException
+
+    if config.confirm != "RESET":
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmation invalide. Envoyez confirm='RESET' pour confirmer le full reset.",
+        )
+
     service = PaperTradingService(db)
-    account = service.reset_account(config.initial_capital)
+    account, purged = service.reset_account(config.initial_capital)
     account.max_open_duration_hours = config.max_open_duration_hours
     account.max_open_positions = config.max_open_positions
     db.commit()
     db.refresh(account)
-    return PaperAccountResponse.model_validate(account)
+
+    # Construire les détails lisibles
+    details = []
+    for table, count in purged.items():
+        if table == "risk_config_reset":
+            if count:
+                details.append("✅ Risk config réinitialisé (daily loss, kill switch, portfolio value)")
+        elif count > 0:
+            details.append(f"🗑️ {count} enregistrement(s) supprimé(s) dans {table}")
+        else:
+            details.append(f"— {table} : déjà vide")
+
+    return FullResetResponse(
+        account=PaperAccountResponse.model_validate(account),
+        purged=purged,
+        reset_details=details,
+        message=f"Full reset effectué. Nouveau compte #{account.id} créé avec {account.initial_capital}$ de capital.",
+    )
 
 
 @router.get("/status", response_model=PaperStatus)

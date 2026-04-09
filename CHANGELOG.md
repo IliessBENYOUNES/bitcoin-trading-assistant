@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.2] - 2026-04-09
+
+### Fixed
+- **Full Reset incomplet** : Le full reset ne purgeait que trades, ticks et compte. Les `learning_signal`, `strategy_feedback` et `paper_run` restaient en DB avec des références orphelines. Maintenant le full reset purge 7 tables.
+- **JournalPanel et DiagnosticPanel non rafraîchis après reset** : Le `tradeVersion` n'était incrémenté que sur les ticks (ouverture/fermeture), jamais sur les resets. Les panels gardaient des données stale d'un monde purgé. Corrigé : `tradeVersion` incrémenté après full reset.
+- **RiskPanel non rafraîchi après reset** : Le RiskPanel ne recevait aucun signal de refresh après un full reset ou un reset daily loss. Ajout de `refreshTrigger` prop + auto-refresh.
+- **kill_switch_triggered_at non nettoyé** : Le reset daily loss désactivait le kill switch mais ne remettait pas `kill_switch_triggered_at` à null. Corrigé.
+- **Diagnostic "bloqué par position ouverte" persistant** : Après full reset, des ticks orphelins pouvaient polluer le diagnostic. Maintenant résolu par la purge complète des tick_activity_log.
+
+### Added
+- **Confirmation backend obligatoire** : `POST /paper/account/reset` exige désormais `confirm: "RESET"` dans le body. Refus 400 si absent ou incorrect.
+- **FullResetResponse détaillé** : Le full reset retourne un objet structuré avec `purged` (compteurs par table), `reset_details` (messages lisibles), `message` (résumé), `account` (nouveau compte).
+- **FullResetRequest schema** : Validation Pydantic avec `confirm` required + `initial_capital` + `max_open_duration_hours` + `max_open_positions`.
+- **UX améliorée des resets** :
+  - Full reset : dialog explicite listant tout ce qui sera supprimé + alert post-reset avec résumé
+  - Daily loss reset : dialog explicite listant ce qui est conservé + ce qui change
+- **20 nouveaux tests** : contrat métier Full Reset (7 tests : purge learning, feedback, runs, ticks, risk, compte, compteurs), contrat métier Daily Loss Reset (7 tests : zeroes counter, deactivates kill switch conditionnel, keeps manual kill switch, ne touche pas trades/learning/runs/ticks), endpoint reset (4 tests : confirm obligatoire, rejet), diagnostic post-reset (2 tests : propre après full reset)
+
+### Changed
+- **`reset_account()` retourne `tuple[PaperAccount, dict]`** : Le dictionnaire `purged` contient les compteurs de suppression par table pour traçabilité.
+- **Frontend `resetPaperAccount()` envoie `confirm: "RESET"`** automatiquement + retourne `FullResetResponse`.
+- **`onResetComplete` callback** ajouté au PaperTradingPanel pour propager les refreshes.
+
+### Technical
+- 1223 tests backend (1203 existants + 20 nouveaux), tous passing ✅
+- `tsc --noEmit` sans erreur ✅
+
 ## [1.9.1] - 2026-04-09
 
 ### Added

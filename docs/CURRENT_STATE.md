@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 9 avril 2026
-> **Version :** v1.9.1
+> **Version :** v1.9.2
 > **Branche :** `master`
-> **Dernier commit :** feat(economic-value): anti-micro-PnL recalibrage + learning layer économique + min_hold + smart cooldown anti-churn
+> **Dernier commit :** fix(reset): audit complet + contrat métier resets + cohérence panels + confirmation backend
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.9.1** |
+| Version courante | **v1.9.2** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1203 tests**, tous passing ✅ |
+| Tests backend | **1223 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v1.9.1 livré** — Anti-micro-PnL + Learning économique, prochaine étape validation runtime prolongée |
+| Phase courante | **v1.9.2 livré** — Audit resets + contrat métier + cohérence panels |
 
 ### ⚠️ État de maturité honnête
 
@@ -44,7 +44,8 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v1.9.1] Smart Cooldown anti-churn** — pénalise les réentrées après trades flat (×1.5 au lieu de ×0.5)
 - **[v1.9.1] Learning économique** — catégories useful/insignificant/churn/loss_useful/loss_destructive, coûts estimés, PnL net
 - **[v1.9.1] Suggestions anti-churn** — détection automatique du taux de churn + insignifiants → suggestions d'ajustement
-- 1203 tests backend, tsc clean
+- **[v1.9.2] Audit resets complet** — contrat métier clair pour Full Reset (purge totale : trades, ticks, learning, feedback, runs, risk) et Reset Perte Jour (daily loss only). Confirmation backend obligatoire (confirm="RESET"). Réponse détaillée avec compteurs de purge. Refresh frontend cohérent de tous les panels après reset.
+- 1223 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.
@@ -152,11 +153,11 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | test_risk.py | 57 |
 | test_price_service.py | 15 |
 | test_time_buckets.py | 24 |
-| test_paper_trading.py | 68 |
+| test_paper_trading.py | 91 |
 | test_journal_and_profiles.py | 84 |
 | test_diagnostic.py | 55 |
 | test_reality_gap.py | 48 |
-| **TOTAL** | **1053** ✅ |
+| **TOTAL** | **1223** ✅ |
 
 ---
 
@@ -205,16 +206,66 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | # | Problème | Sévérité | Notes |
 |---|----------|----------|-------|
 | 1 | ~~Pas de modèle de coûts de trading~~ | ~~🔴 CRITIQUE~~ | ✅ Résolu v1.8.0 : TradingCostModel avec presets optimistic/realistic/stressed |
-| 2 | **Pas de campagnes de validation** | 🟠 Haute | PaperRun non encore implémenté |
+| 2 | ~~Pas de campagnes de validation~~ | ~~🟠 Haute~~ | ✅ Résolu v1.9.0 : PaperRun |
 | 3 | ~~Métriques non auditées~~ | ~~🟠 Haute~~ | ✅ Résolu v1.8.0 : TruthAuditService |
 | 4 | Warnings pytest `_fetch_and_store` non awaited | ⚠️ Low | Cosmétique |
 | 5 | Vite build warning chunk > 500 kB | ⚠️ Low | Code-splitting possible |
-| 6 | ~~Diagnostic "93% bloqué par positions" persistant après fermeture~~ | ~~🔴 Haute~~ | ✅ Résolu : reset supprime TickActivityLog + diagnostic filtre par date création compte |
-| 7 | ~~P&L / RiskConfig non remis à zéro au reset~~ | ~~🔴 Haute~~ | ✅ Résolu : reset remet daily_loss, kill_switch, portfolio_value à zéro |
+| 6 | ~~Diagnostic "93% bloqué par positions" persistant après fermeture~~ | ~~🔴 Haute~~ | ✅ Résolu v1.9.2 : full reset purge toutes les tables + diagnostic filtre par date création compte |
+| 7 | ~~P&L / RiskConfig non remis à zéro au reset~~ | ~~🔴 Haute~~ | ✅ Résolu v1.9.2 : full reset remet tout à zéro (daily_loss, kill_switch, portfolio_value, learning, runs) |
+| 8 | ~~Full reset ne purgeait pas learning/feedback/runs~~ | ~~🔴 Haute~~ | ✅ Résolu v1.9.2 : full reset purge learning_signal, strategy_feedback, paper_run |
+| 9 | ~~JournalPanel/DiagnosticPanel non rafraîchis après reset~~ | ~~🔴 Haute~~ | ✅ Résolu v1.9.2 : tradeVersion incrémenté après reset → refresh propagé |
+| 10 | ~~RiskPanel non rafraîchi après full reset~~ | ~~🟠 Moyenne~~ | ✅ Résolu v1.9.2 : RiskPanel reçoit refreshTrigger |
+| 11 | ~~Pas de confirmation backend pour full reset~~ | ~~🟠 Moyenne~~ | ✅ Résolu v1.9.2 : confirm="RESET" obligatoire |
 
 ---
 
-## 9. Comment lancer
+## 9. Contrats Métier des Resets (v1.9.2)
+
+### 9.1 Reset Perte Jour (`POST /risk/reset-daily-loss`)
+
+**Périmètre strict — ne touche qu'au risque journalier :**
+
+| Action | Détail |
+|--------|--------|
+| ✅ Remet `daily_loss_current` à 0.0 | Compteur de perte journalière remis à zéro |
+| ✅ Met à jour `daily_loss_reset_date` | Aujourd'hui |
+| ✅ Désactive kill switch SI "Perte journalière" | Seulement si `kill_switch_reason` contient "Perte journalière" |
+| ✅ Nettoie `kill_switch_triggered_at` | Seulement si le kill switch est désactivé |
+| ❌ NE touche PAS aux trades | Aucun trade supprimé |
+| ❌ NE touche PAS au capital | Le compte reste identique |
+| ❌ NE touche PAS au learning | Les learning_signal restent |
+| ❌ NE touche PAS aux runs | Les paper_run restent |
+| ❌ NE touche PAS aux tick_logs | Les tick_activity_log restent |
+| ❌ NE désactive PAS un kill switch manuel | Si raison != "Perte journalière", il reste actif |
+
+### 9.2 Full Reset (`POST /paper/account/reset`)
+
+**Purge totale — repart de zéro :**
+
+| Table | Action | Justification |
+|-------|--------|---------------|
+| `paper_trade` | 🗑️ Supprimé | Les trades sont liés à l'ancien compte |
+| `paper_account` | 🗑️ Supprimé + recréé | Le compte est recréé avec le nouveau capital |
+| `tick_activity_log` | 🗑️ Supprimé | Les ticks référencent l'ancien account_id, pollueraient le diagnostic |
+| `learning_signal` | 🗑️ Supprimé | Les trade_id deviennent orphelins, les patterns sont obsolètes |
+| `strategy_feedback` | 🗑️ Supprimé | Les suggestions sont basées sur des données mortes |
+| `paper_run` | 🗑️ Supprimé | Les campagnes sont liées à l'ancien état |
+| `risk_config` | 🔄 Réinitialisé | daily_loss=0, kill_switch=off, portfolio_value=nouveau capital |
+
+**Sécurité :**
+- Exige `confirm: "RESET"` dans le body de la requête
+- Refus 400 si absent ou incorrect
+- Retourne un `FullResetResponse` avec compteurs de purge détaillés
+
+**Refresh frontend :**
+- `tradeVersion` incrémenté → JournalPanel + DiagnosticPanel rafraîchis
+- `onResetComplete` propagé → RiskPanel rafraîchi
+- `lastTick` remis à null
+- Auto-mode arrêté
+
+---
+
+## 10. Comment lancer
 
 ```bash
 # Backend

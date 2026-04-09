@@ -2,6 +2,7 @@
 // Inclut le mode auto-tick : exécute des ticks à intervalle régulier automatiquement
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { PaperStatus, PaperTickResult, PaperTradeItem } from '../types';
+import type { FullResetResponse } from '../api/marketApi';
 import {
   getPaperStatus,
   paperTick,
@@ -33,7 +34,7 @@ interface UsePaperTradingReturn {
   stopAuto: () => void;
   refresh: () => void;
   activate: (capital?: number) => Promise<void>;
-  reset: (capital?: number) => Promise<void>;
+  reset: (capital?: number) => Promise<FullResetResponse | null>;
   manualTick: () => Promise<PaperTickResult | null>;
   closePosition: (reason?: string) => Promise<void>;
 }
@@ -107,7 +108,7 @@ export function usePaperTrading({
     }
   }, [fetchAll]);
 
-  const reset = useCallback(async (capital: number = 10000) => {
+  const reset = useCallback(async (capital: number = 10000): Promise<FullResetResponse | null> => {
     try {
       // Stop auto mode on reset
       setAutoMode(false);
@@ -116,11 +117,17 @@ export function usePaperTrading({
         clearInterval(autoIntervalRef.current);
         autoIntervalRef.current = null;
       }
-      await resetPaperAccount({ initial_capital: capital });
+      const result = await resetPaperAccount({ initial_capital: capital });
       setLastTick(null);
+      // Incrémenter tradeVersion pour forcer le refresh de JournalPanel,
+      // DiagnosticPanel et tous les panels reliés via refreshTrigger.
+      // Sans cela, ces panels conservent les données de l'ancien état.
+      setTradeVersion(prev => prev + 1);
       await fetchAll();
+      return result;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Erreur reset');
+      return null;
     }
   }, [fetchAll]);
 

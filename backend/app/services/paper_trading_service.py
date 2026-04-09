@@ -89,27 +89,51 @@ class PaperTradingService:
             logger.info(f"Compte paper créé avec capital={initial_capital}")
         return account
 
-    def reset_account(self, initial_capital: float = 10000.0) -> PaperAccount:
+    def reset_account(self, initial_capital: float = 10000.0) -> tuple["PaperAccount", dict]:
         """
-        Reset complet : supprime tous les trades, logs de ticks et remet le capital à zéro.
-        Capture le prix BTC actuel pour le calcul buy & hold.
-        Réinitialise aussi le RiskConfig (daily loss, kill switch, portfolio value)
-        pour éviter que les anciens états bloquent le nouveau compte.
+        FULL RESET — Hard reset total cohérent.
+
+        Purge toutes les données liées au paper trading :
+        - tick_activity_log (journal de ticks)
+        - paper_trade (trades papier)
+        - paper_account (compte)
+        - learning_signal (échantillons d'apprentissage)
+        - strategy_feedback (suggestions IA)
+        - paper_run (campagnes de validation)
+        - risk_config (daily loss, kill switch, portfolio value)
+
+        Retourne le nouveau compte + le dictionnaire des compteurs de purge.
+
+        Contrat métier : après full reset, aucun artefact de l'ancien
+        état ne doit subsister dans aucun panneau.
         """
         from app.models.tick_activity_log import TickActivityLog
         from app.models.risk_config import RiskConfig
+        from app.models.learning import LearningSignal, StrategyFeedback
+        from app.models.paper_run import PaperRun
 
-        # Supprimer les tick_activity_log pour éviter que les anciens logs
-        # (position_already_open accumulés) polluent le diagnostic du nouveau compte.
-        # Sans cela, SQLite réutilise le même account_id et le diagnostic
-        # voit des milliers d'anciens ticks "position_already_open".
-        self.db.query(TickActivityLog).delete()
-        self.db.query(PaperTrade).delete()
-        self.db.query(PaperAccount).delete()
+        purged = {}
+
+        # 1. Purge tick_activity_log — évite pollution diagnostic
+        purged["tick_activity_log"] = self.db.query(TickActivityLog).delete()
+
+        # 2. Purge learning_signal — les trade_ids deviennent orphelins
+        purged["learning_signal"] = self.db.query(LearningSignal).delete()
+
+        # 3. Purge strategy_feedback — suggestions obsolètes
+        purged["strategy_feedback"] = self.db.query(StrategyFeedback).delete()
+
+        # 4. Purge paper_run — campagnes mortes
+        purged["paper_run"] = self.db.query(PaperRun).delete()
+
+        # 5. Purge trades et comptes
+        purged["paper_trade"] = self.db.query(PaperTrade).delete()
+        purged["paper_account"] = self.db.query(PaperAccount).delete()
+
         self.db.commit()
 
-        # Réinitialiser le RiskConfig : daily loss, kill switch, portfolio value
-        # Si on ne fait pas ça, un kill switch déclenché par l'ancien compte
+        # 6. Reset RiskConfig : daily loss, kill switch, portfolio value
+        # Sans cela, un kill switch déclenché par l'ancien compte
         # continue de bloquer les trades du nouveau compte.
         risk_config = self.db.query(RiskConfig).first()
         if risk_config:
@@ -119,6 +143,7 @@ class PaperTradingService:
             risk_config.kill_switch_triggered_at = None
             risk_config.total_portfolio_value = initial_capital
             self.db.commit()
+        purged["risk_config_reset"] = 1 if risk_config else 0
 
         btc_price = self._get_current_price()
 
@@ -133,10 +158,10 @@ class PaperTradingService:
         self.db.commit()
         self.db.refresh(account)
         logger.info(
-            f"Compte paper réinitialisé : capital={initial_capital}, "
-            f"btc_price_start={btc_price}, risk_config remis à zéro"
+            f"🔥 FULL RESET : capital={initial_capital}, "
+            f"btc_price_start={btc_price}, purged={purged}"
         )
-        return account
+        return account, purged
 
     def get_open_position(self) -> Optional[PaperTrade]:
         """Retourne la position ouverte (s'il y en a une). Rétrocompatible."""
