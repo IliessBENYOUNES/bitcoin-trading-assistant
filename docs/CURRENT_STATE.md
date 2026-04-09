@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 9 avril 2026
-> **Version :** v1.9.5
+> **Version :** v1.9.6
 > **Branche :** `master`
-> **Dernier commit :** feat(stability): stabilisation globale moteur scalping — R:R fix, stale asymétrique, trailing recalibré, shorts rebalancés, StabilityAuditService
+> **Dernier commit :** fix(paper): correction bug critique double ouverture slot + stale exit + short rebalance
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.9.5** |
+| Version courante | **v1.9.6** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1345 tests**, tous passing ✅ |
+| Tests backend | **1356 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v1.9.5 livré** — Stabilisation globale moteur scalping |
+| Phase courante | **v1.9.6 livré** — Bug critique slot corrigé, stabilisation en cours |
 
 ### ⚠️ État de maturité honnête
 
@@ -72,7 +72,12 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
   - **StabilityAuditService** : nouveau service de diagnostic de stabilité — détection oscillation directionnelle, homogénéité des scores, R:R effectif, domination des sorties, verdict UNSTABLE/IMPROVING/STABLE.
   - **Learning stability** : 3 nouvelles suggestions (déséquilibre directionnel, R:R asymétrique, sortie dominante destructrice).
   - **Endpoint GET /audit/stability** : diagnostic de stabilité accessible via API.
-- 1345 tests backend, tsc clean
+- **[v1.9.6] Correction bug critique + stabilisation moteur** — Invariant slot garanti, pertes réduites
+  - **Bug critique double ouverture slot corrigé** : race condition TOCTOU fermée. Guard applicatif dans `_open_position()` + verrou HTTP dans endpoint tick. Impossible d'ouvrir 2 positions sur le même slot.
+  - **SL encore resserré 0.25%→0.20%** : R:R théorique 3:1. Perte max $6.25→$5.00.
+  - **Stale exit perte accéléré 8min→5min** : positions en perte sortent encore plus vite.
+  - **Short rebalancé** : min_score 30→25, exit threshold 25→30, min hold 60→45s.
+- 1356 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.
@@ -184,7 +189,7 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | test_journal_and_profiles.py | 84 |
 | test_diagnostic.py | 55 |
 | test_reality_gap.py | 48 |
-| **TOTAL** | **1223** ✅ |
+| **TOTAL** | **1356** ✅ |
 
 ---
 
@@ -243,6 +248,7 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | 9 | ~~JournalPanel/DiagnosticPanel non rafraîchis après reset~~ | ~~🔴 Haute~~ | ✅ Résolu v1.9.2 : tradeVersion incrémenté après reset → refresh propagé |
 | 10 | ~~RiskPanel non rafraîchi après full reset~~ | ~~🟠 Moyenne~~ | ✅ Résolu v1.9.2 : RiskPanel reçoit refreshTrigger |
 | 11 | ~~Pas de confirmation backend pour full reset~~ | ~~🟠 Moyenne~~ | ✅ Résolu v1.9.2 : confirm="RESET" obligatoire |
+| 12 | ~~Bug critique double ouverture du même slot~~ | ~~🔴 CRITIQUE~~ | ✅ Résolu v1.9.6 : guard applicatif dans _open_position() + verrou HTTP dans endpoint tick. 5 tests prouvant l'invariant. |
 
 ---
 

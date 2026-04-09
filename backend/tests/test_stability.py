@@ -16,6 +16,7 @@ from unittest.mock import patch, MagicMock
 from app.services.stability_audit_service import StabilityAuditService
 from app.services.trading_profile_service import PROFILE_PRESETS
 from app.services.learning_service import LearningService, SAFETY_BOUNDS
+from app.services.paper_trading_service import PaperTradingService
 from app.models.paper_account import PaperAccount, PaperTrade
 from app.models.learning import LearningSignal
 
@@ -78,11 +79,11 @@ def _make_account(db, initial_capital=10000):
 # ============================================================
 
 class TestScalpingParamsV195:
-    """Vérifier que le preset scalping a les bonnes valeurs v1.9.5."""
+    """Vérifier que le preset scalping a les bonnes valeurs v1.9.6 (mis à jour)."""
 
     def test_loss_cut_pct(self):
-        """SL resserré de 0.35% → 0.25%."""
-        assert PROFILE_PRESETS["scalping"].loss_cut_pct == 0.25
+        """SL resserré → 0.20%."""
+        assert PROFILE_PRESETS["scalping"].loss_cut_pct == 0.20
 
     def test_profit_take_pct(self):
         """TP élargi de 0.5% → 0.6%."""
@@ -109,30 +110,30 @@ class TestScalpingParamsV195:
         assert PROFILE_PRESETS["scalping"].min_score == 20
 
     def test_short_min_score(self):
-        """Short min score abaissé de 40 → 30."""
-        assert PROFILE_PRESETS["scalping"].short_min_score == 30
+        """Short min score → 25 (v1.9.6)."""
+        assert PROFILE_PRESETS["scalping"].short_min_score == 25
 
     def test_short_exit_score_threshold(self):
-        """Short exit threshold abaissé de 35 → 25."""
-        assert PROFILE_PRESETS["scalping"].short_exit_score_threshold == 25
+        """Short exit threshold → 30 (v1.9.6)."""
+        assert PROFILE_PRESETS["scalping"].short_exit_score_threshold == 30
 
     def test_short_min_hold_seconds(self):
-        """Short min hold réduit de 90 → 60."""
-        assert PROFILE_PRESETS["scalping"].short_min_hold_seconds == 60
+        """Short min hold → 45 (v1.9.6)."""
+        assert PROFILE_PRESETS["scalping"].short_min_hold_seconds == 45
 
     def test_momentum_fade_retention(self):
         """Momentum fade retention configuré à 0.55."""
         assert PROFILE_PRESETS["scalping"].momentum_fade_retention == 0.55
 
     def test_stale_negative_exit_minutes(self):
-        """Stale négatif = 8 min."""
-        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 8
+        """Stale négatif = 5 min (v1.9.6)."""
+        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 5
 
     def test_rr_ratio_theoretical(self):
-        """Ratio R:R théorique = TP/SL = 0.6/0.25 = 2.4."""
+        """Ratio R:R théorique = TP/SL = 0.6/0.20 = 3.0 (v1.9.6)."""
         p = PROFILE_PRESETS["scalping"]
         rr = p.profit_take_pct / p.loss_cut_pct
-        assert rr == pytest.approx(2.4, abs=0.01)
+        assert rr == pytest.approx(3.0, abs=0.01)
 
     def test_other_profiles_unchanged(self):
         """Les autres profils ne sont PAS impactés."""
@@ -437,7 +438,7 @@ class TestStaleNegativeExit:
     def test_param_exists(self):
         """Le paramètre stale_negative_exit_minutes existe."""
         assert hasattr(PROFILE_PRESETS["scalping"], "stale_negative_exit_minutes")
-        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 8
+        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 5
 
     def test_param_default_none_other_profiles(self):
         """Les autres profils n'ont pas ce paramètre (None)."""
@@ -702,3 +703,181 @@ class TestReversalCheck:
         assert result == "short"
 
 
+# ============================================================
+# TESTS v1.9.6 : INVARIANT SLOT UNIQUE + CORRECTIONS STABILITÉ
+# ============================================================
+
+
+class TestSlotInvariant:
+    """Tests prouvant l'impossibilité d'ouvrir 2 positions sur le même slot."""
+
+    def test_open_position_refuses_duplicate_slot(self, db_session):
+        """_open_position refuse d'ouvrir si le slot a déjà une position ouverte."""
+        account = _make_account(db_session)
+        account.max_open_positions = 3
+        db_session.commit()
+
+        pts = PaperTradingService(db_session)
+        now = datetime.now(timezone.utc)
+
+        # Ouvrir une première position sur le slot "scalping"
+        pos1 = pts._open_position(
+            account=account, price=70000, sl=69000, tp=71000,
+            size_usd=2500, reason="test1", score=72, direction="long",
+            now=now, slot="scalping",
+        )
+        assert pos1 is not None
+        assert pos1.slot == "scalping"
+        assert pos1.status == "open"
+
+        # Tenter d'ouvrir une deuxième position sur le MÊME slot
+        pos2 = pts._open_position(
+            account=account, price=70100, sl=69100, tp=71100,
+            size_usd=2500, reason="test2", score=71, direction="long",
+            now=now, slot="scalping",
+        )
+        # DOIT retourner None (invariant : 1 slot = 1 position max)
+        assert pos2 is None
+
+        # Vérifier qu'une seule position ouverte existe sur ce slot
+        open_on_slot = (
+            db_session.query(PaperTrade)
+            .filter(PaperTrade.status == "open", PaperTrade.slot == "scalping")
+            .all()
+        )
+        assert len(open_on_slot) == 1
+        assert open_on_slot[0].id == pos1.id
+
+    def test_open_position_allows_different_slots(self, db_session):
+        """_open_position autorise des positions ouvertes sur des slots DIFFÉRENTS."""
+        account = _make_account(db_session)
+        account.max_open_positions = 3
+        db_session.commit()
+
+        pts = PaperTradingService(db_session)
+        now = datetime.now(timezone.utc)
+
+        pos1 = pts._open_position(
+            account=account, price=70000, sl=69000, tp=71000,
+            size_usd=2500, reason="test1", score=72, direction="long",
+            now=now, slot="scalping",
+        )
+        pos2 = pts._open_position(
+            account=account, price=70000, sl=69000, tp=71000,
+            size_usd=2500, reason="test2", score=68, direction="long",
+            now=now, slot="aggressive",
+        )
+        assert pos1 is not None
+        assert pos2 is not None
+        assert pos1.slot == "scalping"
+        assert pos2.slot == "aggressive"
+
+    def test_open_position_no_slot_no_guard(self, db_session):
+        """Sans slot (mono-position), le guard ne bloque pas."""
+        account = _make_account(db_session)
+        pts = PaperTradingService(db_session)
+        now = datetime.now(timezone.utc)
+
+        pos1 = pts._open_position(
+            account=account, price=70000, sl=69000, tp=71000,
+            size_usd=2500, reason="test1", score=72, direction="long",
+            now=now, slot=None,
+        )
+        assert pos1 is not None
+
+    def test_open_position_slot_freed_after_close(self, db_session):
+        """Après fermeture d'une position, le slot est de nouveau libre."""
+        account = _make_account(db_session)
+        account.max_open_positions = 3
+        db_session.commit()
+
+        pts = PaperTradingService(db_session)
+        now = datetime.now(timezone.utc)
+
+        # Ouvrir
+        pos1 = pts._open_position(
+            account=account, price=70000, sl=69000, tp=71000,
+            size_usd=2500, reason="test1", score=72, direction="long",
+            now=now, slot="scalping",
+        )
+        assert pos1 is not None
+
+        # Fermer
+        pts._close_position(pos1, 70100, "test close", "closed_signal")
+
+        # Réouvrir le même slot → doit fonctionner
+        pos2 = pts._open_position(
+            account=account, price=70200, sl=69200, tp=71200,
+            size_usd=2500, reason="test2", score=71, direction="long",
+            now=now, slot="scalping",
+        )
+        assert pos2 is not None
+        assert pos2.id != pos1.id
+
+    def test_rapid_repeated_open_same_slot(self, db_session):
+        """Appels rapides répétés sur le même slot : un seul doit réussir."""
+        account = _make_account(db_session)
+        account.max_open_positions = 3
+        db_session.commit()
+
+        pts = PaperTradingService(db_session)
+        now = datetime.now(timezone.utc)
+
+        results = []
+        for i in range(5):
+            pos = pts._open_position(
+                account=account, price=70000 + i, sl=69000, tp=71000,
+                size_usd=2500, reason=f"rapid_test_{i}", score=72,
+                direction="long", now=now, slot="scalping",
+            )
+            results.append(pos)
+
+        # Seul le premier doit réussir
+        assert results[0] is not None
+        assert all(r is None for r in results[1:])
+
+        open_on_slot = (
+            db_session.query(PaperTrade)
+            .filter(PaperTrade.status == "open", PaperTrade.slot == "scalping")
+            .all()
+        )
+        assert len(open_on_slot) == 1
+
+
+class TestStaleExitV196:
+    """Tests pour le stale exit recalibré v1.9.6."""
+
+    def test_stale_negative_exit_minutes_reduced(self):
+        """Le stale_negative_exit_minutes est à 5 (au lieu de 8)."""
+        params = PROFILE_PRESETS["scalping"]
+        assert params.stale_negative_exit_minutes == 5
+
+    def test_sl_tighter_at_020(self):
+        """Le SL est à 0.20% pour limiter les grosses pertes."""
+        params = PROFILE_PRESETS["scalping"]
+        assert params.loss_cut_pct == 0.20
+
+    def test_rr_theoretical_3_to_1(self):
+        """Le R:R théorique est TP/SL = 0.6/0.20 = 3:1."""
+        params = PROFILE_PRESETS["scalping"]
+        rr = params.profit_take_pct / params.loss_cut_pct
+        assert rr == pytest.approx(3.0, abs=0.1)
+
+
+class TestShortRebalanceV196:
+    """Tests pour le rééquilibrage des shorts v1.9.6."""
+
+    def test_short_min_score_25(self):
+        """Short min score abaissé à 25 pour la convergence."""
+        params = PROFILE_PRESETS["scalping"]
+        assert params.short_min_score == 25
+
+    def test_short_exit_threshold_30(self):
+        """Short exit score threshold remonté à 30 pour laisser respirer."""
+        params = PROFILE_PRESETS["scalping"]
+        assert params.short_exit_score_threshold == 30
+
+    def test_short_min_hold_45(self):
+        """Short min hold à 45s pour compromis capture rapide."""
+        params = PROFILE_PRESETS["scalping"]
+        assert params.short_min_hold_seconds == 45

@@ -318,11 +318,11 @@ class TestScalpingRecalibration:
         assert p.max_leverage == 1.5
 
     def test_unchanged_params(self):
-        """Les paramètres scalping reflètent le recalibrage v1.9.5."""
+        """Les paramètres scalping reflètent le recalibrage v1.9.6."""
         p = PROFILE_PRESETS["scalping"]
-        # [v1.9.5] TP élargi, SL resserré pour meilleur R:R
-        assert p.profit_take_pct == 0.6    # [v1.9.5] was 0.5 → 0.6
-        assert p.loss_cut_pct == 0.25      # [v1.9.5] was 0.35 → 0.25
+        # [v1.9.6] TP conservé, SL encore resserré
+        assert p.profit_take_pct == 0.6    # inchangé
+        assert p.loss_cut_pct == 0.20      # [v1.9.6] was 0.25 → 0.20
         assert p.max_trades_per_day == 50
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"

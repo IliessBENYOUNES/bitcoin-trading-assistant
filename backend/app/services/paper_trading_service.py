@@ -928,6 +928,24 @@ class PaperTradingService:
                 slot=slot_name if is_multi else None,
             )
 
+            # [v1.9.6] Si _open_position retourne None, le slot est déjà occupé
+            # (race condition évitée par le guard anti-double ouverture).
+            if position is None:
+                _log_tick(action_taken="hold", btc_price=current_price,
+                          decision_score=score, decision_action=action,
+                          reason_no_trade="slot_already_occupied",
+                          reason_detail=f"Slot '{slot_name}' déjà occupé (anti-double)")
+                return PaperTickResult(
+                    action_taken="hold",
+                    detail=f"Slot '{slot_name}' déjà occupé (anti-double ouverture).",
+                    current_price=current_price,
+                    timestamp=now.isoformat(),
+                    decision_score=score,
+                    decision_action=action,
+                    profile_type=profile_name,
+                    non_trade_reason="slot_already_occupied",
+                )
+
             _log_tick(action_taken=f"opened_{direction}", btc_price=current_price,
                       decision_score=score, decision_action=action,
                       decision_confidence=confidence,
@@ -968,10 +986,39 @@ class PaperTradingService:
         leverage_reason: Optional[str] = None,
         profile_type: Optional[str] = None,
         slot: Optional[str] = None,
-    ) -> PaperTrade:
-        """Ouvre une position paper."""
+    ) -> Optional[PaperTrade]:
+        """
+        Ouvre une position paper.
+
+        [v1.9.6] Guard anti-double ouverture :
+        Avant d'insérer, re-vérifie qu'aucune position ouverte n'existe
+        déjà sur ce slot. Cela corrige la race condition TOCTOU où deux
+        ticks concurrents passaient la vérification dans _tick_single_slot()
+        avant que l'un n'ait committé sa position.
+        Retourne None si le slot est déjà occupé.
+        """
         if now is None:
             now = datetime.now(timezone.utc)
+
+        # [v1.9.6] INVARIANT CRITIQUE : 1 slot = 1 position ouverte max.
+        # Double-check atomique juste avant l'INSERT pour fermer la fenêtre
+        # de race condition entre le check dans _tick_single_slot() et ici.
+        if slot is not None:
+            existing = (
+                self.db.query(PaperTrade)
+                .filter(
+                    PaperTrade.account_id == account.id,
+                    PaperTrade.status == "open",
+                    PaperTrade.slot == slot,
+                )
+                .first()
+            )
+            if existing is not None:
+                logger.warning(
+                    f"⚠️ INVARIANT SLOT : position ouverte #{existing.id} déjà présente "
+                    f"sur slot '{slot}'. Ouverture refusée (anti-double)."
+                )
+                return None
 
         # [v1.7] En multi-slot, limiter le capital par slot
         max_pos = getattr(account, "max_open_positions", 1) or 1

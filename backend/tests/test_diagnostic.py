@@ -285,9 +285,9 @@ class TestScalpingProfile:
         assert p.min_score == 20           # [v1.9.5] recalibré 15→20
         assert p.cooldown_minutes == 2     # recalibré (was 1)
         assert p.max_trades_per_day == 50
-        # [v1.9.5] TP élargi, SL resserré pour meilleur R:R
-        assert p.profit_take_pct == 0.6    # [v1.9.5] 0.5→0.6
-        assert p.loss_cut_pct == 0.25      # [v1.9.5] 0.35→0.25
+        # [v1.9.6] TP conservé, SL encore resserré
+        assert p.profit_take_pct == 0.6    # inchangé
+        assert p.loss_cut_pct == 0.20      # [v1.9.6] 0.25→0.20
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
         assert p.buy_threshold == 25       # [v1.9.5] recalibré 20→25

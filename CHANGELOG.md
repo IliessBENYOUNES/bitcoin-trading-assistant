@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.6] - 2026-04-09
+
+### Fixed
+- **BUG CRITIQUE : Double ouverture du même slot** — Correction d'une race condition TOCTOU (Time-of-Check-Time-of-Use) qui permettait à deux requêtes `/paper/tick` concurrentes d'ouvrir chacune une position sur le même slot. Le bug se manifestait par deux trades id 237 et 238 tous deux ouverts sur le slot "scalping" simultanément.
+  - **Cause racine** : `_tick_single_slot()` vérifiait le slot libre, puis `_open_position()` insérait sans revérifier. Deux requêtes concurrentes passaient la vérification avant que l'une n'ait committé.
+  - **Guard applicatif** : `_open_position()` re-vérifie désormais l'absence de position ouverte sur le slot juste avant l'INSERT. Retourne `None` si le slot est occupé, avec log explicite.
+  - **Verrou HTTP** : Le endpoint `POST /paper/tick` est protégé par un `threading.Lock()`. Un seul tick s'exécute à la fois. Si un tick est déjà en cours, la requête retourne un résultat neutre "hold".
+  - **5 tests dédiés** : impossibilité d'ouvrir 2 positions sur le même slot, autorisation multi-slot légitime, slot libéré après fermeture, 5 appels rapides consécutifs.
+
+### Changed
+- **SL scalping encore resserré** : 0.25% → **0.20%** — Perte max réduite de $6.25 à $5.00 sur $2500. R:R théorique amélioré de 2.4:1 à **3:1**.
+- **Stale exit positions en perte accéléré** : 8 min → **5 min** — Les positions à PnL négatif sortent plus vite, réduit les grosses pertes par dérive.
+- **Short min score abaissé** : 30 → **25** — La 2-convergence des oscillateurs (v1.9.4) est le vrai filtre. Le min_score en complément n'a pas besoin d'être aussi haut.
+- **Short exit score threshold remonté** : 25 → **30** — Les shorts ont plus de temps avant fermeture par signal contraire. En marché haussier, un score de 25 est trop facilement atteint.
+- **Short min hold réduit** : 60s → **45s** — Compromis entre respiration et capture rapide du pullback.
+
+### Technical
+- 1356 tests backend, tous passants ✅ (11 nouveaux tests : 5 slot invariant, 3 stale exit v1.9.6, 3 short rebalance v1.9.6)
+- `tsc --noEmit` sans erreur ✅
+- Pas de changement frontend (corrections backend uniquement)
+
 ## [1.9.5] - 2026-04-09
 
 ### Added

@@ -89,39 +89,32 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         max_trades_per_day=50,
         cooldown_minutes=2,           # base cooldown, overridden par smart cooldown
         max_position_duration_hours=2,
-        # [v1.9.5] TP élargi de 0.5%→0.6% et SL resserré de 0.35%→0.25%.
-        # Le R:R effectif était de ~0.3:1 (gains $1-4 via trailing/momentum vs pertes $8.75 via SL).
-        # Nouveau R:R théorique : 0.6/0.25 = 2.4:1.
-        # Nouveau R:R effectif estimé : ≈1:1 (gains trailing ~$3-5 vs pertes SL ~$6.25).
-        # L'objectif est de RÉDUIRE les grosses pertes, pas d'augmenter les gains.
+        # [v1.9.6] TP/SL recalibrés pour un R:R effectif plus viable.
+        # TP 0.6% conservé — c'est le trailing/momentum qui capture les gains en pratique.
+        # SL resserré 0.25%→0.20% : les grosses pertes (-$9.26) détruisent le capital.
+        # Avec SL 0.20% sur $2500, la perte max passe de $6.25 à $5.00.
+        # R:R théorique 3:1 (TP 0.6% / SL 0.20%).
         profit_take_pct=0.6,
-        loss_cut_pct=0.25,
+        loss_cut_pct=0.20,
         loss_cut_score_threshold=5,
         leverage_enabled=True,
         max_leverage=1.5,
         # Analyse sur timeframe court (15m au lieu de 4h)
         analysis_timeframe="15m",
-        # [v1.9.5] Seuils de décision relevés : 20→25 buy, 15→20 sell.
-        # Le moteur ouvrait trop de longs médiocres (score 71 systématique).
-        # Des seuils plus hauts empêchent les longs faibles qui finissent en stale/SL.
+        # [v1.9.5] Seuils de décision relevés
         buy_threshold=25,
         sell_threshold=20,
-        # [v1.9.5] Sorties rapides — stale 15 min pour positions plates,
-        # MAIS positions en perte sortent plus vite (stale_negative_exit_minutes=8).
+        # [v1.9.6] Stale exit recalibré — les stale destructeurs venaient de positions
+        # en perte qui stagnaient 8 min, puis continuaient à baisser = grosses pertes.
+        # Maintenant : positions en perte → sortie après 5 min (au lieu de 8).
+        # Positions plates/positives → gardent 15 min (inchangé).
         momentum_fade_enabled=True,
         stale_exit_minutes=15,
-        stale_negative_exit_minutes=8,  # [v1.9.5] positions en perte → sortie plus rapide
-        # [v1.9.5] Trailing stop recalibré pour éviter les activations sur micro-peaks.
-        # Activation relevée de 0.08→0.15% : ne s'active que quand le trade a un vrai gain.
-        # Trailing resserré de 0.12→0.10% : une fois activé, protège mieux les gains.
-        # Avant : activait à 0.08% → trade #208 a eu un peak de 0.093% → trailing activé →
-        # position retourne à -0.042% → perte. Avec 0.15%, ce trade n'aurait pas activé.
+        stale_negative_exit_minutes=5,  # [v1.9.6] 8→5 : les pertes stagnantes sortent plus vite
+        # [v1.9.5] Trailing stop
         trailing_stop_activation_pct=0.15,
         trailing_stop_pct=0.10,
-        # [v1.9.5] Momentum fade moins agressif : rétention 55% au lieu de 40%.
-        # Avant : sortait quand le PnL tombait sous 40% du pic (perdu 60% des gains).
-        # Maintenant : sort quand le PnL tombe sous 55% du pic (perdu 45% des gains).
-        # Cela laisse les trades qui oscillent continuer plutôt que prendre $1.
+        # [v1.9.5] Momentum fade rétention
         momentum_fade_retention=0.55,
         # Smart cooldown
         smart_cooldown_enabled=True,
@@ -131,20 +124,17 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         min_hold_seconds=30,
         # Seuil économique
         min_economic_pnl_pct=0.15,
-        # [v1.9.5] Short rebalancé — la v1.9.4 avait sur-corrigé :
-        # short_min_score=40 + 2-convergence = quasi aucun short en marché haussier.
-        # Résultat = 100% longs, une seule direction = pas de diversification.
-        # La règle des 2 oscillateurs convergents (v1.9.4) est suffisante comme filtre.
-        # Le score minimum n'a pas besoin d'être aussi haut en complément.
-        short_min_score=30,           # [v1.9.5] 40→30 (2-convergence suffit comme filtre)
-        # [v1.9.5] Seuil de signal contraire short rebalancé : 35→25.
-        # 35 était trop haut (en haussier, score >35 est quasi-permanent → shorts
-        # ne pouvaient jamais se fermer sur signal). 25 est un compromis :
-        # pas aussi bas que l'ancien 10 (qui tuait les shorts), pas aussi haut que 35.
-        short_exit_score_threshold=25, # [v1.9.5] 35→25 (compromis entre 10 et 35)
-        # [v1.9.5] Min hold short réduit de 90→60s.
-        # 90s empêchait les shorts de capter les courts pullbacks.
-        short_min_hold_seconds=60,     # [v1.9.5] 90→60 (pullbacks rapides à capter)
+        # [v1.9.6] Short rebalancé — convergence vers l'équilibre.
+        # Le problème fondamental était l'oscillation :
+        # - v1.9.3 : trop de shorts (min_score=25, exit=20) → pertes short
+        # - v1.9.4 : trop peu de shorts (min_score=40, exit=35) → mono-long
+        # - v1.9.5 : shorts partiellement revenus (min_score=30, exit=25)
+        # - Dernier run : quasi mono-long de nouveau
+        # Solution : la 2-convergence (v1.9.4) est le vrai filtre qualité.
+        # Le min_score doit rester modéré car il s'applique EN PLUS de la convergence.
+        short_min_score=25,           # [v1.9.6] 30→25 : la 2-convergence filtre suffisamment
+        short_exit_score_threshold=30, # [v1.9.6] 25→30 : les shorts ont plus de temps avant fermeture
+        short_min_hold_seconds=45,     # [v1.9.6] 60→45 : compromis entre respiration et capture rapide
     ),
 }
 

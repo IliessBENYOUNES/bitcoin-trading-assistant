@@ -20,6 +20,7 @@ Endpoints pour la simulation de trading en temps réel :
 - GET  /paper/leverage-analysis — [v1.6] Analyse levier
 """
 
+import threading
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
@@ -54,6 +55,13 @@ from app.schemas.diagnostic import (
 )
 
 router = APIRouter(prefix="/paper", tags=["Paper Trading"])
+
+# [v1.9.6] Verrou global pour empêcher les ticks concurrents.
+# La cause racine du bug de double ouverture de slot est une race condition
+# TOCTOU : deux requêtes /paper/tick concurrentes vérifient toutes les deux
+# qu'un slot est libre, puis ouvrent chacune une position.
+# Ce verrou garantit qu'un seul tick s'exécute à la fois.
+_tick_lock = threading.Lock()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -152,9 +160,28 @@ def get_status(db: Session = Depends(get_db)):
 
 @router.post("/tick", response_model=PaperTickResult)
 def manual_tick(db: Session = Depends(get_db)):
-    """Exécute un tick manuellement (utile pour debug/test)."""
-    service = PaperTradingService(db)
-    return service.tick()
+    """
+    Exécute un tick manuellement (utile pour debug/test).
+
+    [v1.9.6] Protégé par un verrou : un seul tick à la fois.
+    Cela empêche la race condition de double ouverture de slot.
+    """
+    acquired = _tick_lock.acquire(blocking=False)
+    if not acquired:
+        # Un autre tick est déjà en cours — retourner un résultat neutre
+        from datetime import datetime, timezone
+        return PaperTickResult(
+            action_taken="hold",
+            detail="Un tick est déjà en cours d'exécution. Réessayez.",
+            current_price=0.0,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            non_trade_reason="tick_in_progress",
+        )
+    try:
+        service = PaperTradingService(db)
+        return service.tick()
+    finally:
+        _tick_lock.release()
 
 
 @router.get("/trades", response_model=PaperTradeListResponse)

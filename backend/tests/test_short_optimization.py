@@ -46,9 +46,9 @@ class TestShortExitScoreThreshold:
         )
 
     def test_short_exit_threshold_is_35(self):
-        """[v1.9.5] Le seuil est configuré à 25 (compromis entre 10 et 35)."""
+        """[v1.9.6] Le seuil est configuré à 30 (compromis entre 10 et 35)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_exit_score_threshold == 25
+        assert p.short_exit_score_threshold == 30
 
     def test_conservative_has_no_short_exit_threshold(self):
         """Le profil conservative n'a pas besoin de ce paramètre."""
@@ -93,15 +93,15 @@ class TestShortMinScore:
         assert p.short_min_score > 0
 
     def test_short_min_score_value(self):
-        """[v1.9.5] Le short_min_score est configuré à 30 (la 2-convergence suffit comme filtre)."""
+        """[v1.9.6] Le short_min_score est configuré à 25 (la 2-convergence suffit comme filtre)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_score == 30
+        assert p.short_min_score == 25
 
     def test_short_min_score_filters_weak_setups(self):
-        """Un score abs de 25 < short_min_score de 30 → short rejeté."""
+        """Un score abs de 20 < short_min_score de 25 → short rejeté."""
         p = PROFILE_PRESETS["scalping"]
-        assert abs(25) < p.short_min_score
-        assert abs(35) >= p.short_min_score
+        assert abs(20) < p.short_min_score
+        assert abs(30) >= p.short_min_score
 
 
 # ================================================================
@@ -128,9 +128,9 @@ class TestShortMinHoldSeconds:
         )
 
     def test_short_min_hold_is_90(self):
-        """[v1.9.5] Le short_min_hold_seconds est 60 (réduit de 90 pour capter les pullbacks)."""
+        """[v1.9.6] Le short_min_hold_seconds est 45 (compromis entre respiration et capture rapide)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_hold_seconds == 60
+        assert p.short_min_hold_seconds == 45
 
 
 # ================================================================
@@ -536,17 +536,17 @@ class TestPaperTradingShortExit:
     def test_short_min_hold_applies(self):
         """Le short_min_hold_seconds s'applique aux shorts."""
         p = PROFILE_PRESETS["scalping"]
-        # Un short de 45 secondes (< 60) est trop jeune
-        elapsed = 45
+        # Un short de 30 secondes (< 45) est trop jeune
+        elapsed = 30
         min_hold = p.short_min_hold_seconds or 0
-        assert elapsed < min_hold, "Un short de 45s < min_hold 60s → trop jeune"
+        assert elapsed < min_hold, "Un short de 30s < min_hold 45s → trop jeune"
 
     def test_short_allowed_after_min_hold(self):
         """Le short peut être fermé après le min_hold."""
         p = PROFILE_PRESETS["scalping"]
         elapsed = 120
         min_hold = p.short_min_hold_seconds or 0
-        assert elapsed >= min_hold, "Un short de 120s >= min_hold 90s → peut être fermé"
+        assert elapsed >= min_hold, "Un short de 120s >= min_hold 45s → peut être fermé"
 
 
 # ================================================================
@@ -605,9 +605,9 @@ class TestScalpingPresetNonRegression:
         assert p.profit_take_pct == 0.6
 
     def test_scalping_sl_pct(self):
-        """[v1.9.5] Le SL scalping est resserré à 0.25%."""
+        """[v1.9.6] Le SL scalping est resserré à 0.20%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.loss_cut_pct == 0.25
+        assert p.loss_cut_pct == 0.20
 
     def test_scalping_min_hold(self):
         """Le min_hold général est inchangé (30s)."""
@@ -724,13 +724,13 @@ class TestReversalSelectivity:
         assert result is None, "tech_score seul ne suffit pas"
 
     def test_short_min_score_rejects_weak(self):
-        """[v1.9.5] Le short_min_score à 30 rejette les shorts avec abs(score) < 30."""
+        """[v1.9.6] Le short_min_score à 25 rejette les shorts avec abs(score) < 25."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_score == 30
-        # Score de 25 → rejeté
-        assert abs(25) < p.short_min_score
-        # Score de 35 → accepté
-        assert abs(35) >= p.short_min_score
+        assert p.short_min_score == 25
+        # Score de 20 → rejeté
+        assert abs(20) < p.short_min_score
+        # Score de 30 → accepté
+        assert abs(30) >= p.short_min_score
 
 
 # ================================================================
@@ -832,29 +832,29 @@ class TestSignalContraireProtection:
     """Tests pour la protection des shorts contre la sortie signal contraire."""
 
     def test_short_exit_threshold_35(self):
-        """[v1.9.5] Le seuil de sortie signal contraire est à 25 (compromis)."""
+        """[v1.9.6] Le seuil de sortie signal contraire est à 30 (compromis)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_exit_score_threshold == 25
+        assert p.short_exit_score_threshold == 30
 
     def test_short_survives_moderate_bullish(self):
-        """Un short ne se ferme pas sur un score bullish de 20 (< 25)."""
+        """Un short ne se ferme pas sur un score bullish de 25 (< 30)."""
         p = PROFILE_PRESETS["scalping"]
-        score = 20
+        score = 25
         assert score < p.short_exit_score_threshold, (
-            "Score 20 doit être sous le seuil 25 → le short survit"
+            "Score 25 doit être sous le seuil 30 → le short survit"
         )
 
     def test_short_closes_on_strong_bullish(self):
-        """Un short se ferme sur un score bullish de 30 (>= 25)."""
+        """Un short se ferme sur un score bullish de 35 (>= 30)."""
         p = PROFILE_PRESETS["scalping"]
-        score = 30
+        score = 35
         assert score >= p.short_exit_score_threshold, (
-            "Score 30 doit être au-dessus du seuil 25 → le short est fermé"
+            "Score 35 doit être au-dessus du seuil 30 → le short est fermé"
         )
 
-    def test_short_min_hold_90s(self):
-        """[v1.9.5] Le min hold short est 60s (plus que le 30s général)."""
+    def test_short_min_hold_45s(self):
+        """[v1.9.6] Le min hold short est 45s (plus que le 30s général)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_hold_seconds == 60
+        assert p.short_min_hold_seconds == 45
         assert p.short_min_hold_seconds > p.min_hold_seconds
 
