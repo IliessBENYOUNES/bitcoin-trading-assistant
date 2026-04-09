@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.3] - 2026-04-09
+
+### Added
+- **Short Optimization — Réduction des trades short sans valeur économique**
+  - **Short exit score threshold** (`short_exit_score_threshold=20`): Le moteur n'abat plus un short dès que le score redevient légèrement positif. Il exige un vrai retournement bullish (score ≥ 20) avant de fermer par signal contraire. Réduit la dominance de la sortie "Signal contraire : acheter".
+  - **Short min score** (`short_min_score=25`): Filtre économique des shorts. Un short mean-reversion ne s'ouvre que si le score est suffisamment discriminant. Empêche les shorts à score 69-71 qui finissent en poussière.
+  - **Short min hold** (`short_min_hold_seconds=60`): Durée minimale spécifique aux shorts (60s vs 30s pour les longs). Les shorts ont besoin de plus de temps pour capturer un retracement.
+  - **Convergence boost**: Boost non-linéaire du score composite quand ≥75% des indicateurs convergent. Compression quand les signaux sont divisés. Casse l'homogénéité des scores autour de 69-71.
+  - **Run Value Audit Service** (`RunValueAuditService`): Audit complet de la valeur économique par trade — useful/insignificant/churn, PnL buckets, signal contraire audit, short economics.
+  - **Endpoint `/audit/run-value`**: Diagnostic économique du run via GET avec cost_preset paramétrable.
+  - **Learning Layer v2** : 3 nouvelles suggestions automatiques pour les shorts (short_min_score, short_exit_score_threshold, short_min_hold_seconds).
+  - **Dataset stats short**: `short_trades_useful`, `short_trades_insignificant`, `short_trades_churn`, `pct_short_economically_useful`.
+  - **Safety bounds**: Bornes pour les 3 nouveaux paramètres (short_min_score, short_exit_score_threshold, short_min_hold_seconds).
+  - **Frontend**: Type `RunValueAuditResponse` + fonction `getRunValueAudit()` dans marketApi.ts.
+  - **50 nouveaux tests** : short exit threshold, short min score, short min hold, convergence boost, run value audit service, endpoint, learning suggestions short, usefulness classification, non-regression scalping preset.
+
+### Changed
+- **Signal contraire shorts**: Le seuil de sortie est passé de fixe 10 à configurable `short_exit_score_threshold` (défaut 20 pour scalping). Les shorts sous le seuil continuent de vivre.
+- **Score composite**: Ajout du convergence boost et de la compression divisée. Les scores ne stagnent plus autour de 69-71 quand les indicateurs convergent fortement.
+- **Mean reversion filter**: Les shorts scalping mean-reversion sont maintenant soumis à `short_min_score` avant ouverture. Les shorts à score faible sont rejetés.
+- **Min hold direction-aware**: Le paper trading utilise `short_min_hold_seconds` pour les shorts au lieu du `min_hold_seconds` général.
+
+### Technical
+- 1273 tests backend (1223 existants + 50 nouveaux), tous passing ✅
+- `tsc --noEmit` sans erreur ✅
+- Aucune donnée existante supprimée ni format de données changé
+- Rétrocompatible : les profils non-scalping ne sont pas affectés
+
 ## [1.9.2] - 2026-04-09
 
 ### Fixed

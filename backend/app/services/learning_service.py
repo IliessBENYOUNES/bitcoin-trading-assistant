@@ -48,6 +48,9 @@ SAFETY_BOUNDS = {
     "profit_take_pct": (0.1, 5.0),
     "loss_cut_pct": (0.1, 5.0),
     "min_hold_seconds": (0, 120),  # 0 à 2 minutes max
+    "short_min_score": (0, 50),    # [v1.9.3] score min pour ouvrir un short
+    "short_exit_score_threshold": (5, 40),  # [v1.9.3] seuil signal contraire short
+    "short_min_hold_seconds": (0, 180),     # [v1.9.3] min hold spécifique short (3 min max)
 }
 
 # Nombre minimum d'échantillons pour qu'un pattern soit significatif
@@ -245,6 +248,21 @@ class LearningService:
 
         pct_useful = round(useful_count / total * 100, 1) if total > 0 else 0
 
+        # [v1.9.3] Stats short spécifiques par catégorie d'utilité
+        short_useful = self.db.query(func.count(LearningSignal.id)).filter(
+            LearningSignal.direction == "short",
+            LearningSignal.usefulness_category == "useful",
+        ).scalar() or 0
+        short_insignificant = self.db.query(func.count(LearningSignal.id)).filter(
+            LearningSignal.direction == "short",
+            LearningSignal.usefulness_category == "insignificant",
+        ).scalar() or 0
+        short_churn = self.db.query(func.count(LearningSignal.id)).filter(
+            LearningSignal.direction == "short",
+            LearningSignal.usefulness_category == "churn",
+        ).scalar() or 0
+        pct_short_useful = round(short_useful / shorts * 100, 1) if shorts > 0 else 0
+
         # Seuil économique minimum
         min_move = 0.0
         try:
@@ -274,6 +292,10 @@ class LearningService:
             trades_churn=churn_count,
             pct_economically_useful=pct_useful,
             min_economic_move_pct=round(min_move, 3),
+            short_trades_useful=short_useful,
+            short_trades_insignificant=short_insignificant,
+            short_trades_churn=short_churn,
+            pct_short_economically_useful=pct_short_useful,
             oldest_sample=oldest.isoformat() if oldest else None,
             newest_sample=newest.isoformat() if newest else None,
         )
@@ -588,6 +610,93 @@ class LearningService:
                         profile_type=profile_type,
                         version=version,
                     ))
+
+        # Suggestion 7 : [v1.9.3] Trop de shorts insignifiants → relever short_min_score
+        short_samples = [s for s in samples if s.direction == "short"]
+        if len(short_samples) >= 5:
+            short_insignif = [
+                s for s in short_samples
+                if s.usefulness_category in ("insignificant", "churn")
+            ]
+            short_insignif_pct = len(short_insignif) / len(short_samples) * 100
+            if short_insignif_pct > 50:
+                current_val = getattr(params, "short_min_score", 0) or 0
+                suggested = min(current_val + 5, 50)
+                avg_net = sum(
+                    s.pnl_net_estimated for s in short_insignif
+                    if s.pnl_net_estimated is not None
+                ) / len(short_insignif) if short_insignif else 0
+                suggestions.append(self._create_feedback(
+                    parameter_name="short_min_score",
+                    original_value=current_val,
+                    suggested_value=suggested,
+                    reason=(
+                        f"{short_insignif_pct:.0f}% des shorts sont insignifiants/churn "
+                        f"({len(short_insignif)}/{len(short_samples)}) avec PnL net moyen {avg_net:.2f} "
+                        f"→ relever le seuil de score minimum pour les shorts"
+                    ),
+                    sample_size=len(short_insignif),
+                    win_rate_observed=0,
+                    avg_pnl_observed=avg_net,
+                    profile_type=profile_type,
+                    version=version,
+                ))
+
+        # Suggestion 8 : [v1.9.3] Shorts trop courts → allonger short_min_hold
+        if len(short_samples) >= 5:
+            short_fast = [
+                s for s in short_samples
+                if s.duration_minutes is not None and s.duration_minutes < 2
+            ]
+            if len(short_fast) >= 3:
+                fast_net = sum(
+                    s.pnl_net_estimated for s in short_fast
+                    if s.pnl_net_estimated is not None
+                ) / len(short_fast) if short_fast else 0
+                if fast_net < 0:
+                    current_val = getattr(params, "short_min_hold_seconds", 0) or 0
+                    suggestions.append(self._create_feedback(
+                        parameter_name="short_min_hold_seconds",
+                        original_value=current_val,
+                        suggested_value=min(current_val + 30, SAFETY_BOUNDS["min_hold_seconds"][1]),
+                        reason=(
+                            f"{len(short_fast)} shorts durent < 2 min avec PnL net moyen {fast_net:.2f} "
+                            f"→ allonger le min_hold spécifique aux shorts"
+                        ),
+                        sample_size=len(short_fast),
+                        win_rate_observed=sum(1 for s in short_fast if s.was_profitable) / len(short_fast) * 100,
+                        avg_pnl_observed=fast_net,
+                        profile_type=profile_type,
+                        version=version,
+                    ))
+
+        # Suggestion 9 : [v1.9.3] Signal contraire trop dominant sur shorts
+        short_signal_exits = [
+            s for s in short_samples if s.exit_type == "closed_signal"
+        ]
+        if len(short_signal_exits) >= 3 and len(short_samples) >= 5:
+            signal_pct = len(short_signal_exits) / len(short_samples) * 100
+            if signal_pct > 50:
+                signal_net = sum(
+                    s.pnl_net_estimated for s in short_signal_exits
+                    if s.pnl_net_estimated is not None
+                ) / len(short_signal_exits) if short_signal_exits else 0
+                current_th = getattr(params, "short_exit_score_threshold", 10) or 10
+                suggestions.append(self._create_feedback(
+                    parameter_name="short_exit_score_threshold",
+                    original_value=current_th,
+                    suggested_value=min(current_th + 5, 40),
+                    reason=(
+                        f"{signal_pct:.0f}% des shorts fermés par signal contraire "
+                        f"({len(short_signal_exits)}/{len(short_samples)}) avec PnL net moyen {signal_net:.2f} "
+                        f"→ relever le seuil pour que le moteur exige un vrai retournement"
+                    ),
+                    sample_size=len(short_signal_exits),
+                    win_rate_observed=sum(1 for s in short_signal_exits if s.was_profitable) / len(short_signal_exits) * 100,
+                    avg_pnl_observed=signal_net,
+                    profile_type=profile_type,
+                    version=version,
+                ))
 
         # Sauvegarder les suggestions en mode shadow
         for fb in suggestions:

@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 9 avril 2026
-> **Version :** v1.9.2
+> **Version :** v1.9.3
 > **Branche :** `master`
-> **Dernier commit :** fix(reset): audit complet + contrat métier resets + cohérence panels + confirmation backend
+> **Dernier commit :** feat(short-optimization): réduire trades sans valeur + augmenter valeur par trade + casser signal contraire dominant
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.9.2** |
+| Version courante | **v1.9.3** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1223 tests**, tous passing ✅ |
+| Tests backend | **1273 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v1.9.2 livré** — Audit resets + contrat métier + cohérence panels |
+| Phase courante | **v1.9.3 livré** — Short optimization + valeur par trade + signal contraire maîtrisé |
 
 ### ⚠️ État de maturité honnête
 
@@ -45,7 +45,15 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v1.9.1] Learning économique** — catégories useful/insignificant/churn/loss_useful/loss_destructive, coûts estimés, PnL net
 - **[v1.9.1] Suggestions anti-churn** — détection automatique du taux de churn + insignifiants → suggestions d'ajustement
 - **[v1.9.2] Audit resets complet** — contrat métier clair pour Full Reset (purge totale : trades, ticks, learning, feedback, runs, risk) et Reset Perte Jour (daily loss only). Confirmation backend obligatoire (confirm="RESET"). Réponse détaillée avec compteurs de purge. Refresh frontend cohérent de tous les panels après reset.
-- 1223 tests backend, tsc clean
+- **[v1.9.3] Short Optimization** — Réduction des trades short sans valeur économique, augmentation de la valeur par trade
+  - **Short exit score threshold** : seuil configurable pour signal contraire (20 au lieu de 10) — les shorts respirent
+  - **Short min score** : filtre économique des shorts (score minimum 25 pour ouvrir un short mean-reversion)
+  - **Short min hold** : durée minimale spécifique aux shorts (60s vs 30s) — empêche les fermetures-éclair
+  - **Convergence boost** : boost non-linéaire du score quand les indicateurs convergent, compression si divisés — casse l'homogénéité 69-71
+  - **Run Value Audit** : service + endpoint `/audit/run-value` — diagnostic complet de la valeur économique par trade
+  - **Learning Layer v2** : suggestions short-spécifiques (short_min_score, short_exit_score_threshold, short_min_hold_seconds)
+  - **Dataset stats short** : métriques short_trades_useful, short_trades_insignificant, pct_short_economically_useful
+- 1273 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.

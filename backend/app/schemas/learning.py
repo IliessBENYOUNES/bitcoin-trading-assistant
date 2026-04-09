@@ -80,6 +80,11 @@ class LearningDatasetStats(BaseModel):
     trades_churn: int = 0
     pct_economically_useful: float = 0.0
     min_economic_move_pct: float = 0.0  # Seuil calculé du cost model
+    # [v1.9.3] Stats short spécifiques
+    short_trades_useful: int = 0
+    short_trades_insignificant: int = 0
+    short_trades_churn: int = 0
+    pct_short_economically_useful: float = 0.0
     # Couverture
     oldest_sample: Optional[str] = None
     newest_sample: Optional[str] = None

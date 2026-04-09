@@ -123,6 +123,19 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # Seuil économique : un trade doit capturer au moins ~0.15% pour survivre
         # au cost model realistic après leverage. Utilisé pour le learning.
         min_economic_pnl_pct=0.15,
+        # [v1.9.3] Filtrage économique des shorts
+        # Score minimum pour ouvrir un short (les shorts mean-reversion doivent
+        # avoir un setup suffisamment fort pour justifier le risque contrarian).
+        # Valeur 25 = filtre les shorts avec score trop faible (zone 69-71 non discriminée)
+        short_min_score=25,
+        # [v1.9.3] Seuil relevé pour fermer un short par signal contraire.
+        # Avant : le moteur fermait dès score >= 10 (trop sensible).
+        # Maintenant : exige score >= 20 pour un vrai retournement bullish
+        # avant de tuer le short. Cela laisse le short respirer.
+        short_exit_score_threshold=20,
+        # [v1.9.3] Min hold spécifique aux shorts : 60s au lieu de 30s
+        # Les shorts ont besoin de plus de temps pour capturer un retracement.
+        short_min_hold_seconds=60,
     ),
 }
 

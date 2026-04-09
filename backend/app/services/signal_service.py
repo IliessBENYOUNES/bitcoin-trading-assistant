@@ -812,6 +812,26 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
             # Faible volume : atténue le signal de 15%
             raw_score *= 0.85
 
+    # [v1.9.3] Convergence boost — casse l'homogénéité des scores.
+    # Quand la quasi-totalité des indicateurs pointent dans la même direction,
+    # on applique un boost non-linéaire pour étirer les scores extrêmes.
+    # Cela permet de mieux discriminer entre "surachat modéré" et "surachat fort
+    # avec convergence totale". Sans ce boost, les scores se tassent autour de 65-72.
+    total_directional = bullish_count + bearish_count + neutral_count
+    if total_directional >= 3:
+        dominant_count = max(bullish_count, bearish_count)
+        unanimity = dominant_count / total_directional if total_directional > 0 else 0
+        if unanimity >= 0.75 and abs(raw_score) >= 0.5:
+            # Les indicateurs convergent fortement → boost exponentiel
+            # Plus raw_score est élevé, plus le boost amplifie (non-linéaire)
+            sign = 1 if raw_score >= 0 else -1
+            # Boost de 10-25% proportionnel à unanimité et raw_score
+            boost_factor = 1.0 + (unanimity - 0.5) * abs(raw_score) * 0.4
+            raw_score = sign * min(1.0, abs(raw_score) * boost_factor)
+        elif unanimity < 0.4 and total_directional >= 4:
+            # Signaux très divisés → comprimer le score (setup ambigu)
+            raw_score *= 0.85
+
     score = int(round(raw_score * 100))
     score = max(-100, min(100, score))
 

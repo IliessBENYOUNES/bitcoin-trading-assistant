@@ -51,7 +51,8 @@
 │  ├── TruthAudit (audit métriques)         ✅ Livré (v1.8.3)         │
 │  ├── V2Gate (gate formelle v2.0)          ✅ Livré (v1.8.4)         │
 │  ├── SmartCooldown + Learning Layer       ✅ Livré (v1.9.0)         │
-│  └── Anti-micro-PnL + Valeur économique   ✅ Livré (v1.9.1)         │
+│  ├── Anti-micro-PnL + Valeur économique   ✅ Livré (v1.9.1)         │
+│  └── Short Optimization + Valeur/trade    ✅ Livré (v1.9.3)         │
 │                                                                      │
 │  ÉTAPE 3 — INFINI v2 (v2.0+) ⛔ BLOQUÉ PAR 2b                     │
 │  Assistant autonome (sous contrôle humain)                           │

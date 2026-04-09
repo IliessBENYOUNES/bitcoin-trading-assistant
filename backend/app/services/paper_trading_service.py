@@ -531,7 +531,13 @@ class PaperTradingService:
                 # Si la position est trop jeune, on ne ferme PAS sur signal contraire.
                 # SL/TP/expiration/trailing restent actifs normalement.
                 # Cela empêche les fermetures-éclair qui churnent à 0.00$.
+                # [v1.9.3] Short-specific min_hold : les shorts peuvent avoir un
+                # min_hold plus long pour capturer le retracement.
                 min_hold = getattr(profile_params, "min_hold_seconds", None) if profile_params else None
+                if open_pos.direction == "short" and profile_params:
+                    short_min_hold = getattr(profile_params, "short_min_hold_seconds", None)
+                    if short_min_hold is not None:
+                        min_hold = short_min_hold
                 entry_ts = _ensure_aware(open_pos.entry_ts)
                 elapsed_seconds = (now - entry_ts).total_seconds()
                 trade_too_young = min_hold is not None and elapsed_seconds < min_hold
@@ -552,12 +558,21 @@ class PaperTradingService:
                             signal_reason = f"Signal nettement contraire : attendre (score={score})"
 
                 elif open_pos.direction == "short":
+                    # [v1.9.3] Seuil configurable pour fermer un short par signal contraire.
+                    # Le moteur ne tue plus un short dès que le signal principal redevient
+                    # légèrement bullish. Il exige un vrai retournement (score >= threshold).
+                    short_exit_th = 10  # défaut historique
+                    if profile_params:
+                        short_exit_th = getattr(profile_params, "short_exit_score_threshold", None) or 10
                     if action == "acheter" and not trade_too_young:
-                        close_signal = True
-                        signal_reason = f"Signal contraire : acheter (score={score})"
+                        if score >= short_exit_th:
+                            close_signal = True
+                            signal_reason = f"Signal contraire : acheter (score={score}, seuil={short_exit_th})"
+                        # Si le score est positif mais sous le seuil, le short respire encore
                     elif action == "attendre" and score >= 0 and not trade_too_young:
                         # [v1.9.1] Même logique adoucie pour les shorts
-                        if score >= 10:
+                        # [v1.9.3] Utilise le seuil configurable au lieu du fixe 10
+                        if score >= max(short_exit_th, 10):
                             close_signal = True
                             signal_reason = f"Signal nettement contraire : attendre (score={score})"
 
@@ -663,12 +678,31 @@ class PaperTradingService:
                 if reversal_dir:
                     new_action = "acheter" if reversal_dir == "long" else "vendre"
                     if new_action != action:
-                        logger.info(
-                            f"⚡ Scalping mean reversion: {action}→{new_action} "
-                            f"(oscillateurs → {reversal_dir})"
-                        )
-                        action = new_action
-                        scalping_reversal = True
+                        # [v1.9.3] Filtre économique pour les shorts mean reversion.
+                        # Un short ne doit être ouvert que si le score est suffisamment
+                        # discriminant. Les shorts à score trop faible produisent des
+                        # trades insignifiants ou du churn.
+                        short_min = getattr(profile_params, "short_min_score", None) or 0
+                        if reversal_dir == "short" and short_min > 0:
+                            if abs(score) < short_min:
+                                logger.info(
+                                    f"⚡ Short rejeté (score {abs(score)} < short_min_score {short_min})"
+                                )
+                                # On ne fait pas le reversal, on garde l'action originale
+                            else:
+                                logger.info(
+                                    f"⚡ Scalping mean reversion: {action}→{new_action} "
+                                    f"(oscillateurs → {reversal_dir}, score={score})"
+                                )
+                                action = new_action
+                                scalping_reversal = True
+                        else:
+                            logger.info(
+                                f"⚡ Scalping mean reversion: {action}→{new_action} "
+                                f"(oscillateurs → {reversal_dir})"
+                            )
+                            action = new_action
+                            scalping_reversal = True
 
             if action == "attendre":
                 _log_tick(action_taken="hold", btc_price=current_price,

@@ -16,6 +16,7 @@ from app.database import get_db
 from app.services.truth_audit_service import TruthAuditService
 from app.services.scalping_audit_service import ScalpingAuditService
 from app.services.v2_gate_service import V2GateService
+from app.services.run_value_audit_service import RunValueAuditService
 from app.services.trading_cost_service import (
     COST_PRESETS, get_cost_model,
 )
@@ -100,4 +101,27 @@ def check_v2_readiness(
     """
     service = V2GateService(db)
     return service.check_readiness()
+
+
+@router.get("/audit/run-value", summary="Audit de valeur économique du run")
+def get_run_value_audit(
+    cost_preset: str = Query(
+        default="realistic",
+        description="Preset de coûts : optimistic, realistic, stressed",
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    Audit de valeur économique du run paper trading.
+
+    Diagnostic approfondi de la valeur capturée par trade :
+    - Métriques brut/net complètes
+    - Répartition useful / insignificant / churn
+    - Distribution par bucket de PnL
+    - Audit de la sortie "signal contraire" sur les shorts
+    - Économie du short scalping
+    """
+    service = RunValueAuditService(db)
+    return service.run_audit(cost_preset=cost_preset)
+
 

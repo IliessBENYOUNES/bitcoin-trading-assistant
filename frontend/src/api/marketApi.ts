@@ -826,3 +826,49 @@ export async function getPaperLeverageAnalysis(
   return apiFetch<LeverageAnalysisResponse>(`/paper/leverage-analysis${qs}`, options);
 }
 
+// -----------------------------------------------------------------------------
+// Audit — Run Value Audit (v1.9.3)
+// -----------------------------------------------------------------------------
+
+export interface RunValueAuditResponse {
+  total_trades: number;
+  cost_model: string;
+  economic_audit: Record<string, unknown>;
+  usefulness_audit: {
+    total: number;
+    categories: Record<string, { count: number; pct: number; avg_pnl_brut: number; avg_pnl_net: number; total_pnl_net: number }>;
+    pct_useful: number;
+    pct_insignificant: number;
+    pct_churn: number;
+    verdict: string;
+  };
+  pnl_bucket_distribution: {
+    gross: Record<string, number>;
+    net: Record<string, number>;
+    dust_zone_pct: number;
+  };
+  signal_exit_audit: Record<string, unknown>;
+  short_economics: {
+    short_count: number;
+    long_count?: number;
+    gross_pnl?: number;
+    net_pnl?: number;
+    avg_pnl_gross?: number;
+    avg_pnl_net?: number;
+    avg_duration_min?: number;
+    dominant_exit?: string;
+    useful?: number;
+    insignificant?: number;
+    churn?: number;
+    pct_useful?: number;
+    verdict: string;
+  };
+}
+
+export async function getRunValueAudit(
+  costPreset: string = 'realistic',
+  options: FetchOptions = {}
+): Promise<RunValueAuditResponse> {
+  return apiFetch<RunValueAuditResponse>(`/audit/run-value?cost_preset=${costPreset}`, options);
+}
+

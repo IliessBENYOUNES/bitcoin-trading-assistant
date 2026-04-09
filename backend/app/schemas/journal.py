@@ -70,6 +70,16 @@ class TradingProfileParams(BaseModel):
     # Seuil de mouvement économique minimum : en dessous, le trade n'a presque aucune
     # chance de survivre au cost model realistic. Utilisé pour le learning et les stats.
     min_economic_pnl_pct: Optional[float] = Field(default=None, description="Mouvement % minimum pour qu'un trade soit économiquement utile")
+    # [v1.9.3] Score minimum spécifique pour ouvrir un SHORT (mean reversion).
+    # Plus exigeant que min_score général car les shorts scalping doivent
+    # justifier économiquement le risque contrarian.
+    short_min_score: Optional[int] = Field(default=None, description="Score abs minimum pour ouvrir un short scalping (None=pas de filtre)")
+    # [v1.9.3] Seuil de score contraire pour fermer un SHORT.
+    # Défaut élevé pour laisser les shorts respirer au lieu de les couper
+    # dès que le moteur principal redevient légèrement bullish.
+    short_exit_score_threshold: Optional[int] = Field(default=None, description="Score abs min pour que 'signal contraire' ferme un short (None=10)")
+    # [v1.9.3] Min hold spécifique aux shorts (peut être plus long que le min_hold général).
+    short_min_hold_seconds: Optional[int] = Field(default=None, description="Durée min en sec avant sortie signal sur SHORT (None=min_hold_seconds)")
 
 
 class TradingProfileResponse(BaseModel):
