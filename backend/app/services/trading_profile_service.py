@@ -83,33 +83,46 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         profile_type=TradingProfileType.scalping,
         label="Scalping",
         description="Haute fréquence intraday — petits mouvements, sorties rapides, réentrée contextuelle.",
-        min_score=15,
+        min_score=20,   # [v1.9.5] 15→20 : relève le plancher de qualité, filtre les longs médiocres
         min_confidence="low",
         min_scenario_dominance=0.35,
         max_trades_per_day=50,
         cooldown_minutes=2,           # base cooldown, overridden par smart cooldown
         max_position_duration_hours=2,
-        # [v1.9.1] TP/SL pour dépasser le cost model realistic
-        # Round-trip cost realistic = ~0.31%
-        profit_take_pct=0.5,
-        # [v1.9.4] SL resserré de 0.4% → 0.35% pour mieux contrôler les pertes.
-        # Le ratio gain/perte était trop déséquilibré (pertes trop lourdes).
-        # Nouveau ratio R/R : 0.5% TP / 0.35% SL = 1.43:1 (vs ancien 1.25:1)
-        loss_cut_pct=0.35,
+        # [v1.9.5] TP élargi de 0.5%→0.6% et SL resserré de 0.35%→0.25%.
+        # Le R:R effectif était de ~0.3:1 (gains $1-4 via trailing/momentum vs pertes $8.75 via SL).
+        # Nouveau R:R théorique : 0.6/0.25 = 2.4:1.
+        # Nouveau R:R effectif estimé : ≈1:1 (gains trailing ~$3-5 vs pertes SL ~$6.25).
+        # L'objectif est de RÉDUIRE les grosses pertes, pas d'augmenter les gains.
+        profit_take_pct=0.6,
+        loss_cut_pct=0.25,
         loss_cut_score_threshold=5,
         leverage_enabled=True,
         max_leverage=1.5,
         # Analyse sur timeframe court (15m au lieu de 4h)
         analysis_timeframe="15m",
-        # Seuils de décision
-        buy_threshold=20,
-        sell_threshold=15,
-        # Sorties rapides — 15 min au lieu de 12 pour laisser le trade respirer
+        # [v1.9.5] Seuils de décision relevés : 20→25 buy, 15→20 sell.
+        # Le moteur ouvrait trop de longs médiocres (score 71 systématique).
+        # Des seuils plus hauts empêchent les longs faibles qui finissent en stale/SL.
+        buy_threshold=25,
+        sell_threshold=20,
+        # [v1.9.5] Sorties rapides — stale 15 min pour positions plates,
+        # MAIS positions en perte sortent plus vite (stale_negative_exit_minutes=8).
         momentum_fade_enabled=True,
         stale_exit_minutes=15,
-        # Trailing stop inchangé (recalibré en v1.8.1)
-        trailing_stop_activation_pct=0.08,
-        trailing_stop_pct=0.12,
+        stale_negative_exit_minutes=8,  # [v1.9.5] positions en perte → sortie plus rapide
+        # [v1.9.5] Trailing stop recalibré pour éviter les activations sur micro-peaks.
+        # Activation relevée de 0.08→0.15% : ne s'active que quand le trade a un vrai gain.
+        # Trailing resserré de 0.12→0.10% : une fois activé, protège mieux les gains.
+        # Avant : activait à 0.08% → trade #208 a eu un peak de 0.093% → trailing activé →
+        # position retourne à -0.042% → perte. Avec 0.15%, ce trade n'aurait pas activé.
+        trailing_stop_activation_pct=0.15,
+        trailing_stop_pct=0.10,
+        # [v1.9.5] Momentum fade moins agressif : rétention 55% au lieu de 40%.
+        # Avant : sortait quand le PnL tombait sous 40% du pic (perdu 60% des gains).
+        # Maintenant : sort quand le PnL tombe sous 55% du pic (perdu 45% des gains).
+        # Cela laisse les trades qui oscillent continuer plutôt que prendre $1.
+        momentum_fade_retention=0.55,
         # Smart cooldown
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
@@ -118,18 +131,20 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         min_hold_seconds=30,
         # Seuil économique
         min_economic_pnl_pct=0.15,
-        # [v1.9.4] Filtrage économique des shorts renforcé
-        # Le short_min_score était trop permissif à 25 (abs(score) souvent 60-72 → passait toujours).
-        # Relevé à 40 pour que seuls les setups short avec une vraie conviction passent.
-        short_min_score=40,
-        # [v1.9.4] Seuil de sortie signal contraire relevé de 20→35.
-        # En marché haussier, un score de 20+ est quasi-permanent → les shorts
-        # se faisaient tuer immédiatement. Avec 35, il faut un vrai signal haussier fort.
-        short_exit_score_threshold=35,
-        # [v1.9.4] Min hold spécifique aux shorts : 90s au lieu de 60s
-        # Les shorts ont besoin de plus de temps pour capturer un vrai retracement.
-        # 60s n'était pas assez pour que le pullback se développe.
-        short_min_hold_seconds=90,
+        # [v1.9.5] Short rebalancé — la v1.9.4 avait sur-corrigé :
+        # short_min_score=40 + 2-convergence = quasi aucun short en marché haussier.
+        # Résultat = 100% longs, une seule direction = pas de diversification.
+        # La règle des 2 oscillateurs convergents (v1.9.4) est suffisante comme filtre.
+        # Le score minimum n'a pas besoin d'être aussi haut en complément.
+        short_min_score=30,           # [v1.9.5] 40→30 (2-convergence suffit comme filtre)
+        # [v1.9.5] Seuil de signal contraire short rebalancé : 35→25.
+        # 35 était trop haut (en haussier, score >35 est quasi-permanent → shorts
+        # ne pouvaient jamais se fermer sur signal). 25 est un compromis :
+        # pas aussi bas que l'ancien 10 (qui tuait les shorts), pas aussi haut que 35.
+        short_exit_score_threshold=25, # [v1.9.5] 35→25 (compromis entre 10 et 35)
+        # [v1.9.5] Min hold short réduit de 90→60s.
+        # 90s empêchait les shorts de capter les courts pullbacks.
+        short_min_hold_seconds=60,     # [v1.9.5] 90→60 (pullbacks rapides à capter)
     ),
 }
 

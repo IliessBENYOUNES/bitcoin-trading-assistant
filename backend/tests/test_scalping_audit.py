@@ -275,32 +275,32 @@ class TestScalpingAuditWithData:
 # ================================================================
 
 class TestScalpingRecalibration:
-    """Tests pour les paramètres recalibrés du scalping v1.8.1."""
+    """Tests pour les paramètres recalibrés du scalping v1.9.5."""
 
     def test_trailing_stop_activation_increased(self):
-        """Trailing stop activation augmenté de 0.03% à 0.08%."""
+        """[v1.9.5] Trailing stop activation augmenté de 0.08% à 0.15%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.08
+        assert p.trailing_stop_activation_pct == 0.15
 
     def test_trailing_stop_trail_increased(self):
-        """Trailing stop trail augmenté de 0.05% à 0.12%."""
+        """[v1.9.5] Trailing stop trail resserré de 0.12% à 0.10%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_pct == 0.12
+        assert p.trailing_stop_pct == 0.10
 
     def test_buy_threshold_increased(self):
-        """Buy threshold augmenté de 10 à 20 pour meilleure discrimination."""
+        """[v1.9.5] Buy threshold augmenté de 20 à 25 pour meilleure sélectivité."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.buy_threshold == 20
+        assert p.buy_threshold == 25
 
     def test_sell_threshold_increased(self):
-        """Sell threshold augmenté de 8 à 15."""
+        """[v1.9.5] Sell threshold augmenté de 15 à 20."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.sell_threshold == 15
+        assert p.sell_threshold == 20
 
     def test_min_score_increased(self):
-        """Min score augmenté de 5 à 15 pour filtrer le bruit."""
+        """[v1.9.5] Min score augmenté de 15 à 20 pour filtrer le bruit."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_score == 15
+        assert p.min_score == 20
 
     def test_cooldown_increased(self):
         """Cooldown augmenté de 1 à 2 min."""
@@ -308,7 +308,7 @@ class TestScalpingRecalibration:
         assert p.cooldown_minutes == 2
 
     def test_stale_exit_increased(self):
-        """Stale exit augmenté de 10 à 12 min."""
+        """Stale exit augmenté de 10 à 15 min."""
         p = PROFILE_PRESETS["scalping"]
         assert p.stale_exit_minutes == 15
 
@@ -318,11 +318,11 @@ class TestScalpingRecalibration:
         assert p.max_leverage == 1.5
 
     def test_unchanged_params(self):
-        """Les paramètres scalping reflètent le recalibrage v1.9.1."""
+        """Les paramètres scalping reflètent le recalibrage v1.9.5."""
         p = PROFILE_PRESETS["scalping"]
-        # [v1.9.1] TP/SL élargis pour dépasser le cost model realistic
-        assert p.profit_take_pct == 0.5   # was 0.3
-        assert p.loss_cut_pct == 0.35      # was 0.4 → ratio R/R 1.43:1 après coûts
+        # [v1.9.5] TP élargi, SL resserré pour meilleur R:R
+        assert p.profit_take_pct == 0.6    # [v1.9.5] was 0.5 → 0.6
+        assert p.loss_cut_pct == 0.25      # [v1.9.5] was 0.35 → 0.25
         assert p.max_trades_per_day == 50
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"

@@ -401,12 +401,42 @@ class PaperTradingService:
             # [v1.6] Sortie rapide — Stale position
             # Si la position stagne depuis trop longtemps (faible mouvement),
             # on libère la place pour d'autres opportunités.
+            # [v1.9.5] Stale exit ASYMÉTRIQUE : les positions en perte sortent plus vite.
+            # Avant, une position à -0.23% après 15min sortait comme "stale flat".
+            # Maintenant, une position négative sort après stale_negative_exit_minutes (8 min)
+            # tandis qu'une position plate/positive continue avec stale_exit_minutes (15 min).
+            # Cela réduit les grosses pertes accumulées par stagnation.
             stale_minutes = getattr(profile_params, "stale_exit_minutes", None) if profile_params else None
+            stale_negative_minutes = getattr(profile_params, "stale_negative_exit_minutes", None) if profile_params else None
             if stale_minutes and stale_minutes > 0:
                 entry_ts = _ensure_aware(open_pos.entry_ts)
                 elapsed_min = (now - entry_ts).total_seconds() / 60
                 unrealized_pnl_now = self._calc_unrealized_pnl(open_pos, current_price)
                 unrealized_pct = (unrealized_pnl_now / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
+
+                # [v1.9.5] Chemin 1 : Position en perte → sortie accélérée
+                # Si le PnL est négatif ET qu'on a dépassé le seuil de stale négatif,
+                # on sort sans attendre le stale complet. Cela évite que les positions
+                # dérivent lentement vers le SL pendant 15 min.
+                effective_negative_minutes = stale_negative_minutes or stale_minutes
+                if unrealized_pct < -0.03 and elapsed_min >= effective_negative_minutes:
+                    signal_reason = (
+                        f"Position en perte depuis {elapsed_min:.0f} min, PnL latent {unrealized_pct:.2f}% "
+                        f"(seuil négatif {effective_negative_minutes} min)"
+                    )
+                    closed = self._close_position(open_pos, current_price, signal_reason, "closed_stale")
+                    _log_tick(action_taken="closed_stale", btc_price=current_price,
+                              had_open_position=True, trade_id=closed.id,
+                              leverage_final=getattr(closed, "leverage", 1.0))
+                    return PaperTickResult(
+                        action_taken="closed_stale",
+                        detail=f"Position fermée (dérive négative) : {signal_reason}",
+                        position_closed=PaperTradeResponse.model_validate(closed),
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        leverage_used=getattr(closed, "leverage", 1.0),
+                        profile_type=profile_name,
+                    )
 
                 # [v1.6.2] Seuil de stagnation adapté au profil
                 # Pour les profils tight (scalping, loss_cut ≤ 0.5%), on utilise
@@ -417,6 +447,7 @@ class PaperTradingService:
                 if profile_params and profile_params.loss_cut_pct <= 0.5:
                     stale_pnl_threshold = profile_params.profit_take_pct
 
+                # Chemin 2 : Position plate → stale exit normal (inchangé)
                 if elapsed_min >= stale_minutes and abs(unrealized_pct) < stale_pnl_threshold:
                     signal_reason = f"Position stagnante depuis {elapsed_min:.0f} min, PnL latent {unrealized_pct:.2f}%"
                     closed = self._close_position(open_pos, current_price, signal_reason, "closed_stale")
@@ -488,9 +519,15 @@ class PaperTradingService:
                     peak_pnl = 0
 
                 # Déclencher si le peak_pnl était > 0.1% du capital et que
-                # le PnL actuel a reculé de plus de 60% depuis le pic
+                # le PnL actuel a reculé en dessous du seuil de rétention.
+                # [v1.9.5] Rétention configurable via momentum_fade_retention (défaut 0.4).
+                # Plus la rétention est haute, plus on garde longtemps les gains qui s'essoufflent.
+                # 0.55 = sort quand le PnL tombe sous 55% du pic (vs ancien 40% hardcodé).
+                mf_retention = getattr(profile_params, "momentum_fade_retention", None) if profile_params else None
+                if mf_retention is None:
+                    mf_retention = 0.4  # Valeur historique par défaut
                 peak_pct = (peak_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
-                if peak_pct > 0.1 and peak_pnl > 0 and unrealized_pnl_now < peak_pnl * 0.4:
+                if peak_pct > 0.1 and peak_pnl > 0 and unrealized_pnl_now < peak_pnl * mf_retention:
                     signal_reason = (
                         f"Momentum fade : pic PnL +{peak_pnl:.2f} USD ({peak_pct:.2f}%), "
                         f"actuel {unrealized_pnl_now:.2f} USD"
@@ -550,10 +587,10 @@ class PaperTradingService:
                         close_signal = True
                         signal_reason = f"Signal contraire : vendre (score={score})"
                     elif action == "attendre" and score <= 0 and not trade_too_young:
-                        # [v1.9.1] Adouci : ne ferme sur "signal affaibli" que si
-                        # le score est nettement contraire (≤ -10), pas juste 0.
-                        # Un score de 0 n'est pas un signal de sortie fort.
-                        if score <= -10:
+                        # [v1.9.5] Relevé de -10 à -15 : ne ferme sur "signal nettement
+                        # contraire" que si le score est vraiment fortement bearish.
+                        # Un score de -10 peut être du bruit ; -15 indique une vraie pression.
+                        if score <= -15:
                             close_signal = True
                             signal_reason = f"Signal nettement contraire : attendre (score={score})"
 

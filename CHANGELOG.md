@@ -2,6 +2,48 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.5] - 2026-04-09
+
+### Added
+- **StabilityAuditService** — Nouveau service de diagnostic de stabilité du moteur
+  - Détection d'oscillation directionnelle (flip long↔short entre fenêtres)
+  - Homogénéité des scores (écart-type, distribution)
+  - R:R effectif vs théorique
+  - Domination des types de sortie (destructrice vs diverse)
+  - Analyse gain/perte détaillée (profit factor, top3 pertes, médianes)
+  - Verdict global : UNSTABLE / IMPROVING / STABLE avec score 0-100
+- **Endpoint GET /audit/stability** — Diagnostic de stabilité accessible via API
+- **Stale exit asymétrique** — Positions en perte sortent après 8 min (`stale_negative_exit_minutes`), positions plates gardent 15 min
+- **Momentum fade configurable** — Rétention du pic PnL configurable via `momentum_fade_retention` (0.55 au lieu du hardcodé 0.4)
+- **Learning stability** — 3 nouvelles suggestions d'ajustement :
+  - Déséquilibre directionnel excessif (>85% longs ou >85% shorts)
+  - R:R asymétrique (pertes >> gains) → suggestion resserrement SL
+  - Sortie dominante destructrice → suggestion ajustement stale
+- **54 nouveaux tests** dans `test_stability.py` : params, stability audit, direction balance, score homogeneity, R:R, exit domination, oscillation, verdict, stale négatif, momentum fade, learning stability, endpoint, convergence boost, signal contraire, reversal check
+
+### Changed
+- **SL scalping resserré** : 0.35% → **0.25%** — Pertes max réduites de $8.75 à $6.25 sur $2500
+- **TP scalping élargi** : 0.5% → **0.6%** — R:R théorique amélioré de 1.43:1 à **2.4:1**
+- **Trailing stop activation relevée** : 0.08% → **0.15%** — Plus de micro-activations destructrices
+- **Trailing stop trail resserré** : 0.12% → **0.10%** — Protège mieux les gains une fois activé
+- **Momentum fade rétention** : 40% → **55%** — Les trades gardent plus de gains avant de sortir
+- **Buy threshold relevé** : 20 → **25** — Filtre les longs médiocres
+- **Sell threshold relevé** : 15 → **20** — Plus sélectif
+- **Min score relevé** : 15 → **20** — Plancher de qualité augmenté
+- **Short min score réduit** : 40 → **30** — La 2-convergence suffit comme filtre
+- **Short exit threshold réduit** : 35 → **25** — Compromis entre 10 (trop bas) et 35 (trop haut)
+- **Short min hold réduit** : 90s → **60s** — Pullbacks rapides à capter
+- **Signal contraire longs relevé** : -10 → **-15** — Plus de tolérance au bruit
+- **Convergence boost factor** : 0.4 → **0.5** — Meilleure discrimination des scores
+- **Compression signaux divisés** : 0.85 → **0.75** — Setups ambigus mieux pénalisés
+
+### Technical
+- 1345 tests backend (+54), tous passing ✅
+- `tsc --noEmit` sans erreur ✅
+- Aucune donnée existante supprimée
+- StabilityAuditService : 300 LOC
+- Safety bounds ajoutés pour momentum_fade_retention, stale_negative_exit_minutes
+
 ## [1.9.4] - 2026-04-09
 
 ### Changed

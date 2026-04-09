@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 9 avril 2026
-> **Version :** v1.9.4
+> **Version :** v1.9.5
 > **Branche :** `master`
-> **Dernier commit :** fix(short-balance): corriger surcorrection short + réduire pertes + rendre shorts sélectifs
+> **Dernier commit :** feat(stability): stabilisation globale moteur scalping — R:R fix, stale asymétrique, trailing recalibré, shorts rebalancés, StabilityAuditService
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.9.4** |
+| Version courante | **v1.9.5** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1291 tests**, tous passing ✅ |
+| Tests backend | **1345 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v1.9.4 livré** — Correction surcorrection short + sélectivité + contrôle des pertes |
+| Phase courante | **v1.9.5 livré** — Stabilisation globale moteur scalping |
 
 ### ⚠️ État de maturité honnête
 
@@ -60,7 +60,19 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
   - **Short min hold 90s** (était 60s) : plus de temps pour le pullback se développer.
   - **SL resserré 0.35%** (était 0.4%) : ratio R/R amélioré de 1.25:1 à 1.43:1 (TP 0.5% / SL 0.35%). Pertes mieux contrôlées.
   - **Tech score seuil 95** (était 90) : moins de faux positifs de surachat.
-- 1291 tests backend, tsc clean
+- **[v1.9.5] Stabilisation globale moteur scalping** — Fin des surcorrections, convergence du comportement
+  - **R:R théorique 2.4:1** : TP élargi 0.5%→0.6%, SL resserré 0.35%→0.25%. Les pertes maximales passent de $8.75 à $6.25 sur $2500.
+  - **Stale exit asymétrique** : positions en perte sortent après 8 min (au lieu de 15). Positions plates gardent 15 min. Cela évite que les positions dérivent vers le SL pendant 15 min.
+  - **Trailing stop recalibré** : activation relevée 0.08%→0.15% (plus de micro-activations), trail resserré 0.12%→0.10% (protège mieux les gains une fois activé).
+  - **Momentum fade configurable** : rétention relevée 40%→55% (les trades gardent 55% de leur pic avant de sortir, au lieu de 45%).
+  - **Shorts rebalancés** : short_min_score 40→30 (2-convergence suffit), exit threshold 35→25 (compromis), min hold 90→60s (pullbacks rapides).
+  - **Seuils d'entrée relevés** : buy 20→25, sell 15→20, min_score 15→20. Filtre les longs médiocres qui finissaient en stale/SL.
+  - **Signal contraire longs relevé** : score -10→-15. Plus de tolérance au bruit avant de fermer.
+  - **Convergence boost amélioré** : facteur 0.4→0.5 (scores plus différenciés), compression 0.85→0.75 (setups ambigus mieux pénalisés).
+  - **StabilityAuditService** : nouveau service de diagnostic de stabilité — détection oscillation directionnelle, homogénéité des scores, R:R effectif, domination des sorties, verdict UNSTABLE/IMPROVING/STABLE.
+  - **Learning stability** : 3 nouvelles suggestions (déséquilibre directionnel, R:R asymétrique, sortie dominante destructrice).
+  - **Endpoint GET /audit/stability** : diagnostic de stabilité accessible via API.
+- 1345 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.

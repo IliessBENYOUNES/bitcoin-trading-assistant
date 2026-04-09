@@ -17,6 +17,7 @@ from app.services.truth_audit_service import TruthAuditService
 from app.services.scalping_audit_service import ScalpingAuditService
 from app.services.v2_gate_service import V2GateService
 from app.services.run_value_audit_service import RunValueAuditService
+from app.services.stability_audit_service import StabilityAuditService
 from app.services.trading_cost_service import (
     COST_PRESETS, get_cost_model,
 )
@@ -125,3 +126,24 @@ def get_run_value_audit(
     return service.run_audit(cost_preset=cost_preset)
 
 
+@router.get("/audit/stability", summary="Audit de stabilité du moteur")
+def get_stability_audit(
+    window: int = Query(
+        default=20,
+        description="Nombre de trades récents à analyser",
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    Diagnostic de stabilité du moteur de trading.
+
+    Détecte les patterns d'oscillation entre surcorrections :
+    - Balance directionnelle (long/short ratio)
+    - Homogénéité des scores d'entrée
+    - Ratio gain/perte effectif vs théorique
+    - Domination d'un type de sortie
+    - Oscillation entre fenêtres de trades
+    - Verdict : UNSTABLE / IMPROVING / STABLE
+    """
+    service = StabilityAuditService(db)
+    return service.run_audit(window_size=window)

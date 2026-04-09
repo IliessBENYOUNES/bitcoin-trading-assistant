@@ -80,6 +80,15 @@ class TradingProfileParams(BaseModel):
     short_exit_score_threshold: Optional[int] = Field(default=None, description="Score abs min pour que 'signal contraire' ferme un short (None=10)")
     # [v1.9.3] Min hold spécifique aux shorts (peut être plus long que le min_hold général).
     short_min_hold_seconds: Optional[int] = Field(default=None, description="Durée min en sec avant sortie signal sur SHORT (None=min_hold_seconds)")
+    # [v1.9.5] Momentum fade retention — pourcentage du pic de PnL en dessous duquel on sort.
+    # Ex: 0.55 signifie qu'on sort si le PnL tombe sous 55% du pic (recul de 45%).
+    # Plus cette valeur est haute, plus on coupe tôt les gains qui s'essoufflent.
+    # None = utilise le hardcodé 0.4 (valeur historique).
+    momentum_fade_retention: Optional[float] = Field(default=None, description="Seuil de rétention du pic PnL pour momentum fade (0.0-1.0, None=0.4)")
+    # [v1.9.5] Stale exit asymétrique — positions en perte sortent plus vite.
+    # Si la position est en PnL négatif depuis stale_negative_exit_minutes, on sort.
+    # Plus rapide que stale_exit_minutes (qui attend que la position soit "plate").
+    stale_negative_exit_minutes: Optional[int] = Field(default=None, description="Minutes avant sortie stale si PnL est négatif (None=stale_exit_minutes)")
 
 
 class TradingProfileResponse(BaseModel):

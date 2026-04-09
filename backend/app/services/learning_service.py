@@ -42,6 +42,7 @@ SAFETY_BOUNDS = {
     "trailing_stop_activation_pct": (0.02, 0.5),
     "trailing_stop_pct": (0.03, 0.5),
     "stale_exit_minutes": (3, 60),
+    "stale_negative_exit_minutes": (3, 30),  # [v1.9.5] stale exit pour positions en perte
     "cooldown_minutes": (0.5, 30),
     "min_score": (3, 50),
     "max_leverage": (1.0, 5.0),
@@ -51,6 +52,7 @@ SAFETY_BOUNDS = {
     "short_min_score": (0, 50),    # [v1.9.3] score min pour ouvrir un short
     "short_exit_score_threshold": (5, 40),  # [v1.9.3] seuil signal contraire short
     "short_min_hold_seconds": (0, 180),     # [v1.9.3] min hold spécifique short (3 min max)
+    "momentum_fade_retention": (0.2, 0.8),  # [v1.9.5] rétention du pic pour momentum fade
 }
 
 # Nombre minimum d'échantillons pour qu'un pattern soit significatif
@@ -697,6 +699,100 @@ class LearningService:
                     profile_type=profile_type,
                     version=version,
                 ))
+
+        # ================================================================
+        # [v1.9.5] SUGGESTIONS DE STABILITÉ — Détection d'oscillation et déséquilibres
+        # ================================================================
+
+        # Suggestion 10 : Déséquilibre directionnel excessif
+        # Si > 80% des trades vont dans une seule direction, le moteur est captif.
+        long_samples_all = [s for s in samples if s.direction == "long"]
+        short_samples_all = [s for s in samples if s.direction == "short"]
+        long_pct = len(long_samples_all) / len(samples) * 100 if samples else 0
+        if long_pct >= 85:
+            suggestions.append(self._create_feedback(
+                parameter_name="short_min_score",
+                original_value=getattr(params, "short_min_score", 30) or 30,
+                suggested_value=max((getattr(params, "short_min_score", 30) or 30) - 5, 15),
+                reason=(
+                    f"Déséquilibre directionnel : {long_pct:.0f}% de longs. "
+                    f"Le moteur est captif d'une seule direction. "
+                    f"Abaisser le seuil short pour permettre la diversification."
+                ),
+                sample_size=len(samples),
+                win_rate_observed=0,
+                avg_pnl_observed=0,
+                profile_type=profile_type,
+                version=version,
+            ))
+        elif long_pct <= 15 and len(samples) >= 10:
+            suggestions.append(self._create_feedback(
+                parameter_name="short_min_score",
+                original_value=getattr(params, "short_min_score", 30) or 30,
+                suggested_value=min((getattr(params, "short_min_score", 30) or 30) + 5, 50),
+                reason=(
+                    f"Déséquilibre directionnel : seulement {long_pct:.0f}% de longs. "
+                    f"Le moteur est captif du short. "
+                    f"Relever le seuil short pour rééquilibrer."
+                ),
+                sample_size=len(samples),
+                win_rate_observed=0,
+                avg_pnl_observed=0,
+                profile_type=profile_type,
+                version=version,
+            ))
+
+        # Suggestion 11 : Ratio gain/perte asymétrique (pertes >> gains)
+        wins_samp = [s for s in samples if s.pnl_brut is not None and s.pnl_brut > 0]
+        losses_samp = [s for s in samples if s.pnl_brut is not None and s.pnl_brut < 0]
+        if len(wins_samp) >= 3 and len(losses_samp) >= 3:
+            avg_win = sum(s.pnl_brut for s in wins_samp) / len(wins_samp)
+            avg_loss = abs(sum(s.pnl_brut for s in losses_samp) / len(losses_samp))
+            rr_ratio = avg_win / avg_loss if avg_loss > 0 else 999
+            if rr_ratio < 0.4:
+                current_sl = params.loss_cut_pct or 0.35
+                suggested_sl = max(current_sl - 0.05, SAFETY_BOUNDS["loss_cut_pct"][0])
+                suggestions.append(self._create_feedback(
+                    parameter_name="loss_cut_pct",
+                    original_value=current_sl,
+                    suggested_value=round(suggested_sl, 2),
+                    reason=(
+                        f"Ratio R:R effectif très déséquilibré ({rr_ratio:.2f}:1). "
+                        f"Gain moyen {avg_win:.2f} vs perte moyenne {avg_loss:.2f}. "
+                        f"Resserrer le SL pour réduire les grosses pertes."
+                    ),
+                    sample_size=len(wins_samp) + len(losses_samp),
+                    win_rate_observed=len(wins_samp) / len(samples) * 100,
+                    avg_pnl_observed=rr_ratio,
+                    profile_type=profile_type,
+                    version=version,
+                ))
+
+        # Suggestion 12 : Un type de sortie domine de façon destructrice
+        exit_counter = defaultdict(list)
+        for s in samples:
+            if s.exit_type:
+                exit_counter[s.exit_type].append(s.pnl_brut or 0)
+        for exit_type, pnls in exit_counter.items():
+            if len(pnls) >= 3:
+                exit_pct = len(pnls) / len(samples) * 100
+                avg_pnl_exit = sum(pnls) / len(pnls)
+                if exit_pct >= 40 and avg_pnl_exit < -1.0:
+                    # Un type de sortie destructrice domine
+                    suggestions.append(self._create_feedback(
+                        parameter_name="stale_exit_minutes",  # proxy
+                        original_value=getattr(params, "stale_exit_minutes", 15) or 15,
+                        suggested_value=max((getattr(params, "stale_exit_minutes", 15) or 15) - 2, SAFETY_BOUNDS["stale_exit_minutes"][0]),
+                        reason=(
+                            f"Sortie '{exit_type}' domine ({exit_pct:.0f}%) avec PnL moyen {avg_pnl_exit:.2f}. "
+                            f"Ce type de sortie est destructeur et étouffe le moteur."
+                        ),
+                        sample_size=len(pnls),
+                        win_rate_observed=sum(1 for p in pnls if p >= 0) / len(pnls) * 100,
+                        avg_pnl_observed=avg_pnl_exit,
+                        profile_type=profile_type,
+                        version=version,
+                    ))
 
         # Sauvegarder les suggestions en mode shadow
         for fb in suggestions:

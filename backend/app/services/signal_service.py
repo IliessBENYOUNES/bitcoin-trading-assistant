@@ -812,11 +812,11 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
             # Faible volume : atténue le signal de 15%
             raw_score *= 0.85
 
-    # [v1.9.3] Convergence boost — casse l'homogénéité des scores.
-    # Quand la quasi-totalité des indicateurs pointent dans la même direction,
-    # on applique un boost non-linéaire pour étirer les scores extrêmes.
-    # Cela permet de mieux discriminer entre "surachat modéré" et "surachat fort
-    # avec convergence totale". Sans ce boost, les scores se tassent autour de 65-72.
+    # [v1.9.5] Convergence boost amélioré — meilleure discrimination des scores.
+    # Le boost original (v1.9.3) appliquait un facteur de 0.4 qui ne cassait
+    # pas assez l'homogénéité 71/72. Le facteur est porté à 0.5 pour étirer
+    # davantage les scores extrêmes. La compression pour signaux divisés
+    # est renforcée (0.85→0.75) pour mieux pénaliser les setups ambigus.
     total_directional = bullish_count + bearish_count + neutral_count
     if total_directional >= 3:
         dominant_count = max(bullish_count, bearish_count)
@@ -825,12 +825,13 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
             # Les indicateurs convergent fortement → boost exponentiel
             # Plus raw_score est élevé, plus le boost amplifie (non-linéaire)
             sign = 1 if raw_score >= 0 else -1
-            # Boost de 10-25% proportionnel à unanimité et raw_score
-            boost_factor = 1.0 + (unanimity - 0.5) * abs(raw_score) * 0.4
+            # [v1.9.5] Boost de 12.5-30% (facteur 0.5 au lieu de 0.4)
+            boost_factor = 1.0 + (unanimity - 0.5) * abs(raw_score) * 0.5
             raw_score = sign * min(1.0, abs(raw_score) * boost_factor)
         elif unanimity < 0.4 and total_directional >= 4:
-            # Signaux très divisés → comprimer le score (setup ambigu)
-            raw_score *= 0.85
+            # [v1.9.5] Signaux très divisés → compression renforcée (0.75 au lieu de 0.85)
+            # Un setup ambigu ne mérite pas un score de 70.
+            raw_score *= 0.75
 
     score = int(round(raw_score * 100))
     score = max(-100, min(100, score))

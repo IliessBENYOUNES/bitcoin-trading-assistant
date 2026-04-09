@@ -46,9 +46,9 @@ class TestShortExitScoreThreshold:
         )
 
     def test_short_exit_threshold_is_35(self):
-        """Le seuil est configuré à 35 (vs ancien 20, vs original 10)."""
+        """[v1.9.5] Le seuil est configuré à 25 (compromis entre 10 et 35)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_exit_score_threshold == 35
+        assert p.short_exit_score_threshold == 25
 
     def test_conservative_has_no_short_exit_threshold(self):
         """Le profil conservative n'a pas besoin de ce paramètre."""
@@ -93,15 +93,15 @@ class TestShortMinScore:
         assert p.short_min_score > 0
 
     def test_short_min_score_value(self):
-        """Le short_min_score est configuré à 40."""
+        """[v1.9.5] Le short_min_score est configuré à 30 (la 2-convergence suffit comme filtre)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_score == 40
+        assert p.short_min_score == 30
 
     def test_short_min_score_filters_weak_setups(self):
-        """Un score abs de 30 < short_min_score de 40 → short rejeté."""
+        """Un score abs de 25 < short_min_score de 30 → short rejeté."""
         p = PROFILE_PRESETS["scalping"]
-        assert abs(30) < p.short_min_score
-        assert abs(45) >= p.short_min_score
+        assert abs(25) < p.short_min_score
+        assert abs(35) >= p.short_min_score
 
 
 # ================================================================
@@ -128,9 +128,9 @@ class TestShortMinHoldSeconds:
         )
 
     def test_short_min_hold_is_90(self):
-        """Le short_min_hold_seconds est 90 (vs 30 général)."""
+        """[v1.9.5] Le short_min_hold_seconds est 60 (réduit de 90 pour capter les pullbacks)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_hold_seconds == 90
+        assert p.short_min_hold_seconds == 60
 
 
 # ================================================================
@@ -536,10 +536,10 @@ class TestPaperTradingShortExit:
     def test_short_min_hold_applies(self):
         """Le short_min_hold_seconds s'applique aux shorts."""
         p = PROFILE_PRESETS["scalping"]
-        # Un short de 60 secondes (< 90) est trop jeune
-        elapsed = 60
+        # Un short de 45 secondes (< 60) est trop jeune
+        elapsed = 45
         min_hold = p.short_min_hold_seconds or 0
-        assert elapsed < min_hold, "Un short de 60s < min_hold 90s → trop jeune"
+        assert elapsed < min_hold, "Un short de 45s < min_hold 60s → trop jeune"
 
     def test_short_allowed_after_min_hold(self):
         """Le short peut être fermé après le min_hold."""
@@ -600,14 +600,14 @@ class TestScalpingPresetNonRegression:
     """Vérifier que les changements ne cassent pas le preset scalping existant."""
 
     def test_scalping_tp_pct(self):
-        """Le TP scalping est inchangé (0.5%)."""
+        """[v1.9.5] Le TP scalping est élargi à 0.6%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.profit_take_pct == 0.5
+        assert p.profit_take_pct == 0.6
 
     def test_scalping_sl_pct(self):
-        """Le SL scalping est resserré (0.35% vs ancien 0.4%)."""
+        """[v1.9.5] Le SL scalping est resserré à 0.25%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.loss_cut_pct == 0.35
+        assert p.loss_cut_pct == 0.25
 
     def test_scalping_min_hold(self):
         """Le min_hold général est inchangé (30s)."""
@@ -630,10 +630,10 @@ class TestScalpingPresetNonRegression:
         assert p.analysis_timeframe == "15m"
 
     def test_scalping_trailing_stop(self):
-        """Les paramètres trailing stop sont inchangés."""
+        """[v1.9.5] Les paramètres trailing stop recalibrés."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.08
-        assert p.trailing_stop_pct == 0.12
+        assert p.trailing_stop_activation_pct == 0.15  # [v1.9.5] was 0.08
+        assert p.trailing_stop_pct == 0.10             # [v1.9.5] was 0.12
 
     def test_scalping_leverageééévalues(self):
         """Le levier scalping est inchangé."""
@@ -724,13 +724,13 @@ class TestReversalSelectivity:
         assert result is None, "tech_score seul ne suffit pas"
 
     def test_short_min_score_rejects_weak(self):
-        """Le short_min_score à 40 rejette les shorts avec abs(score) < 40."""
+        """[v1.9.5] Le short_min_score à 30 rejette les shorts avec abs(score) < 30."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_score == 40
-        # Score de 35 → rejeté
-        assert abs(35) < p.short_min_score
-        # Score de 45 → accepté
-        assert abs(45) >= p.short_min_score
+        assert p.short_min_score == 30
+        # Score de 25 → rejeté
+        assert abs(25) < p.short_min_score
+        # Score de 35 → accepté
+        assert abs(35) >= p.short_min_score
 
 
 # ================================================================
@@ -760,10 +760,12 @@ class TestGainLossRatio:
         )
 
     def test_sl_still_above_spread(self):
-        """Le SL ne doit pas être trop serré (sous les coûts)."""
+        """[v1.9.5] Le SL ne doit pas être absurdement serré. 0.25% > 0.15% (demi round-trip)."""
         p = PROFILE_PRESETS["scalping"]
-        # Round-trip cost realistic ≈ 0.31%, SL doit être > 0.31%
-        assert p.loss_cut_pct > 0.31, f"SL {p.loss_cut_pct}% trop serré (< 0.31% round-trip cost)"
+        # [v1.9.5] Le SL à 0.25% est intentionnellement sous le round-trip complet (0.31%)
+        # pour réduire les pertes maximales. Le coût d'entrée seul est ~0.155%.
+        # Le SL doit rester au-dessus du coût d'entrée seul.
+        assert p.loss_cut_pct > 0.15, f"SL {p.loss_cut_pct}% trop serré (< 0.15% entrée seule)"
 
 
 # ================================================================
@@ -830,29 +832,29 @@ class TestSignalContraireProtection:
     """Tests pour la protection des shorts contre la sortie signal contraire."""
 
     def test_short_exit_threshold_35(self):
-        """Le seuil de sortie signal contraire est à 35."""
+        """[v1.9.5] Le seuil de sortie signal contraire est à 25 (compromis)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_exit_score_threshold == 35
+        assert p.short_exit_score_threshold == 25
 
     def test_short_survives_moderate_bullish(self):
-        """Un short ne se ferme pas sur un score bullish de 25 (< 35)."""
+        """Un short ne se ferme pas sur un score bullish de 20 (< 25)."""
         p = PROFILE_PRESETS["scalping"]
-        score = 25
+        score = 20
         assert score < p.short_exit_score_threshold, (
-            "Score 25 doit être sous le seuil 35 → le short survit"
+            "Score 20 doit être sous le seuil 25 → le short survit"
         )
 
     def test_short_closes_on_strong_bullish(self):
-        """Un short se ferme sur un score bullish de 40 (>= 35)."""
+        """Un short se ferme sur un score bullish de 30 (>= 25)."""
         p = PROFILE_PRESETS["scalping"]
-        score = 40
+        score = 30
         assert score >= p.short_exit_score_threshold, (
-            "Score 40 doit être au-dessus du seuil 35 → le short est fermé"
+            "Score 30 doit être au-dessus du seuil 25 → le short est fermé"
         )
 
     def test_short_min_hold_90s(self):
-        """Le min hold short est 90s (plus que le 30s général)."""
+        """[v1.9.5] Le min hold short est 60s (plus que le 30s général)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_hold_seconds == 90
+        assert p.short_min_hold_seconds == 60
         assert p.short_min_hold_seconds > p.min_hold_seconds
 
