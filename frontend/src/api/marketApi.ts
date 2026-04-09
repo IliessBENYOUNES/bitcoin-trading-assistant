@@ -812,7 +812,7 @@ export async function getPaperMissedOpportunities(
   if (params.lookforward_minutes) q.set('lookforward_minutes', String(params.lookforward_minutes));
   if (params.min_move_pct) q.set('min_move_pct', String(params.min_move_pct));
   const qs = q.toString() ? `?${q.toString()}` : '';
-  return apiFetch<MissedOpportunitySummary>(`/paper/missed-opportunities${qs}`, options);
+  return apiFetch<MissedOpportunitySummary>(`/paper/missed-opportunities${qs}`, { ...options, timeoutMs: 60_000 });
 }
 
 export async function getPaperLeverageAnalysis(
@@ -861,6 +861,11 @@ export interface RunValueAuditResponse {
     insignificant?: number;
     churn?: number;
     pct_useful?: number;
+    verdict: string;
+  };
+  long_short_balance?: {
+    long: { count: number; pct: number; win_rate: number; avg_pnl_gross: number; avg_pnl_net: number; gross_expectancy: number; net_expectancy: number };
+    short: { count: number; pct: number; win_rate: number; avg_pnl_gross: number; avg_pnl_net: number; gross_expectancy: number; net_expectancy: number };
     verdict: string;
   };
 }

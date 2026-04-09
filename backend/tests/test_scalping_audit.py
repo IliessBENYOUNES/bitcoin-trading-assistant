@@ -322,7 +322,7 @@ class TestScalpingRecalibration:
         p = PROFILE_PRESETS["scalping"]
         # [v1.9.1] TP/SL élargis pour dépasser le cost model realistic
         assert p.profit_take_pct == 0.5   # was 0.3
-        assert p.loss_cut_pct == 0.4      # was 0.3
+        assert p.loss_cut_pct == 0.35      # was 0.4 → ratio R/R 1.43:1 après coûts
         assert p.max_trades_per_day == 50
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
@@ -402,8 +402,8 @@ class TestScalpingReversalImproved:
         result = pts._scalping_reversal_check(decision)
         assert result is None
 
-    def test_reversal_short_on_rsi_overbought(self, db_session):
-        """RSI overbought → short (comme avant)."""
+    def test_reversal_none_on_single_rsi_overbought(self, db_session):
+        """[v1.9.4] Un seul RSI overbought ne suffit PLUS pour un reversal short."""
         pts = PaperTradingService(db_session)
         decision = {
             "rules_evaluated": [
@@ -413,10 +413,24 @@ class TestScalpingReversalImproved:
             "technical_score": 50,
         }
         result = pts._scalping_reversal_check(decision)
+        assert result is None, "1 seul signal ne doit plus déclencher un reversal"
+
+    def test_reversal_short_on_two_overbought(self, db_session):
+        """[v1.9.4] RSI overbought + StochRSI overbought → short (2 signaux convergents)."""
+        pts = PaperTradingService(db_session)
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "rsi_overbought", "satisfied": True, "direction": "bearish"},
+                {"rule_name": "stochrsi_overbought", "satisfied": True, "direction": "bearish"},
+            ],
+            "combined_score": 50,
+            "technical_score": 50,
+        }
+        result = pts._scalping_reversal_check(decision)
         assert result == "short"
 
-    def test_reversal_long_on_stochrsi_oversold(self, db_session):
-        """StochRSI oversold → long."""
+    def test_reversal_none_on_single_stochrsi_oversold(self, db_session):
+        """[v1.9.4] Un seul StochRSI oversold ne suffit PLUS pour un reversal long."""
         pts = PaperTradingService(db_session)
         decision = {
             "rules_evaluated": [
@@ -426,30 +440,60 @@ class TestScalpingReversalImproved:
             "technical_score": -50,
         }
         result = pts._scalping_reversal_check(decision)
+        assert result is None, "1 seul signal ne doit plus déclencher un reversal"
+
+    def test_reversal_long_on_two_oversold(self, db_session):
+        """[v1.9.4] RSI oversold + StochRSI oversold → long (2 signaux convergents)."""
+        pts = PaperTradingService(db_session)
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "rsi_oversold", "satisfied": True, "direction": "bullish"},
+                {"rule_name": "stochrsi_oversold", "satisfied": True, "direction": "bullish"},
+            ],
+            "combined_score": -50,
+            "technical_score": -50,
+        }
+        result = pts._scalping_reversal_check(decision)
         assert result == "long"
 
-    def test_reversal_short_on_extreme_tech_score(self, db_session):
-        """Score technique ≥ 90 sans bearish → overbought → short."""
+    def test_reversal_short_on_overbought_plus_tech_score(self, db_session):
+        """[v1.9.4] RSI overbought + StochRSI overbought → short (2 oscillateurs)."""
+        pts = PaperTradingService(db_session)
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "rsi_overbought", "satisfied": True, "direction": "bearish"},
+                {"rule_name": "stochrsi_overbought", "satisfied": True, "direction": "bearish"},
+            ],
+            "combined_score": 72,
+            "technical_score": 96,
+        }
+        result = pts._scalping_reversal_check(decision)
+        assert result == "short"
+
+    def test_reversal_none_on_tech_score_alone(self, db_session):
+        """[v1.9.4] Tech score extrême SEUL ne suffit plus (besoin d'1 oscillateur en plus)."""
         pts = PaperTradingService(db_session)
         decision = {
             "rules_evaluated": [
                 {"rule_name": "macd_bullish_cross", "satisfied": True, "direction": "bullish"},
             ],
             "combined_score": 72,
-            "technical_score": 95,  # Très haussier → potentiel surachat
+            "technical_score": 96,
         }
         result = pts._scalping_reversal_check(decision)
-        assert result == "short"
+        # tech_score ≥ 95 + bearish_rules==0 → overbought=1, mais pas >=2
+        assert result is None, "tech_score seul ne suffit pas (besoin de >=2 signaux)"
 
-    def test_reversal_long_on_extreme_negative_tech_score(self, db_session):
-        """Score technique ≤ -90 → oversold → long."""
+    def test_reversal_long_on_oversold_plus_tech_score(self, db_session):
+        """[v1.9.4] RSI oversold + StochRSI oversold → long (2 oscillateurs)."""
         pts = PaperTradingService(db_session)
         decision = {
             "rules_evaluated": [
-                {"rule_name": "macd_bearish_cross", "satisfied": True, "direction": "bearish"},
+                {"rule_name": "rsi_oversold", "satisfied": True, "direction": "bullish"},
+                {"rule_name": "stochrsi_oversold", "satisfied": True, "direction": "bullish"},
             ],
             "combined_score": -72,
-            "technical_score": -95,  # Très baissier → potentiel survente
+            "technical_score": -96,
         }
         result = pts._scalping_reversal_check(decision)
         assert result == "long"

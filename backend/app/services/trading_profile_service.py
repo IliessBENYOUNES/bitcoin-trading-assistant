@@ -89,13 +89,13 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         max_trades_per_day=50,
         cooldown_minutes=2,           # base cooldown, overridden par smart cooldown
         max_position_duration_hours=2,
-        # [v1.9.1] TP/SL élargis pour dépasser le cost model realistic
-        # Round-trip cost realistic = ~0.31% (taker 0.10 + spread/2 0.025 + slippage 0.03) × 2
-        # Ancien TP 0.3% ≈ coûts → presque aucune valeur nette extraite
-        # Nouveau TP 0.5% > 0.31% → marge nette ~0.19% par trade gagnant
-        # SL 0.4% → ratio risk/reward 1:1.25 après coûts
+        # [v1.9.1] TP/SL pour dépasser le cost model realistic
+        # Round-trip cost realistic = ~0.31%
         profit_take_pct=0.5,
-        loss_cut_pct=0.4,
+        # [v1.9.4] SL resserré de 0.4% → 0.35% pour mieux contrôler les pertes.
+        # Le ratio gain/perte était trop déséquilibré (pertes trop lourdes).
+        # Nouveau ratio R/R : 0.5% TP / 0.35% SL = 1.43:1 (vs ancien 1.25:1)
+        loss_cut_pct=0.35,
         loss_cut_score_threshold=5,
         leverage_enabled=True,
         max_leverage=1.5,
@@ -105,7 +105,6 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         buy_threshold=20,
         sell_threshold=15,
         # Sorties rapides — 15 min au lieu de 12 pour laisser le trade respirer
-        # Les stale exits étaient rentables, on allonge un peu
         momentum_fade_enabled=True,
         stale_exit_minutes=15,
         # Trailing stop inchangé (recalibré en v1.8.1)
@@ -116,26 +115,21 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         min_cooldown_minutes=0.5,
         max_cooldown_minutes=5.0,
         # [v1.9.1] Protection anti-micro-PnL
-        # Durée minimale de 30 secondes avant qu'une sortie par "signal contraire"
-        # soit autorisée. Empêche les fermetures-éclair à 0.00$ qui churnent.
-        # SL/TP/expiration/trailing restent actifs normalement.
         min_hold_seconds=30,
-        # Seuil économique : un trade doit capturer au moins ~0.15% pour survivre
-        # au cost model realistic après leverage. Utilisé pour le learning.
+        # Seuil économique
         min_economic_pnl_pct=0.15,
-        # [v1.9.3] Filtrage économique des shorts
-        # Score minimum pour ouvrir un short (les shorts mean-reversion doivent
-        # avoir un setup suffisamment fort pour justifier le risque contrarian).
-        # Valeur 25 = filtre les shorts avec score trop faible (zone 69-71 non discriminée)
-        short_min_score=25,
-        # [v1.9.3] Seuil relevé pour fermer un short par signal contraire.
-        # Avant : le moteur fermait dès score >= 10 (trop sensible).
-        # Maintenant : exige score >= 20 pour un vrai retournement bullish
-        # avant de tuer le short. Cela laisse le short respirer.
-        short_exit_score_threshold=20,
-        # [v1.9.3] Min hold spécifique aux shorts : 60s au lieu de 30s
-        # Les shorts ont besoin de plus de temps pour capturer un retracement.
-        short_min_hold_seconds=60,
+        # [v1.9.4] Filtrage économique des shorts renforcé
+        # Le short_min_score était trop permissif à 25 (abs(score) souvent 60-72 → passait toujours).
+        # Relevé à 40 pour que seuls les setups short avec une vraie conviction passent.
+        short_min_score=40,
+        # [v1.9.4] Seuil de sortie signal contraire relevé de 20→35.
+        # En marché haussier, un score de 20+ est quasi-permanent → les shorts
+        # se faisaient tuer immédiatement. Avec 35, il faut un vrai signal haussier fort.
+        short_exit_score_threshold=35,
+        # [v1.9.4] Min hold spécifique aux shorts : 90s au lieu de 60s
+        # Les shorts ont besoin de plus de temps pour capturer un vrai retracement.
+        # 60s n'était pas assez pour que le pullback se développe.
+        short_min_hold_seconds=90,
     ),
 }
 

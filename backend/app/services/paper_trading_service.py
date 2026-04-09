@@ -1076,20 +1076,19 @@ class PaperTradingService:
 
         En scalping, quand les oscillateurs (RSI, StochRSI) sont en zone extrême,
         il y a une probabilité accrue de pullback. On exploite ce pullback avec
-        une position contrariante et un SL/TP serré (0.3%).
+        une position contrariante et un SL/TP serré.
 
-        Cela permet d'ouvrir des SHORT même quand la tendance globale est haussière
-        (et des LONG en tendance baissière).
-
-        [v1.8.1] Seuils abaissés pour déclencher plus de shorts :
-        - Avant : requérait satisfied=True (strength >= 0.7) pour rsi_overbought
-        - Maintenant : vérifie aussi les indicateurs bruts et les bandes de Bollinger
-        - Un seul oscillateur en zone extrême suffit
+        [v1.9.4] Rebalancé pour éviter la surcorrection vers le short :
+        - Avant : 1 seul oscillateur en zone extrême suffisait → trop de shorts
+        - Maintenant : exige au moins 2 signaux convergents de surachat/survente
+        - Le tech_score seul ne suffit plus à déclencher un reversal
+        - En marché haussier, RSI overbought est NORMAL, pas un signal de short
+        - Le reversal doit être réservé aux situations de surachat/survente EXTRÊMES
 
         Returns:
-            "short" si surachat détecté (pullback baissier probable)
-            "long" si survente détectée (rebond haussier probable)
-            None si pas de signal de reversal
+            "short" si surachat extrême détecté (pullback baissier probable)
+            "long" si survente extrême détectée (rebond haussier probable)
+            None si pas de signal de reversal suffisamment fort
         """
         rules = decision_result.get("rules_evaluated", [])
 
@@ -1108,32 +1107,31 @@ class PaperTradingService:
             elif name in oversold_signals:
                 oversold += 1
 
-        # Méthode 2 : Score technique très élevé + signaux convergents
-        # Si le score technique est extrêmement élevé (+80 ou -80),
-        # c'est un signe que le marché est probablement suracheté/survendu
-        # et un mean reversion pourrait être pertinent.
+        # Méthode 2 (restreinte) : Score technique extrême
+        # [v1.9.4] Relevé de 90 à 95 pour ne pas générer de faux positifs
+        # Le tech_score seul ne peut plus déclencher un reversal — il ne fait
+        # qu'ajouter un signal qui doit être confirmé par un oscillateur.
         score = decision_result.get("combined_score", 0)
         tech_score = decision_result.get("technical_score", score)
 
-        # Si technique très haussière (>85) ET pas de convergence forte
-        # → potentiel surachat pour un short scalping
         bullish_rules = sum(1 for r in rules if r.get("satisfied") and r.get("direction") == "bullish")
         bearish_rules = sum(1 for r in rules if r.get("satisfied") and r.get("direction") == "bearish")
 
-        # Méthode 3 : Détection par force pure du score
-        # En scalping 15m, un score technique ≥ 90 suggère un surachat
-        # Un score technique ≤ -90 suggère une survente
-        if tech_score >= 90 and bearish_rules == 0:
+        if tech_score >= 95 and bearish_rules == 0:
             overbought += 1
-            logger.debug(f"⚡ Scalping reversal: tech_score={tech_score} → overbought")
-        elif tech_score <= -90 and bullish_rules == 0:
+            logger.debug(f"⚡ Scalping reversal: tech_score={tech_score} → overbought signal")
+        elif tech_score <= -95 and bullish_rules == 0:
             oversold += 1
-            logger.debug(f"⚡ Scalping reversal: tech_score={tech_score} → oversold")
+            logger.debug(f"⚡ Scalping reversal: tech_score={tech_score} → oversold signal")
 
-        # Au moins 1 oscillateur/signal en zone extrême → signal de reversal
-        if overbought >= 1:
+        # [v1.9.4] Exiger au moins 2 signaux convergents pour un reversal.
+        # 1 seul oscillateur en zone extrême n'est PAS suffisant — en marché
+        # haussier, RSI > 70 est quasi permanent, ce n'est pas un signal de short.
+        # Il faut RSI overbought + StochRSI overbought (ou + tech_score extrême)
+        # pour justifier un trade contrarian.
+        if overbought >= 2:
             return "short"
-        if oversold >= 1:
+        if oversold >= 2:
             return "long"
         return None
 

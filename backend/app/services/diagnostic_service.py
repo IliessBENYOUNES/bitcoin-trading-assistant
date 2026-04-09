@@ -570,7 +570,45 @@ class DiagnosticService:
         if not non_trade_ticks:
             return MissedOpportunitySummary()
 
+        # [v1.9.3] Optimisation performance : pré-charger toutes les candles
+        # de la période en une seule requête au lieu de N×3 requêtes individuelles.
+        # Avec 3500+ ticks, l'ancien code faisait ~10 000 requêtes → timeout 45s.
         total_analyzed = len(non_trade_ticks)
+
+        # Limiter l'analyse aux 500 derniers ticks pour éviter les timeouts
+        # sur les grosses périodes. On garde les plus récents (plus pertinents).
+        MAX_TICKS_ANALYZED = 500
+        if len(non_trade_ticks) > MAX_TICKS_ANALYZED:
+            non_trade_ticks = non_trade_ticks[-MAX_TICKS_ANALYZED:]
+
+        # Calculer la plage temporelle totale pour pré-charger les candles
+        first_tick_ts = non_trade_ticks[0].timestamp
+        last_tick_ts = non_trade_ticks[-1].timestamp
+        if first_tick_ts.tzinfo is None:
+            first_tick_ts = first_tick_ts.replace(tzinfo=timezone.utc)
+        if last_tick_ts.tzinfo is None:
+            last_tick_ts = last_tick_ts.replace(tzinfo=timezone.utc)
+
+        candle_end = last_tick_ts + timedelta(minutes=lookforward_minutes + 1)
+        all_candles = (
+            self.db.query(Candle)
+            .filter(
+                Candle.symbol == "BTC/USD",
+                Candle.timestamp >= first_tick_ts,
+                Candle.timestamp <= candle_end,
+            )
+            .order_by(Candle.timestamp.asc())
+            .all()
+        )
+
+        # Indexer les candles par timestamp pour recherche rapide
+        candle_list = []
+        for c in all_candles:
+            ts = c.timestamp
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            candle_list.append((ts, c.close_price))
+
         missed_items = []
         missed_above = {0.10: 0, 0.20: 0, 0.30: 0, 0.50: 0}
         by_reason = Counter()
@@ -585,16 +623,15 @@ class DiagnosticService:
                 continue
 
             # Déterminer la direction favorable
-            # acheter → on regarde si le prix monte, vendre → si le prix baisse
             favorable_direction = 1  # long par défaut
             if tick.decision_action == "vendre":
                 favorable_direction = -1
             elif tick.decision_action == "attendre":
-                # Pour un tick "attendre", on regarde la direction du score
                 if tick.decision_score and tick.decision_score < 0:
                     favorable_direction = -1
 
             # Chercher les candles dans les N minutes suivantes
+            # en utilisant la liste pré-chargée au lieu de requêtes DB
             windows = [5, 15, 30]
             best_move = 0.0
             best_window = ""
@@ -604,22 +641,17 @@ class DiagnosticService:
                 if window_min > lookforward_minutes:
                     break
                 end_window = tick_ts + timedelta(minutes=window_min)
-                # Chercher le prix le plus extrême dans cette fenêtre
-                candle = (
-                    self.db.query(Candle)
-                    .filter(
-                        Candle.symbol == "BTC/USD",
-                        Candle.timestamp >= tick_ts,
-                        Candle.timestamp <= end_window,
-                    )
-                    .order_by(Candle.timestamp.desc())
-                    .first()
-                )
+                # Trouver la candle la plus récente dans [tick_ts, end_window]
+                best_candle_price = None
+                for c_ts, c_price in candle_list:
+                    if c_ts >= tick_ts and c_ts <= end_window:
+                        best_candle_price = c_price  # la dernière dans la fenêtre
+                    elif c_ts > end_window:
+                        break
 
-                if candle:
-                    price_after = candle.close_price
-                    prices_after[f"{window_min}m"] = price_after
-                    move_pct = (price_after - tick_price) / tick_price * 100 * favorable_direction
+                if best_candle_price is not None:
+                    prices_after[f"{window_min}m"] = best_candle_price
+                    move_pct = (best_candle_price - tick_price) / tick_price * 100 * favorable_direction
                     if move_pct > best_move:
                         best_move = move_pct
                         best_window = f"{window_min}m"

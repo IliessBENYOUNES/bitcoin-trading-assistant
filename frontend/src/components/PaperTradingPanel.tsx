@@ -896,7 +896,13 @@ function TradeRow({ trade }: { trade: PaperTradeItem }) {
       <TableCell align="right" sx={{ color: pnlColor(trade.pnl_pct) }}>
         {formatPnl(trade.pnl_pct, '%')}
       </TableCell>
-      <TableCell align="right">{trade.duration_hours?.toFixed(1) ?? '—'}</TableCell>
+      <TableCell align="right">
+        {trade.duration_hours != null
+          ? trade.duration_hours < 0.1
+            ? `${Math.round(trade.duration_hours * 60)}m`
+            : `${trade.duration_hours.toFixed(1)}h`
+          : '—'}
+      </TableCell>
       <TableCell>
         <Tooltip title={trade.exit_reason || trade.entry_reason}>
           <Typography variant="caption" noWrap sx={{ maxWidth: 150, display: 'block' }}>

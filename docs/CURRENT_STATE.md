@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 9 avril 2026
-> **Version :** v1.9.3
+> **Version :** v1.9.4
 > **Branche :** `master`
-> **Dernier commit :** feat(short-optimization): réduire trades sans valeur + augmenter valeur par trade + casser signal contraire dominant
+> **Dernier commit :** fix(short-balance): corriger surcorrection short + réduire pertes + rendre shorts sélectifs
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.9.3** |
+| Version courante | **v1.9.4** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1273 tests**, tous passing ✅ |
+| Tests backend | **1291 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v1.9.3 livré** — Short optimization + valeur par trade + signal contraire maîtrisé |
+| Phase courante | **v1.9.4 livré** — Correction surcorrection short + sélectivité + contrôle des pertes |
 
 ### ⚠️ État de maturité honnête
 
@@ -53,7 +53,14 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
   - **Run Value Audit** : service + endpoint `/audit/run-value` — diagnostic complet de la valeur économique par trade
   - **Learning Layer v2** : suggestions short-spécifiques (short_min_score, short_exit_score_threshold, short_min_hold_seconds)
   - **Dataset stats short** : métriques short_trades_useful, short_trades_insignificant, pct_short_economically_useful
-- 1273 tests backend, tsc clean
+- **[v1.9.4] Correction surcorrection short** — Rebalancement complet long/short
+  - **Mean reversion ≥2 signaux** : exige 2 oscillateurs convergents (RSI overbought + StochRSI overbought) au lieu d'1 seul. En marché haussier, 1 RSI overbought est normal, pas un signal de short.
+  - **Short exit score threshold 35** (était 20) : en marché haussier, score 20+ est permanent → les shorts se faisaient tuer immédiatement. Avec 35, il faut un vrai signal haussier fort.
+  - **Short min score 40** (était 25) : les shorts à abs(score)<40 sont rejetés. Plus sélectif sur la qualité des shorts.
+  - **Short min hold 90s** (était 60s) : plus de temps pour le pullback se développer.
+  - **SL resserré 0.35%** (était 0.4%) : ratio R/R amélioré de 1.25:1 à 1.43:1 (TP 0.5% / SL 0.35%). Pertes mieux contrôlées.
+  - **Tech score seuil 95** (était 90) : moins de faux positifs de surachat.
+- 1291 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.

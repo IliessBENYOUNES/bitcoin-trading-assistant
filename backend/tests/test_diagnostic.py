@@ -287,7 +287,7 @@ class TestScalpingProfile:
         assert p.max_trades_per_day == 50
         # [v1.9.1] TP/SL élargis pour dépasser le cost model realistic
         assert p.profit_take_pct == 0.5    # was 0.3 → trop proche du round-trip cost
-        assert p.loss_cut_pct == 0.4       # was 0.3 → ratio R/R 1:1.25 après coûts
+        assert p.loss_cut_pct == 0.35       # was 0.4 → ratio R/R 1.43:1
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
         assert p.buy_threshold == 20       # recalibré (was 10)

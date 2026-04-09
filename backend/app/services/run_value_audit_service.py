@@ -87,6 +87,9 @@ class RunValueAuditService:
         # ---- SECTION E : Short economics ----
         short_economics = self._short_economics(all_closed, cost_model)
 
+        # ---- SECTION F : [v1.9.4] Long/Short Balance ----
+        long_short_balance = self._long_short_balance(all_closed, cost_model)
+
         return {
             "total_trades": len(all_closed),
             "cost_model": cost_preset,
@@ -95,6 +98,7 @@ class RunValueAuditService:
             "pnl_bucket_distribution": pnl_buckets,
             "signal_exit_audit": signal_exit,
             "short_economics": short_economics,
+            "long_short_balance": long_short_balance,
         }
 
     # ================================================================
@@ -110,6 +114,24 @@ class RunValueAuditService:
         wins = [p for p in pnls if p >= 0]
         losses = [p for p in pnls if p < 0]
 
+        avg_win = round(sum(wins) / len(wins), 2) if wins else 0
+        avg_loss = round(sum(losses) / len(losses), 2) if losses else 0
+        # [v1.9.4] Ratio gain/perte : avg_win / abs(avg_loss)
+        win_loss_ratio = round(avg_win / abs(avg_loss), 2) if avg_loss != 0 else float("inf")
+
+        # [v1.9.4] Médianes
+        sorted_wins = sorted(wins)
+        sorted_losses = sorted(losses)
+        median_win = sorted_wins[len(sorted_wins) // 2] if sorted_wins else 0
+        median_loss = sorted_losses[len(sorted_losses) // 2] if sorted_losses else 0
+
+        # [v1.9.4] Contribution des plus grosses pertes
+        top3_losses = sorted(losses)[:3]  # 3 plus grosses pertes (plus négatives)
+        total_loss = abs(sum(losses)) if losses else 0
+        top3_loss_contribution = round(
+            abs(sum(top3_losses)) / total_loss * 100, 1
+        ) if total_loss > 0 else 0
+
         return {
             "total_trades": len(trades),
             "gross_pnl": round(sum(pnls), 2),
@@ -124,8 +146,14 @@ class RunValueAuditService:
             "net_profit_factor": round(metrics.get("net_profit_factor", 0), 2),
             "gross_win_rate": round(metrics.get("gross_win_rate", 0), 2),
             "net_win_rate": round(metrics.get("net_win_rate", 0), 2),
-            "avg_win_gross": round(sum(wins) / len(wins), 2) if wins else 0,
-            "avg_loss_gross": round(sum(losses) / len(losses), 2) if losses else 0,
+            "avg_win_gross": avg_win,
+            "avg_loss_gross": avg_loss,
+            # [v1.9.4] Nouvelles métriques gain/perte
+            "win_loss_ratio": win_loss_ratio,
+            "median_win": round(median_win, 2),
+            "median_loss": round(median_loss, 2),
+            "top3_losses": [round(p, 2) for p in top3_losses],
+            "top3_loss_contribution_pct": top3_loss_contribution,
         }
 
     # ================================================================
@@ -383,6 +411,58 @@ class RunValueAuditService:
     # HELPERS
     # ================================================================
 
+    def _long_short_balance(self, trades: list, cost_model: TradingCostModel) -> dict:
+        """[v1.9.4] Diagnostic de la répartition long/short avec métriques détaillées."""
+        longs = [t for t in trades if t.direction == "long"]
+        shorts = [t for t in trades if t.direction == "short"]
+        total = len(trades)
+
+        def _dir_metrics(group: list) -> dict:
+            if not group:
+                return {
+                    "count": 0, "pct": 0, "win_rate": 0,
+                    "avg_pnl_gross": 0, "avg_pnl_net": 0,
+                    "gross_expectancy": 0, "net_expectancy": 0,
+                }
+            pnls = [t.pnl or 0 for t in group]
+            wins = sum(1 for p in pnls if p >= 0)
+            dicts = self._to_dicts(group)
+            metrics = cost_model.apply_to_trades(dicts)
+            return {
+                "count": len(group),
+                "pct": round(len(group) / total * 100, 1) if total else 0,
+                "win_rate": round(wins / len(group) * 100, 1) if group else 0,
+                "avg_pnl_gross": round(sum(pnls) / len(pnls), 2) if pnls else 0,
+                "avg_pnl_net": round(metrics.get("net_avg_trade", 0), 4),
+                "gross_expectancy": round(metrics.get("gross_expectancy", 0), 4),
+                "net_expectancy": round(metrics.get("net_expectancy", 0), 4),
+            }
+
+        long_m = _dir_metrics(longs)
+        short_m = _dir_metrics(shorts)
+
+        # Verdict
+        if short_m["count"] == 0 and long_m["count"] == 0:
+            verdict = "Aucun trade."
+        elif short_m["count"] == 0:
+            verdict = "🟡 Mono-long. Aucun short scalping. Le mean reversion ne se déclenche pas."
+        elif long_m["count"] == 0:
+            verdict = "🔴 Mono-short. Surcorrection vers le short. Les longs scalping ont disparu."
+        elif short_m["pct"] > 80:
+            verdict = f"🔴 Fortement short-biased ({short_m['pct']:.0f}% shorts). Surcorrection probable."
+        elif short_m["pct"] > 60:
+            verdict = f"🟡 Short-biased ({short_m['pct']:.0f}% shorts). Vérifier la sélectivité du mean reversion."
+        elif long_m["pct"] > 80:
+            verdict = f"🟡 Long-biased ({long_m['pct']:.0f}% longs). Le mean reversion est peut-être trop sélectif."
+        else:
+            verdict = f"🟢 Balance acceptable ({long_m['pct']:.0f}% longs / {short_m['pct']:.0f}% shorts)."
+
+        return {
+            "long": long_m,
+            "short": short_m,
+            "verdict": verdict,
+        }
+
     def _to_dicts(self, trades) -> list[dict]:
         return [
             {
@@ -402,5 +482,6 @@ class RunValueAuditService:
             "pnl_bucket_distribution": {},
             "signal_exit_audit": {},
             "short_economics": {"verdict": reason},
+            "long_short_balance": {"long": {}, "short": {}, "verdict": reason},
         }
 
