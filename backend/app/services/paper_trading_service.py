@@ -440,12 +440,20 @@ class PaperTradingService:
 
                 # [v1.6.2] Seuil de stagnation adapté au profil
                 # Pour les profils tight (scalping, loss_cut ≤ 0.5%), on utilise
-                # profit_take_pct comme seuil : si après stale_minutes la position
-                # n'a pas atteint le TP/SL, on ferme et on réessaie.
+                # le trailing_stop_activation_pct comme seuil de stagnation.
+                # [v2.0.0-fix] Avant, on utilisait profit_take_pct (0.8%), ce qui
+                # classait des trades à +0.46% comme "stagnants" alors que le
+                # trailing stop (activation 0.20%) était déjà actif et aurait dû
+                # gérer la sortie. Résultat : le stale exit overridait le trailing
+                # stop et tuait les trades profitables (trade #364 : +$11.39 fermé stale).
+                # Avec trailing_stop_activation_pct (0.20%) :
+                #   - Position à +0.46% → PAS stagnante → trailing gère ✓
+                #   - Position à +0.05% → stagnante → fermée, slot libéré ✓
                 # Pour les profils classiques, le seuil reste à 0.1%.
                 stale_pnl_threshold = 0.1
                 if profile_params and profile_params.loss_cut_pct <= 0.5:
-                    stale_pnl_threshold = profile_params.profit_take_pct
+                    ts_act = getattr(profile_params, "trailing_stop_activation_pct", None)
+                    stale_pnl_threshold = ts_act if ts_act else profile_params.profit_take_pct
 
                 # Chemin 2 : Position plate → stale exit normal (inchangé)
                 if elapsed_min >= stale_minutes and abs(unrealized_pct) < stale_pnl_threshold:

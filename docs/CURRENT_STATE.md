@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 10 avril 2026
 > **Version :** v2.0.0
 > **Branche :** `master`
-> **Dernier commit :** fix(scalping): expected_capture_pct 0.50% — déblocage gate économique mathématiquement impossible
+> **Dernier commit :** fix(scalping): stale exit utilise trailing_stop_activation_pct au lieu de profit_take_pct — trades profitables ne sont plus tués
 
 ---
 
@@ -17,7 +17,7 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1501 tests**, tous passing ✅ |
+| Tests backend | **1507 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 | Phase courante | **v2.0.0 livré** — Pivot stratégique : aggressive sanctuarisé, scalping refondu, economic viability gate |
 
@@ -33,6 +33,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.0] Structural proofs gate** — exige ≥2 preuves structurelles (volume, micro-trend, price_position, range) pour entrer en scalping
 - **[v2.0.0] Scoring refondu** — oscillateurs (Bollinger, StochRSI) dégradés à 0.3x en tendance, price_position boosté à 1.4x
 - **[v2.0.0] Paramètres scalping recalibrés** — TP 0.8% (was 0.6%), trailing activation 0.20% (was 0.15%), max_trades 30 (was 50), market quality 50 (was 45)
+- **[v2.0.0-fix] Stale exit corrigé** — Le seuil de stagnation des profils tight utilise désormais `trailing_stop_activation_pct` (0.20%) au lieu de `profit_take_pct` (0.8%). Un trade à +0.46% n'est plus fermé comme "stagnant" — le trailing stop gère la sortie.
 - Backtesting et time-travel walk-forward
 - Paper trading multi-slot avec profils et levier auto
 - Diagnostic fréquence et opportunités manquées

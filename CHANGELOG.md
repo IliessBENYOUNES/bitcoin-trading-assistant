@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - **Gate économique scalping mathématiquement impossible** — `expected_capture_pct` était `None`, ce qui retombait sur `trailing_stop_activation_pct` = 0.20%. Or le seuil requis = RT cost (0.31%) × min_ev_multiple (1.5) = 0.465%. Donc 0.20% < 0.465% → **FAIL sur 100% des ticks scalping**. Corrigé à `expected_capture_pct=0.50` (capture réaliste entre trailing 0.20% et TP 0.80%), ce qui donne 0.50% > 0.465% ✓.
+- **Stale exit tue les trades profitables (trade #364)** — Le seuil de stagnation des profils tight utilisait `profit_take_pct` (0.8%). Un trade à +0.46% après 15 min était classé "stagnant" (0.46 < 0.8) et fermé en `closed_stale`, alors que le trailing stop (activation 0.20%) était actif et aurait dû gérer la sortie. Corrigé : le seuil utilise désormais `trailing_stop_activation_pct` (0.20%) quand disponible, avec fallback sur `profit_take_pct`. Résultat : un trade à +0.46% n'est plus stagnant → le trailing stop gère.
 
 ### Added
 - **Economic viability gate** — Le moteur scalping évalue le coût round-trip AVANT d'ouvrir un trade. Si la capture attendue ne couvre pas 1.5× le coût RT (realistic = 0.31%), le trade est refusé. Méthode `TradingCostModel.estimate_economic_viability()`. Raison de rejet loggée : `economic_viability_low`.
@@ -26,7 +27,7 @@ All notable changes to this project will be documented in this file.
 - `TickActivityLog` : 4 nouvelles colonnes nullable (estimated_round_trip_cost, min_capture_required_pct, economic_gate_passed, rejection_category).
 - `JournalService.log_tick()` : accepte les 4 nouveaux paramètres.
 - `REASON_LABELS` : 2 nouvelles raisons (economic_viability_low, structural_proof_insufficient).
-- Nombre total de tests : 1460→1501.
+- Nombre total de tests : 1460→1507.
 
 ## [1.9.9] - 2026-04-10
 
