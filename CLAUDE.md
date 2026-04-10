@@ -1,7 +1,7 @@
 # 🤖 CLAUDE.md — Règles Agent IA (Bitcoin Trading Assistant)
 
 > Ce fichier est la **source unique de vérité** pour tout agent IA travaillant sur ce projet.
-> **Version :** v1.0.0 — Dernière mise à jour : 8 avril 2026
+> **Version :** v1.1.0 — Dernière mise à jour : 10 avril 2026
 
 ---
 
@@ -14,9 +14,9 @@
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1090 tests** pytest, tous passing |
+| Tests backend | **1501 tests** pytest, tous passing |
 | Frontend build | `tsc --noEmit` sans erreur |
-| Phase courante | **v1.8.1 livré** — Scalping recalibré, prochaine étape v2.0 Robot Autonome |
+| Phase courante | **v2.0.0 livré** — Pivot stratégique déployé, scalping débloqué |
 
 **Documents à lire en premier :**
 1. Ce fichier (`CLAUDE.md`) — Règles de l'agent
@@ -39,6 +39,54 @@
 4. Si un bloc est **risqué**, fais des sous-checkpoints supplémentaires.
 5. Si tu modifies de l'**infra, du tooling, du CI/CD, des seeds, ou des fichiers globaux**, considère cela comme sensible et **isole le bloc**.
 6. En cas de doute, privilégie un **commit checkpoint supplémentaire** plutôt qu'un lot trop gros.
+
+---
+
+## 🥇 Règle d'or n°1 — Mettre à jour TOUTE la documentation à chaque intervention
+
+> **Cette règle est non-négociable. Aucune exception.**
+
+À chaque intervention (fix, feature, refactor, correction), l'agent DOIT mettre à jour **systématiquement** les 4 documents clés du projet :
+
+| Document | Quand le mettre à jour | Ce qu'il faut mettre à jour |
+|----------|------------------------|----------------------------|
+| `docs/CURRENT_STATE.md` | **TOUJOURS** | Dernier commit, version, tests, features, problèmes connus |
+| `CHANGELOG.md` | **Si changement fonctionnel ou fix** | Nouvelle entrée Fixed/Added/Changed dans la version courante |
+| `docs/ROADMAP.md` | **Si une phase/tâche change de statut** | Marquer ✅, mettre à jour état actuel, timeline |
+| `docs/requirements_traceability.md` | **Si nouvelles exigences ou tests** | Nouveaux FR-xxx, test count, statut PLANNED→PASS |
+
+**Erreur passée à ne pas reproduire :** Lors du fix du gate économique scalping, seul `CURRENT_STATE.md` avait été partiellement mis à jour. Le CHANGELOG, la ROADMAP, et la traçabilité étaient restés obsolètes. Cela a nécessité une seconde passe de correction documentaire.
+
+> ⚠️ **Un commit avec documentation incomplète est un commit incomplet.**
+> L'agent ne doit JAMAIS considérer une intervention comme terminée tant que les 4 docs ne sont pas à jour.
+
+---
+
+## 🥇 Règle d'or n°2 — Toujours produire un fichier HANDOFF_GPT.md
+
+> **Après chaque intervention**, l'agent DOIT écrire ou mettre à jour le fichier `docs/HANDOFF_GPT.md`.
+
+Ce fichier est un **résumé structuré** de ce qui vient d'être fait, destiné à être copié-collé dans un autre GPT pour analyse parallèle.
+
+**Le fichier DOIT contenir :**
+
+1. **Titre et date** de l'intervention
+2. **Problème** — Qu'est-ce qui n'allait pas ?
+3. **Diagnostic** — Comment le problème a été identifié ?
+4. **Cause racine** — Explication technique précise
+5. **Correction appliquée** — Fichier, ligne, avant/après
+6. **Ce qui n'a PAS été touché** — Confirmation d'isolation
+7. **Validations** — Tests, tsc, endpoints OK
+8. **Documentation mise à jour** — Liste des 4 docs + ce qui a changé dans chacune
+9. **Commit** — Message + hash
+10. **État actuel** — Version, tests, prochaine action recommandée
+11. **Commandes de relance** — Comment redémarrer proprement
+
+**Format du fichier :** Markdown, sections avec `##`, tableaux quand pertinent.
+
+**Emplacement :** `docs/HANDOFF_GPT.md` (fichier temporaire, écrasé à chaque intervention).
+
+> Ce fichier permet au propriétaire du projet de transférer le contexte à un autre assistant IA sans perte d'information. Il est aussi utile comme trace de la dernière action effectuée.
 
 ---
 
@@ -89,7 +137,7 @@ npx tsc --noEmit
 ```
 
 Vérifier :
-- ✅ **1090+ tests** backend passent (le nombre ne doit jamais diminuer)
+- ✅ **1501+ tests** backend passent (le nombre ne doit jamais diminuer)
 - ✅ Aucun nouveau test en échec
 - ✅ `tsc --noEmit` sans erreur
 - Si des tests échouent → **corriger avant de commit**
@@ -260,7 +308,7 @@ Avant d'ajouter une feature :
 1. Lire `docs/ROADMAP.md` pour la roadmap complète (phases + vision long terme)
 2. S'assurer que la feature s'inscrit dans la bonne phase
 
-**Phase actuelle : v1.8.1 livré — Prochaine étape v2.0 Robot Autonome**
+**Phase actuelle : v2.0.0 livré — Pivot stratégique déployé, scalping débloqué**
 
 Ne pas implémenter une feature d'une phase future si la phase courante n'est pas terminée.
 
@@ -351,7 +399,7 @@ class TestXxxEndpoint:
 ## Checklist pré-commit
 
 ```
-[ ] Tests backend passent (1005+ tests, python -m pytest tests/ -v)
+[ ] Tests backend passent (1501+ tests, python -m pytest tests/ -v)
 [ ] Frontend compile (npx tsc --noEmit, zéro erreur)
 [ ] docs/CURRENT_STATE.md mis à jour
 [ ] CHANGELOG.md mis à jour (si nouvelle version)
