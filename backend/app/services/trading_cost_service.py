@@ -188,6 +188,60 @@ class TradingCostModel:
             "cost_model": self.name,
         }
 
+    def estimate_economic_viability(
+        self,
+        position_size_usd: float,
+        leverage: float = 1.0,
+        expected_capture_pct: float = 0.0,
+        min_ev_multiple: float = 2.0,
+    ) -> dict:
+        """
+        Évalue la viabilité économique d'un trade AVANT ouverture.
+
+        Le trade doit pouvoir capturer au moins min_ev_multiple × le coût
+        round-trip pour justifier l'entrée. C'est le garde-fou fondamental
+        contre les trades de poussière qui semblent gagnants en brut mais
+        perdent en net.
+
+        Args:
+            position_size_usd: Taille de la position en USD
+            leverage: Levier appliqué
+            expected_capture_pct: Capture attendue en % (ex: 0.3 = 0.3%)
+            min_ev_multiple: Multiplicateur minimum (capture ≥ N × coût)
+
+        Returns:
+            dict avec round_trip_cost_usd, min_capture_required_pct,
+            expected_net_pnl, is_viable, rejection_reason
+        """
+        effective_size = position_size_usd * leverage
+        rt_cost = self.round_trip_cost_usd(effective_size)
+        rt_cost_pct = self.round_trip_cost_pct()
+        min_capture_pct = rt_cost_pct * min_ev_multiple
+        min_capture_usd = rt_cost * min_ev_multiple
+
+        expected_capture_usd = effective_size * expected_capture_pct / 100
+        expected_net = expected_capture_usd - rt_cost
+
+        is_viable = expected_capture_pct >= min_capture_pct
+        rejection_reason = None
+        if not is_viable:
+            rejection_reason = (
+                f"Capture attendue {expected_capture_pct:.3f}% < seuil {min_capture_pct:.3f}% "
+                f"({min_ev_multiple}× coût RT {rt_cost_pct:.3f}%). "
+                f"Net attendu: ${expected_net:.2f} (coût: ${rt_cost:.2f})"
+            )
+
+        return {
+            "round_trip_cost_usd": round(rt_cost, 4),
+            "round_trip_cost_pct": round(rt_cost_pct, 4),
+            "min_capture_required_pct": round(min_capture_pct, 4),
+            "min_capture_required_usd": round(min_capture_usd, 4),
+            "expected_capture_pct": round(expected_capture_pct, 4),
+            "expected_net_pnl": round(expected_net, 4),
+            "is_viable": is_viable,
+            "rejection_reason": rejection_reason,
+        }
+
 
 # ================================================================
 # PRESETS — Hypothèses documentées et paramétrables

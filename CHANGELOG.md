@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-04-10
+
+### Added
+- **Economic viability gate** — Le moteur scalping évalue le coût round-trip AVANT d'ouvrir un trade. Si la capture attendue ne couvre pas 1.5× le coût RT (realistic = 0.31%), le trade est refusé. Méthode `TradingCostModel.estimate_economic_viability()`. Raison de rejet loggée : `economic_viability_low`.
+- **Structural proofs gate** — Le scalping exige ≥2 preuves structurelles (volume ≥1.0x, micro-trend ≥3, price_position favorable, range_width_atr ≥1.5) pour ouvrir. Sans preuves, le trade est refusé. Raison : `structural_proof_insufficient`.
+- **Momentum fade restricted** — Nouveau mode `restricted` : le momentum fade ne se déclenche que si le pic ≥ 0.35% ET que la sortie est net-positive après coûts estimés. Le momentum fade en mode `enabled` (aggressive, balanced) reste inchangé.
+- **Tick logging enrichi** — 4 nouvelles colonnes : `estimated_round_trip_cost`, `min_capture_required_pct`, `economic_gate_passed`, `rejection_category`. Chaque rejet est catégorisé : economic, structure, volume, no_trade_zone, cooldown, score, risk.
+- **41 nouveaux tests** (`test_pivot_v200.py`) : economic viability (8), momentum fade restricted (4), structural proofs (3), scoring refondu (8), profil scalping v2.0 (7), non-régression aggressive (6), tick logging (3), reason labels (2).
+- **Migration DB** : `migrate_v200.py` pour PostgreSQL (4 colonnes ajoutées à `tick_activity_log`).
+
+### Changed
+- **Slot aggressive sanctuarisé** — Description mise à jour, marqué comme moteur principal de valeur. Pas de gate économique, pas de structural proofs, momentum fade normal. Aucun paramètre modifié.
+- **Scoring refondu** — Bollinger 0.4→0.3 et StochRSI 0.5→0.3 en tendance (contexte seulement, plus base d'entrée). Price_position 1.0→1.4, range_quality 0.8→1.2 en tendance. RSI 0.6→0.5 en tendance.
+- **Profil scalping refondu** — TP 0.6%→0.8%, trailing activation 0.15%→0.20%, max_trades 50→30, min_score 20→25, market_quality 45→50, volume_ratio 0.7→0.8, economic_gate_enabled=True, min_ev_multiple=1.5, min_structural_proofs=2, momentum_fade_mode=restricted, momentum_fade_min_amplitude_pct=0.35.
+
+### Technical
+- `TradingCostModel.estimate_economic_viability()` : évaluation pré-entrée avec round_trip_cost, min_capture_required, expected_net_pnl, is_viable, rejection_reason.
+- `TradingProfileParams` : 5 nouveaux champs (economic_gate_enabled, min_ev_multiple, expected_capture_pct, momentum_fade_mode, momentum_fade_min_amplitude_pct, min_structural_proofs).
+- `TickActivityLog` : 4 nouvelles colonnes nullable (estimated_round_trip_cost, min_capture_required_pct, economic_gate_passed, rejection_category).
+- `JournalService.log_tick()` : accepte les 4 nouveaux paramètres.
+- `REASON_LABELS` : 2 nouvelles raisons (economic_viability_low, structural_proof_insufficient).
+- Nombre total de tests : 1460→1501.
+
 ## [1.9.9] - 2026-04-10
 
 ### Fixed

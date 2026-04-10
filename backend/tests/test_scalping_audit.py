@@ -278,9 +278,9 @@ class TestScalpingRecalibration:
     """Tests pour les paramètres recalibrés du scalping v1.9.5."""
 
     def test_trailing_stop_activation_increased(self):
-        """[v1.9.5] Trailing stop activation augmenté de 0.08% à 0.15%."""
+        """[v2.0.0] Trailing stop activation relevé de 0.15% à 0.20%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.15
+        assert p.trailing_stop_activation_pct == 0.20
 
     def test_trailing_stop_trail_increased(self):
         """[v1.9.5] Trailing stop trail resserré de 0.12% à 0.10%."""
@@ -298,9 +298,9 @@ class TestScalpingRecalibration:
         assert p.sell_threshold == 20
 
     def test_min_score_increased(self):
-        """[v1.9.5] Min score augmenté de 15 à 20 pour filtrer le bruit."""
+        """[v2.0.0] Min score maintenu à 25."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_score == 20
+        assert p.min_score == 25
 
     def test_cooldown_increased(self):
         """Cooldown augmenté de 1 à 2 min."""
@@ -318,12 +318,12 @@ class TestScalpingRecalibration:
         assert p.max_leverage == 1.5
 
     def test_unchanged_params(self):
-        """Les paramètres scalping reflètent le recalibrage v1.9.6."""
+        """Les paramètres scalping reflètent le pivot v2.0.0."""
         p = PROFILE_PRESETS["scalping"]
-        # [v1.9.6] TP conservé, SL encore resserré
-        assert p.profit_take_pct == 0.6    # inchangé
-        assert p.loss_cut_pct == 0.20      # [v1.9.6] was 0.25 → 0.20
-        assert p.max_trades_per_day == 50
+        # [v2.0.0] TP élargi 0.6→0.8, SL maintenu 0.20
+        assert p.profit_take_pct == 0.8
+        assert p.loss_cut_pct == 0.20
+        assert p.max_trades_per_day == 30  # [v2.0.0] 50→30
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
         assert p.momentum_fade_enabled is True

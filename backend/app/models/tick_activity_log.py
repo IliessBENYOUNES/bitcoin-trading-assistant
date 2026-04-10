@@ -87,6 +87,17 @@ class TickActivityLog(Base):
     quality_gate_passed: Mapped[bool] = mapped_column(Integer, nullable=True)  # 0/1
     quality_gate_reason: Mapped[str] = mapped_column(String(500), nullable=True)
 
+    # --- [v2.0.0] Economic viability gate trace ---
+    # Persiste l'évaluation économique pré-entrée pour chaque tick.
+    # Permet de prouver qu'un trade a été refusé car non-viable après frais.
+    estimated_round_trip_cost: Mapped[float] = mapped_column(Float, nullable=True)
+    min_capture_required_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    economic_gate_passed: Mapped[bool] = mapped_column(Integer, nullable=True)  # 0/1
+    # [v2.0.0] Catégorie de rejet — permet l'agrégation des raisons de refus.
+    # Valeurs : "economic", "structure", "volume", "no_trade_zone", "cooldown",
+    #           "score", "risk", "max_trades", None (si pas de rejet)
+    rejection_category: Mapped[str] = mapped_column(String(30), nullable=True)
+
     def __repr__(self) -> str:
         return (
             f"<TickActivityLog(id={self.id}, action={self.action_taken}, "

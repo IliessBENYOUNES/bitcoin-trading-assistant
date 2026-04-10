@@ -827,20 +827,22 @@ REGIME_WEIGHTS = {
     "trending": {
         # Indicateurs de tendance boostés
         "macd": 1.3, "sma": 1.3, "ema_cross": 1.4,
-        # [v1.9.8] Oscillateurs encore plus réduits en tendance
-        # Bollinger 0.6→0.4, StochRSI 0.7→0.5 : ces indicateurs
-        # ne discriminent pas en marché haussier (toujours bullish).
-        "rsi": 0.6, "bollinger": 0.4, "stoch_rsi": 0.5,
-        # [v1.9.8] Market structure signals — poids normal en tendance
-        "price_position": 1.0, "range_quality": 0.8,
+        # [v2.0.0] Oscillateurs ENCORE plus réduits en tendance.
+        # L'audit v1.9.9 a prouvé que ces indicateurs sont structurellement
+        # bullish en marché haussier et ne discriminent pas.
+        # Bollinger 0.4→0.3, StochRSI 0.5→0.3 : contexte seulement, pas base d'entrée.
+        "rsi": 0.5, "bollinger": 0.3, "stoch_rsi": 0.3,
+        # [v2.0.0] Market structure = signaux PRIMAIRES en tendance.
+        # Price position et range quality deviennent les signaux les plus importants.
+        "price_position": 1.4, "range_quality": 1.2,
     },
     "ranging": {
         # Indicateurs de tendance réduits (whipsaws)
         "macd": 0.6, "sma": 0.6, "ema_cross": 0.5,
-        # Oscillateurs boostés (fonctionnent bien en range)
+        # Oscillateurs fonctionnent bien en range (inchangé)
         "rsi": 1.3, "bollinger": 1.3, "stoch_rsi": 1.4,
-        # [v1.9.8] Market structure signals — poids fort en range
-        "price_position": 1.3, "range_quality": 1.5,
+        # [v2.0.0] Market structure = signaux PRIMAIRES en range aussi.
+        "price_position": 1.4, "range_quality": 1.5,
     },
 }
 

@@ -97,6 +97,27 @@ class TradingProfileParams(BaseModel):
     # [v1.9.8] Filtre long quality — conditions supplémentaires pour les longs scalping.
     # Les longs médiocres qui finissent en stale négatif sont le problème principal.
     long_quality_filter: bool = Field(default=False, description="Active le filtre de qualité pour les longs scalping")
+    # [v2.0.0] Economic viability gate — refuse les trades dont la capture attendue
+    # ne couvre pas les frais. C'est le garde-fou fondamental du pivot stratégique :
+    # plus aucun trade de poussière qui semble gagnant en brut mais perd en net.
+    economic_gate_enabled: bool = Field(default=False, description="Active le gate de viabilité économique pré-entrée")
+    min_ev_multiple: float = Field(default=2.0, description="Multiplicateur minimum : capture attendue ≥ N × coût RT")
+    # [v2.0.0] Capture attendue estimée en % — basée sur le trailing stop
+    # et la structure de marché, pas sur le TP théorique (qui n'est jamais atteint).
+    expected_capture_pct: Optional[float] = Field(default=None, description="Capture réaliste attendue en % (None=trailing_stop_activation_pct)")
+    # [v2.0.0] Momentum fade mode — contrôle du principal destructeur de valeur.
+    # "enabled" = comportement actuel (défaut pour les anciens profils)
+    # "restricted" = ne se déclenche que si le pic dépasse un seuil d'amplitude minimum
+    # "disabled" = momentum fade complètement désactivé
+    momentum_fade_mode: str = Field(default="enabled", description="Mode momentum fade: enabled/restricted/disabled")
+    # [v2.0.0] Amplitude minimum du pic pour déclencher momentum fade en mode restricted.
+    # Ex: 0.30 = le pic doit valoir au moins 0.30% ($7.50 sur $2500) pour que le
+    # momentum fade soit autorisé. Sinon on laisse le trailing stop gérer.
+    momentum_fade_min_amplitude_pct: Optional[float] = Field(default=None, description="Amplitude % minimum du pic pour momentum fade restricted")
+    # [v2.0.0] Nombre minimum de preuves structurelles pour ouvrir en scalping.
+    # Les preuves sont : price_position favorable, volume confirmé, micro-trend,
+    # breakout récent. Sans preuve, pas d'entrée.
+    min_structural_proofs: int = Field(default=0, description="Nombre minimum de signaux structurels pour ouvrir (0=désactivé)")
 
 
 class TradingProfileResponse(BaseModel):

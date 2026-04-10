@@ -79,19 +79,19 @@ def _make_account(db, initial_capital=10000):
 # ============================================================
 
 class TestScalpingParamsV195:
-    """Vérifier que le preset scalping a les bonnes valeurs v1.9.6 (mis à jour)."""
+    """Vérifier que le preset scalping a les bonnes valeurs v2.0.0 (mis à jour)."""
 
     def test_loss_cut_pct(self):
         """SL resserré → 0.20%."""
         assert PROFILE_PRESETS["scalping"].loss_cut_pct == 0.20
 
     def test_profit_take_pct(self):
-        """TP élargi de 0.5% → 0.6%."""
-        assert PROFILE_PRESETS["scalping"].profit_take_pct == 0.6
+        """[v2.0.0] TP élargi de 0.6% → 0.8%."""
+        assert PROFILE_PRESETS["scalping"].profit_take_pct == 0.8
 
     def test_trailing_stop_activation(self):
-        """Activation trailing relevée de 0.08% → 0.15%."""
-        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.15
+        """[v2.0.0] Activation trailing relevée de 0.15% → 0.20%."""
+        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.20
 
     def test_trailing_stop_pct(self):
         """Trail resserré de 0.12% → 0.10%."""
@@ -106,8 +106,8 @@ class TestScalpingParamsV195:
         assert PROFILE_PRESETS["scalping"].sell_threshold == 20
 
     def test_min_score(self):
-        """Min score relevé de 15 → 20."""
-        assert PROFILE_PRESETS["scalping"].min_score == 20
+        """[v2.0.0] Min score maintenu à 25."""
+        assert PROFILE_PRESETS["scalping"].min_score == 25
 
     def test_short_min_score(self):
         """Short min score → 25 (v1.9.6)."""
@@ -130,10 +130,10 @@ class TestScalpingParamsV195:
         assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 5
 
     def test_rr_ratio_theoretical(self):
-        """Ratio R:R théorique = TP/SL = 0.6/0.20 = 3.0 (v1.9.6)."""
+        """[v2.0.0] Ratio R:R théorique = TP/SL = 0.8/0.20 = 4.0."""
         p = PROFILE_PRESETS["scalping"]
         rr = p.profit_take_pct / p.loss_cut_pct
-        assert rr == pytest.approx(3.0, abs=0.01)
+        assert rr == pytest.approx(4.0, abs=0.01)
 
     def test_other_profiles_unchanged(self):
         """Les autres profils ne sont PAS impactés."""
@@ -858,10 +858,10 @@ class TestStaleExitV196:
         assert params.loss_cut_pct == 0.20
 
     def test_rr_theoretical_3_to_1(self):
-        """Le R:R théorique est TP/SL = 0.6/0.20 = 3:1."""
+        """[v2.0.0] Le R:R théorique est TP/SL = 0.8/0.20 = 4:1."""
         params = PROFILE_PRESETS["scalping"]
         rr = params.profit_take_pct / params.loss_cut_pct
-        assert rr == pytest.approx(3.0, abs=0.1)
+        assert rr == pytest.approx(4.0, abs=0.1)
 
 
 class TestShortRebalanceV196:

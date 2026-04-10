@@ -279,21 +279,21 @@ class TestScalpingProfile:
     """Tests pour le profil Scalping."""
 
     def test_scalping_preset_exists(self):
-        """Le preset scalping existe avec les bons paramètres (v1.9.5 recalibré)."""
+        """Le preset scalping existe avec les bons paramètres (v2.0.0 refondu)."""
         assert "scalping" in PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_score == 20           # [v1.9.5] recalibré 15→20
+        assert p.min_score == 25           # [v2.0.0] maintenu à 25
         assert p.cooldown_minutes == 2     # recalibré (was 1)
-        assert p.max_trades_per_day == 50
-        # [v1.9.6] TP conservé, SL encore resserré
-        assert p.profit_take_pct == 0.6    # inchangé
-        assert p.loss_cut_pct == 0.20      # [v1.9.6] 0.25→0.20
+        assert p.max_trades_per_day == 30  # [v2.0.0] 50→30
+        # [v2.0.0] TP élargi, SL maintenu
+        assert p.profit_take_pct == 0.8    # [v2.0.0] 0.6→0.8
+        assert p.loss_cut_pct == 0.20      # maintenu
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
         assert p.buy_threshold == 25       # [v1.9.5] recalibré 20→25
         assert p.sell_threshold == 20      # [v1.9.5] recalibré 15→20
         assert p.momentum_fade_enabled is True
-        assert p.stale_exit_minutes == 15  # was 12 → laisser le trade respirer
+        assert p.stale_exit_minutes == 15
         # [v1.9.1] min_hold et min_economic_pnl
         assert p.min_hold_seconds == 30
         assert p.min_economic_pnl_pct == 0.15

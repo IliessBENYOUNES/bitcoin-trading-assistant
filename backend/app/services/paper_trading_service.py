@@ -507,8 +507,13 @@ class PaperTradingService:
             # [v1.6] Sortie rapide — Momentum fade
             # Si le profit latent a atteint un pic puis recule significativement,
             # on prend le profit restant avant qu'il ne disparaisse.
+            # [v2.0.0] Momentum fade = suspect principal de destruction de valeur.
+            # Mode "restricted" : ne se déclenche que si le pic dépasse un seuil
+            # d'amplitude minimum. En dessous, on laisse le trailing stop gérer.
+            # Mode "disabled" : momentum fade complètement désactivé.
             mf_enabled = getattr(profile_params, "momentum_fade_enabled", False) if profile_params else False
-            if mf_enabled:
+            mf_mode = getattr(profile_params, "momentum_fade_mode", "enabled") if profile_params else "enabled"
+            if mf_enabled and mf_mode != "disabled":
                 unrealized_pnl_now = self._calc_unrealized_pnl(open_pos, current_price)
                 # Le pic de PnL est approximé via highest/lowest price
                 if open_pos.direction == "long" and open_pos.highest_price_since_entry:
@@ -528,23 +533,59 @@ class PaperTradingService:
                     mf_retention = 0.4  # Valeur historique par défaut
                 peak_pct = (peak_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
                 if peak_pct > 0.1 and peak_pnl > 0 and unrealized_pnl_now < peak_pnl * mf_retention:
-                    signal_reason = (
-                        f"Momentum fade : pic PnL +{peak_pnl:.2f} USD ({peak_pct:.2f}%), "
-                        f"actuel {unrealized_pnl_now:.2f} USD"
-                    )
-                    closed = self._close_position(open_pos, current_price, signal_reason, "closed_momentum_fade")
-                    _log_tick(action_taken="closed_momentum_fade", btc_price=current_price,
-                              had_open_position=True, trade_id=closed.id,
-                              leverage_final=getattr(closed, "leverage", 1.0))
-                    return PaperTickResult(
-                        action_taken="closed_momentum_fade",
-                        detail=f"Position fermée (momentum fade) : {signal_reason}",
-                        position_closed=PaperTradeResponse.model_validate(closed),
-                        current_price=current_price,
-                        timestamp=now.isoformat(),
-                        leverage_used=getattr(closed, "leverage", 1.0),
-                        profile_type=profile_name,
-                    )
+                    # [v2.0.0] En mode restricted, vérifier que l'amplitude du pic
+                    # dépasse le seuil minimum ET que la sortie est net-positive après coûts.
+                    mf_min_amp = getattr(profile_params, "momentum_fade_min_amplitude_pct", None) if profile_params else None
+                    if mf_mode == "restricted" and mf_min_amp is not None:
+                        if peak_pct < mf_min_amp:
+                            # Pic trop petit — on laisse le trailing stop gérer
+                            pass  # Ne pas sortir en momentum fade
+                        else:
+                            # Vérifier que la sortie reste net-positive après coûts estimés
+                            from app.services.trading_cost_service import get_cost_model
+                            cost_est = get_cost_model("realistic")
+                            lev = getattr(open_pos, "leverage", 1.0) or 1.0
+                            rt_cost = cost_est.round_trip_cost_usd(
+                                open_pos.position_size_usd * lev
+                            )
+                            if unrealized_pnl_now > rt_cost:
+                                signal_reason = (
+                                    f"Momentum fade (restricted) : pic PnL +{peak_pnl:.2f} USD ({peak_pct:.2f}%), "
+                                    f"actuel {unrealized_pnl_now:.2f} USD, net après coûts: {unrealized_pnl_now - rt_cost:.2f}"
+                                )
+                                closed = self._close_position(open_pos, current_price, signal_reason, "closed_momentum_fade")
+                                _log_tick(action_taken="closed_momentum_fade", btc_price=current_price,
+                                          had_open_position=True, trade_id=closed.id,
+                                          leverage_final=getattr(closed, "leverage", 1.0))
+                                return PaperTickResult(
+                                    action_taken="closed_momentum_fade",
+                                    detail=f"Position fermée (momentum fade restricted) : {signal_reason}",
+                                    position_closed=PaperTradeResponse.model_validate(closed),
+                                    current_price=current_price,
+                                    timestamp=now.isoformat(),
+                                    leverage_used=getattr(closed, "leverage", 1.0),
+                                    profile_type=profile_name,
+                                )
+                            # Sinon : la sortie serait net-negative → on laisse courir
+                    else:
+                        # Mode "enabled" (comportement d'origine) — momentum fade normal
+                        signal_reason = (
+                            f"Momentum fade : pic PnL +{peak_pnl:.2f} USD ({peak_pct:.2f}%), "
+                            f"actuel {unrealized_pnl_now:.2f} USD"
+                        )
+                        closed = self._close_position(open_pos, current_price, signal_reason, "closed_momentum_fade")
+                        _log_tick(action_taken="closed_momentum_fade", btc_price=current_price,
+                                  had_open_position=True, trade_id=closed.id,
+                                  leverage_final=getattr(closed, "leverage", 1.0))
+                        return PaperTickResult(
+                            action_taken="closed_momentum_fade",
+                            detail=f"Position fermée (momentum fade) : {signal_reason}",
+                            position_closed=PaperTradeResponse.model_validate(closed),
+                            current_price=current_price,
+                            timestamp=now.isoformat(),
+                            leverage_used=getattr(closed, "leverage", 1.0),
+                            profile_type=profile_name,
+                        )
 
             # Vérifier si le DecisionService recommande de fermer
             decision_result = self._get_decision(
@@ -813,6 +854,105 @@ class PaperTradingService:
                     profile_type=profile_name,
                     non_trade_reason="market_quality_low",
                 )
+
+            # [v2.0.0] Economic viability gate — refuse les trades non viables après frais.
+            # Le scalping v1.9.9 produisait 87.5% de "gagnants bruts" devenus perdants nets.
+            # Ce gate calcule le coût round-trip et exige une capture minimum.
+            _econ_log = {}
+            econ_gate_enabled = getattr(profile_params, "economic_gate_enabled", False) if profile_params else False
+            if econ_gate_enabled:
+                from app.services.trading_cost_service import get_cost_model
+                cost_model = get_cost_model("realistic")
+                # Capture attendue = trailing_stop_activation (la capture réelle, pas le TP théorique)
+                expected_cap = getattr(profile_params, "expected_capture_pct", None)
+                if expected_cap is None:
+                    ts_act = getattr(profile_params, "trailing_stop_activation_pct", None)
+                    expected_cap = ts_act if ts_act else 0.15
+                min_ev_mult = getattr(profile_params, "min_ev_multiple", 2.0)
+                leverage_est = 1.0  # Estimé avant le calcul réel du levier
+                econ_result = cost_model.estimate_economic_viability(
+                    position_size_usd=2500,  # Taille standard scalping
+                    leverage=leverage_est,
+                    expected_capture_pct=expected_cap,
+                    min_ev_multiple=min_ev_mult,
+                )
+                _econ_log = {
+                    "estimated_round_trip_cost": econ_result["round_trip_cost_usd"],
+                    "min_capture_required_pct": econ_result["min_capture_required_pct"],
+                    "economic_gate_passed": econ_result["is_viable"],
+                }
+                if not econ_result["is_viable"]:
+                    _log_tick(action_taken="hold", btc_price=current_price,
+                              decision_score=score, decision_action=action,
+                              decision_confidence=confidence,
+                              reason_no_trade="economic_viability_low",
+                              reason_detail=econ_result["rejection_reason"][:500],
+                              quality_gate_passed=True,
+                              rejection_category="economic",
+                              **_qg_log, **_econ_log)
+                    return PaperTickResult(
+                        action_taken="hold",
+                        detail=f"Non viable économiquement : {econ_result['rejection_reason']}",
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        decision_score=score,
+                        decision_action=action,
+                        profile_type=profile_name,
+                        non_trade_reason="economic_viability_low",
+                    )
+
+            # [v2.0.0] Structural proofs gate — le scalping exige des preuves structurelles.
+            # Les preuves : price_position favorable (haut de range pour long), volume > 1.2x,
+            # micro-trend ≥ 3. Sans assez de preuves, pas d'entrée scalping.
+            min_proofs = getattr(profile_params, "min_structural_proofs", 0) if profile_params else 0
+            if min_proofs > 0 and mq_data:
+                proof_count = 0
+                proof_details = []
+                # Preuve 1 : volume confirmé (ratio >= 1.0)
+                vol_r = mq_data.get("volume_ratio", 0) or 0
+                if vol_r >= 1.0:
+                    proof_count += 1
+                    proof_details.append(f"volume={vol_r:.2f}x")
+                # Preuve 2 : micro-trend favorable (≥ 3 pour long, ≤ -3 pour short)
+                mt = mq_data.get("micro_trend_score", 0) or 0
+                direction_check = "long" if action == "acheter" else "short"
+                if (direction_check == "long" and mt >= 3) or (direction_check == "short" and mt <= -3):
+                    proof_count += 1
+                    proof_details.append(f"micro_trend={mt:+d}")
+                # Preuve 3 : price_position favorable (bas de range pour long, haut pour short)
+                pp = mq_data.get("price_position_pct", 0.5) or 0.5
+                if (direction_check == "long" and pp < 0.35) or (direction_check == "short" and pp > 0.65):
+                    proof_count += 1
+                    proof_details.append(f"price_pos={pp:.0%}")
+                # Preuve 4 : range suffisant (range_width_atr >= 1.5)
+                rw = mq_data.get("range_width_atr", 0) or 0
+                if rw >= 1.5:
+                    proof_count += 1
+                    proof_details.append(f"range_atr={rw:.1f}")
+
+                if proof_count < min_proofs:
+                    detail = (
+                        f"Preuves structurelles insuffisantes : {proof_count}/{min_proofs} "
+                        f"({', '.join(proof_details) if proof_details else 'aucune'})"
+                    )
+                    _log_tick(action_taken="hold", btc_price=current_price,
+                              decision_score=score, decision_action=action,
+                              decision_confidence=confidence,
+                              reason_no_trade="structural_proof_insufficient",
+                              reason_detail=detail[:500],
+                              quality_gate_passed=True,
+                              rejection_category="structure",
+                              **_qg_log, **_econ_log)
+                    return PaperTickResult(
+                        action_taken="hold",
+                        detail=detail,
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        decision_score=score,
+                        decision_action=action,
+                        profile_type=profile_name,
+                        non_trade_reason="structural_proof_insufficient",
+                    )
 
             # [v1.5] Vérification profil — score minimum
             # Les trades de reversal (mean reversion) ne sont pas soumis au

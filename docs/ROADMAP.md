@@ -53,9 +53,15 @@
 │  ├── SmartCooldown + Learning Layer       ✅ Livré (v1.9.0)         │
 │  ├── Anti-micro-PnL + Valeur économique   ✅ Livré (v1.9.1)         │
 │  ├── Short Optimization + Valeur/trade    ✅ Livré (v1.9.3)         │
-│  └── Correction surcorrection short       ✅ Livré (v1.9.4)         │
+│  ├── Correction surcorrection short       ✅ Livré (v1.9.4)         │
+│  ├── Pivot stratégique v2.0               ✅ Livré (v2.0.0)         │
+│  │   ├── Aggressive sanctuarisé           ✅                         │
+│  │   ├── Economic viability gate          ✅                         │
+│  │   ├── Structural proofs gate           ✅                         │
+│  │   ├── Momentum fade restricted         ✅                         │
+│  │   └── Scoring refondu (structure>osc)  ✅                         │
 │                                                                      │
-│  ÉTAPE 3 — INFINI v2 (v2.0+) ⛔ BLOQUÉ PAR 2b                     │
+│  ÉTAPE 3 — INFINI v2 (v2.0+) ⏳ EN COURS (pivot livré)             │
 │  Assistant autonome (sous contrôle humain)                           │
 │  ├── Exécution automatisée              ⬜ Futur                    │
 │  ├── Mode fantôme (observer sans agir)  ⬜ Futur                    │

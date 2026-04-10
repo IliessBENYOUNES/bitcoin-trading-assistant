@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 10 avril 2026
-> **Version :** v1.9.9
+> **Version :** v2.0.0
 > **Branche :** `master`
-> **Dernier commit :** fix(engine): lot correctif v1.9.9 — anti-saturation, quality gate veto, anti-churn, runtime trace
+> **Dernier commit :** feat(engine): pivot stratégique v2.0.0 — aggressive sanctuarisé, refonte scalping price/volume/structure, economic viability gate, momentum fade restricted
 
 ---
 
@@ -13,20 +13,26 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.9.9** |
+| Version courante | **v2.0.0** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1460 tests**, tous passing ✅ |
+| Tests backend | **1501 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v1.9.9 livré** — Lot correctif structurel : anti-saturation, quality gate veto, anti-churn, runtime trace |
+| Phase courante | **v2.0.0 livré** — Pivot stratégique : aggressive sanctuarisé, scalping refondu, economic viability gate |
 
 ### ⚠️ État de maturité honnête
 
-L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulation et observabilité. Cependant, **la validation opérationnelle n'est pas encore suffisante** pour justifier un passage vers l'exécution réelle (v2.0).
+L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulation et observabilité. Le **pivot stratégique v2.0.0** a posé les fondations d'un moteur économiquement viable.
 
 **Ce qui est solide :**
 - Moteur de décision rule-based fonctionnel
+- **[v2.0.0] Slot aggressive sanctuarisé** comme moteur principal de valeur
+- **[v2.0.0] Economic viability gate** — refuse les trades scalping non-viables après frais
+- **[v2.0.0] Momentum fade restricted** — ne sort que si le pic dépasse le seuil d'amplitude ET que la sortie est net-positive
+- **[v2.0.0] Structural proofs gate** — exige ≥2 preuves structurelles (volume, micro-trend, price_position, range) pour entrer en scalping
+- **[v2.0.0] Scoring refondu** — oscillateurs (Bollinger, StochRSI) dégradés à 0.3x en tendance, price_position boosté à 1.4x
+- **[v2.0.0] Paramètres scalping recalibrés** — TP 0.8% (was 0.6%), trailing activation 0.20% (was 0.15%), max_trades 30 (was 50), market quality 50 (was 45)
 - Backtesting et time-travel walk-forward
 - Paper trading multi-slot avec profils et levier auto
 - Diagnostic fréquence et opportunités manquées

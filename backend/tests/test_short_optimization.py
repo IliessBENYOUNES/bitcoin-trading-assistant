@@ -600,9 +600,9 @@ class TestScalpingPresetNonRegression:
     """Vérifier que les changements ne cassent pas le preset scalping existant."""
 
     def test_scalping_tp_pct(self):
-        """[v1.9.5] Le TP scalping est élargi à 0.6%."""
+        """[v2.0.0] Le TP scalping est élargi à 0.8%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.profit_take_pct == 0.6
+        assert p.profit_take_pct == 0.8
 
     def test_scalping_sl_pct(self):
         """[v1.9.6] Le SL scalping est resserré à 0.20%."""
@@ -620,9 +620,9 @@ class TestScalpingPresetNonRegression:
         assert p.smart_cooldown_enabled is True
 
     def test_scalping_max_trades_per_day(self):
-        """Le max trades par jour est inchangé (50)."""
+        """[v2.0.0] Le max trades par jour est réduit à 30."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_trades_per_day == 50
+        assert p.max_trades_per_day == 30
 
     def test_scalping_analysis_timeframe(self):
         """Le timeframe d'analyse est inchangé (15m)."""
@@ -630,10 +630,10 @@ class TestScalpingPresetNonRegression:
         assert p.analysis_timeframe == "15m"
 
     def test_scalping_trailing_stop(self):
-        """[v1.9.5] Les paramètres trailing stop recalibrés."""
+        """[v2.0.0] Les paramètres trailing stop recalibrés."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.15  # [v1.9.5] was 0.08
-        assert p.trailing_stop_pct == 0.10             # [v1.9.5] was 0.12
+        assert p.trailing_stop_activation_pct == 0.20  # [v2.0.0] was 0.15
+        assert p.trailing_stop_pct == 0.10             # unchanged
 
     def test_scalping_leverageééévalues(self):
         """Le levier scalping est inchangé."""

@@ -285,9 +285,9 @@ class TestQualityGateVeto:
     """Tests prouvant que le quality gate est un veto réel."""
 
     def test_scalping_min_market_quality_raised(self):
-        """Le profil scalping exige min_market_quality=45 (pas 35)."""
+        """[v2.0.0] Le profil scalping exige min_market_quality=50."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_market_quality == 45
+        assert p.min_market_quality == 50
 
     def test_aggressive_has_quality_gate(self):
         """Le profil aggressive a un quality gate minimum."""
@@ -525,9 +525,9 @@ class TestNonRegression:
         assert p.max_trades_per_day == 3
 
     def test_scalping_profile_core_params_unchanged(self):
-        """Les paramètres core du scalping ne changent pas (SL/TP/etc.)."""
+        """[v2.0.0] Les paramètres core du scalping après refonte."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.profit_take_pct == 0.6
+        assert p.profit_take_pct == 0.8  # [v2.0.0] 0.6→0.8
         assert p.loss_cut_pct == 0.20
         assert p.analysis_timeframe == "15m"
         assert p.stale_negative_exit_minutes == 5

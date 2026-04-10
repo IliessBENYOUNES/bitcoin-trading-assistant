@@ -51,6 +51,8 @@ REASON_LABELS = {
     "no_decision_available": "Moteur indisponible",
     "inactive": "Paper trading inactif",
     "no_price": "Prix indisponible",
+    "economic_viability_low": "Non-viable économiquement (coûts > capture)",
+    "structural_proof_insufficient": "Preuve structurelle insuffisante",
     "other": "Autre",
 }
 
@@ -91,6 +93,11 @@ class JournalService:
         vwap_distance_pct: Optional[float] = None,
         quality_gate_passed: Optional[bool] = None,
         quality_gate_reason: Optional[str] = None,
+        # [v2.0.0] Economic viability gate trace
+        estimated_round_trip_cost: Optional[float] = None,
+        min_capture_required_pct: Optional[float] = None,
+        economic_gate_passed: Optional[bool] = None,
+        rejection_category: Optional[str] = None,
     ) -> TickActivityLog:
         """Enregistre un tick dans le journal d'activité."""
         entry = TickActivityLog(
@@ -119,6 +126,11 @@ class JournalService:
             vwap_distance_pct=vwap_distance_pct,
             quality_gate_passed=1 if quality_gate_passed else (0 if quality_gate_passed is not None else None),
             quality_gate_reason=quality_gate_reason,
+            # Economic viability trace
+            estimated_round_trip_cost=estimated_round_trip_cost,
+            min_capture_required_pct=min_capture_required_pct,
+            economic_gate_passed=1 if economic_gate_passed else (0 if economic_gate_passed is not None else None),
+            rejection_category=rejection_category,
         )
         self.db.add(entry)
         self.db.commit()
