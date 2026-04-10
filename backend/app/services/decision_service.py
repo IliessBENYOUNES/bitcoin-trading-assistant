@@ -735,6 +735,10 @@ class DecisionService:
             "sentiment_score": sentiment_score,
             "combined_score": combined_score,
             "summary": summary,
+            # [v1.9.8] Série de candles propagée pour le market quality gating.
+            # Utilisée par PaperTradingService._check_market_quality().
+            # Clé préfixée par _ car c'est un champ interne, pas exposé via l'API.
+            "_series": signals_data.get("series", []),
         }
 
     def _get_historical_sentiment(

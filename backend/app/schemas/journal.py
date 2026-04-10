@@ -89,6 +89,14 @@ class TradingProfileParams(BaseModel):
     # Si la position est en PnL négatif depuis stale_negative_exit_minutes, on sort.
     # Plus rapide que stale_exit_minutes (qui attend que la position soit "plate").
     stale_negative_exit_minutes: Optional[int] = Field(default=None, description="Minutes avant sortie stale si PnL est négatif (None=stale_exit_minutes)")
+    # [v1.9.8] Market quality gating — no-trade zone basée sur la structure de marché.
+    # Le moteur vérifie la qualité du marché (range, volume, micro-tendance) avant d'ouvrir.
+    # Un marché bruité/sans volume/en tight range est une no-trade zone.
+    min_market_quality: Optional[int] = Field(default=None, description="Score qualité marché minimum pour ouvrir (0-100, None=pas de filtre)")
+    min_volume_ratio: Optional[float] = Field(default=None, description="Ratio volume/SMA20 minimum pour ouvrir (None=pas de filtre)")
+    # [v1.9.8] Filtre long quality — conditions supplémentaires pour les longs scalping.
+    # Les longs médiocres qui finissent en stale négatif sont le problème principal.
+    long_quality_filter: bool = Field(default=False, description="Active le filtre de qualité pour les longs scalping")
 
 
 class TradingProfileResponse(BaseModel):

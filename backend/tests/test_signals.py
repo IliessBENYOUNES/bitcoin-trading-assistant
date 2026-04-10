@@ -638,7 +638,7 @@ class TestSignalServiceIntegration:
             assert "direction" in signal
             assert "strength" in signal
             assert "message" in signal
-            assert signal["indicator"] in ("rsi", "macd", "sma", "bollinger", "adx", "volume", "stoch_rsi", "ema_cross")
+            assert signal["indicator"] in ("rsi", "macd", "sma", "bollinger", "adx", "volume", "stoch_rsi", "ema_cross", "price_position", "range_quality")
             assert signal["direction"] in ("bullish", "bearish", "neutral")
             assert 0 <= signal["strength"] <= 1
 

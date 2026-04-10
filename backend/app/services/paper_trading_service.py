@@ -758,6 +758,39 @@ class PaperTradingService:
                     non_trade_reason="decision_wait",
                 )
 
+            # [v1.9.8] Market quality gating — no-trade zone
+            # Avant d'ouvrir, le moteur vérifie si le marché a une structure
+            # suffisante (volume, range, micro-tendance). Un marché bruité
+            # ou en tight range est une no-trade zone.
+            min_mq = getattr(profile_params, "min_market_quality", None) if profile_params else None
+            min_vr = getattr(profile_params, "min_volume_ratio", None) if profile_params else None
+            long_qf = getattr(profile_params, "long_quality_filter", False) if profile_params else False
+
+            if min_mq is not None and min_mq > 0:
+                mq_reason = self._check_market_quality(
+                    decision_result=decision_result,
+                    direction="long" if action == "acheter" else "short",
+                    min_quality=min_mq,
+                    min_volume_ratio=min_vr or 0.0,
+                    long_quality_filter=long_qf,
+                )
+                if mq_reason:
+                    _log_tick(action_taken="hold", btc_price=current_price,
+                              decision_score=score, decision_action=action,
+                              decision_confidence=confidence,
+                              reason_no_trade="market_quality_low",
+                              reason_detail=mq_reason[:500])
+                    return PaperTickResult(
+                        action_taken="hold",
+                        detail=f"No-trade zone : {mq_reason}",
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        decision_score=score,
+                        decision_action=action,
+                        profile_type=profile_name,
+                        non_trade_reason="market_quality_low",
+                    )
+
             # [v1.5] Vérification profil — score minimum
             # Les trades de reversal (mean reversion) ne sont pas soumis au
             # seuil de score car leur signal vient des oscillateurs, pas du score.
@@ -1153,6 +1186,63 @@ class PaperTradingService:
     # ================================================================
     # VÉRIFICATIONS SL / TP / EXPIRATION
     # ================================================================
+
+    def _check_market_quality(
+        self,
+        decision_result: dict,
+        direction: str,
+        min_quality: int = 30,
+        min_volume_ratio: float = 0.0,
+        long_quality_filter: bool = False,
+    ) -> Optional[str]:
+        """
+        [v1.9.8] Vérifie la qualité de marché avant ouverture (no-trade zone).
+
+        Utilise le MarketStructureService pour évaluer si le marché a
+        assez de structure pour justifier un trade.
+
+        Returns:
+            Raison de rejet (str) si no-trade zone, None si OK.
+        """
+        try:
+            from app.services.market_structure_service import MarketStructureService
+
+            # Récupérer la série depuis le decision_result
+            # La série est propagée depuis SignalService.analyze() → DecisionService
+            series = decision_result.get("_series")
+            if not series or len(series) < 5:
+                return None  # Pas assez de données, ne pas bloquer
+
+            quality = MarketStructureService.assess_quality(series)
+
+            # Vérification 1 : No-trade zone globale
+            if MarketStructureService.is_no_trade_zone(quality, min_quality):
+                return (
+                    f"Qualité marché {quality.quality_score}/100 < seuil {min_quality} — "
+                    f"{'; '.join(quality.reasons[:2])}"
+                )
+
+            # Vérification 2 : Filtre spécifique longs
+            if direction == "long" and long_quality_filter:
+                is_ok, reason = MarketStructureService.is_long_quality_sufficient(
+                    quality,
+                    min_quality=min_quality + 5,  # Exigence plus haute pour les longs
+                    min_volume_ratio=min_volume_ratio,
+                )
+                if not is_ok:
+                    return reason
+
+            # Vérification 3 : Volume minimum général
+            if min_volume_ratio > 0 and quality.volume_ratio < min_volume_ratio:
+                return (
+                    f"Volume insuffisant ({quality.volume_ratio:.2f}x < {min_volume_ratio}x SMA20)"
+                )
+
+            return None  # Marché OK
+
+        except Exception as e:
+            logger.debug(f"Market quality check error (non-blocking): {e}")
+            return None  # En cas d'erreur, ne pas bloquer le trade
 
     def _scalping_reversal_check(self, decision_result: dict) -> Optional[str]:
         """

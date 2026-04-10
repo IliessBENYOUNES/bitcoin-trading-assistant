@@ -404,7 +404,7 @@ class TestScalpingRecalibratedV191:
     def test_description_updated(self):
         """La description du profil scalping est mise à jour."""
         p = PROFILE_PRESETS["scalping"]
-        assert "contextuelle" in p.description
+        assert "structure" in p.description.lower() or "sélection" in p.description.lower()
 
 
 # ================================================================

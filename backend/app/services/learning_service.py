@@ -53,6 +53,8 @@ SAFETY_BOUNDS = {
     "short_exit_score_threshold": (5, 40),  # [v1.9.3] seuil signal contraire short
     "short_min_hold_seconds": (0, 180),     # [v1.9.3] min hold spécifique short (3 min max)
     "momentum_fade_retention": (0.2, 0.8),  # [v1.9.5] rétention du pic pour momentum fade
+    "min_market_quality": (0, 80),           # [v1.9.8] qualité marché minimum
+    "min_volume_ratio": (0.0, 2.0),          # [v1.9.8] ratio volume minimum
 }
 
 # Nombre minimum d'échantillons pour qu'un pattern soit significatif
@@ -790,6 +792,74 @@ class LearningService:
                         sample_size=len(pnls),
                         win_rate_observed=sum(1 for p in pnls if p >= 0) / len(pnls) * 100,
                         avg_pnl_observed=avg_pnl_exit,
+                        profile_type=profile_type,
+                        version=version,
+                    ))
+
+        # ================================================================
+        # [v1.9.8] SUGGESTIONS MARKET STRUCTURE — Rejection du bruit
+        # ================================================================
+
+        # Suggestion 13 : Stale-négatif comme mode d'échec dominant
+        # Si > 40% des trades finissent en stale avec PnL négatif, le moteur
+        # prend des trades sans impulsion suffisante.
+        stale_neg = [
+            s for s in samples
+            if s.exit_type == "closed_stale"
+            and s.pnl_brut is not None and s.pnl_brut < 0
+        ]
+        if len(stale_neg) >= 5 and len(samples) >= 10:
+            stale_neg_pct = len(stale_neg) / len(samples) * 100
+            stale_neg_avg = sum(s.pnl_brut for s in stale_neg) / len(stale_neg)
+            if stale_neg_pct > 30:
+                current_neg_min = getattr(params, "stale_negative_exit_minutes", None) or 5
+                # Suggestion : réduire le temps stale négatif OU relever la qualité marché
+                suggestions.append(self._create_feedback(
+                    parameter_name="stale_negative_exit_minutes",
+                    original_value=current_neg_min,
+                    suggested_value=max(current_neg_min - 1, SAFETY_BOUNDS["stale_negative_exit_minutes"][0]),
+                    reason=(
+                        f"{stale_neg_pct:.0f}% des trades finissent en stale négatif "
+                        f"({len(stale_neg)}/{len(samples)}) avec PnL moyen {stale_neg_avg:.2f}. "
+                        f"Le moteur entre sans impulsion suffisante. "
+                        f"Réduire le délai stale négatif pour couper plus vite. "
+                        f"Envisager aussi de relever min_market_quality."
+                    ),
+                    sample_size=len(stale_neg),
+                    win_rate_observed=0,
+                    avg_pnl_observed=stale_neg_avg,
+                    profile_type=profile_type,
+                    version=version,
+                ))
+
+        # Suggestion 14 : Longs scalping à score homogène et perdants
+        # Si les scores d'entrée des longs sont très groupés (écart-type < 3)
+        # et que le WR est < 40%, le moteur ne hiérarchise pas les setups.
+        long_scalp = [
+            s for s in samples
+            if s.direction == "long" and s.profile_type == "scalping"
+        ]
+        if len(long_scalp) >= 10:
+            scores = [s.score for s in long_scalp if s.score is not None]
+            if len(scores) >= 10:
+                mean_sc = sum(scores) / len(scores)
+                variance_sc = sum((sc - mean_sc) ** 2 for sc in scores) / len(scores)
+                std_sc = variance_sc ** 0.5
+                wr_long = sum(1 for s in long_scalp if s.was_profitable) / len(long_scalp) * 100
+                if std_sc < 3.0 and wr_long < 40:
+                    suggestions.append(self._create_feedback(
+                        parameter_name="min_market_quality",
+                        original_value=getattr(params, "min_market_quality", 0) or 0,
+                        suggested_value=min((getattr(params, "min_market_quality", 0) or 0) + 10, 50),
+                        reason=(
+                            f"Longs scalping à score homogène (σ={std_sc:.1f}, moy={mean_sc:.0f}) "
+                            f"avec WR {wr_long:.0f}% sur {len(long_scalp)} trades. "
+                            f"Le moteur ne hiérarchise pas les setups. "
+                            f"Relever min_market_quality pour exiger plus de structure."
+                        ),
+                        sample_size=len(long_scalp),
+                        win_rate_observed=wr_long,
+                        avg_pnl_observed=sum(s.pnl_brut or 0 for s in long_scalp) / len(long_scalp),
                         profile_type=profile_type,
                         version=version,
                     ))

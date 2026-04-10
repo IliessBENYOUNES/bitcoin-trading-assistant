@@ -82,7 +82,7 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
     "scalping": TradingProfileParams(
         profile_type=TradingProfileType.scalping,
         label="Scalping",
-        description="Haute fréquence intraday — petits mouvements, sorties rapides, réentrée contextuelle.",
+        description="Haute fréquence intraday — sélection stricte, structure de marché obligatoire.",
         min_score=20,   # [v1.9.5] 15→20 : relève le plancher de qualité, filtre les longs médiocres
         min_confidence="low",
         min_scenario_dominance=0.35,
@@ -125,16 +125,15 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # Seuil économique
         min_economic_pnl_pct=0.15,
         # [v1.9.6] Short rebalancé — convergence vers l'équilibre.
-        # Le problème fondamental était l'oscillation :
-        # - v1.9.3 : trop de shorts (min_score=25, exit=20) → pertes short
-        # - v1.9.4 : trop peu de shorts (min_score=40, exit=35) → mono-long
-        # - v1.9.5 : shorts partiellement revenus (min_score=30, exit=25)
-        # - Dernier run : quasi mono-long de nouveau
-        # Solution : la 2-convergence (v1.9.4) est le vrai filtre qualité.
-        # Le min_score doit rester modéré car il s'applique EN PLUS de la convergence.
-        short_min_score=25,           # [v1.9.6] 30→25 : la 2-convergence filtre suffisamment
-        short_exit_score_threshold=30, # [v1.9.6] 25→30 : les shorts ont plus de temps avant fermeture
-        short_min_hold_seconds=45,     # [v1.9.6] 60→45 : compromis entre respiration et capture rapide
+        short_min_score=25,
+        short_exit_score_threshold=30,
+        short_min_hold_seconds=45,
+        # [v1.9.8] Market quality gating — no-trade zone + filtre longs médiocres.
+        # Le moteur ne trade plus quand le marché est bruité, sans volume,
+        # en tight range, ou quand le prix est coincé au milieu de nulle part.
+        min_market_quality=35,     # Qualité marché minimum pour ouvrir (0-100)
+        min_volume_ratio=0.7,      # Volume minimum (ratio vs SMA20)
+        long_quality_filter=True,  # Active le filtre de qualité pour les longs
     ),
 }
 

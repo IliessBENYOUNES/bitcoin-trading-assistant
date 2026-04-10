@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
-> **Dernière mise à jour :** 9 avril 2026
-> **Version :** v1.9.7
+> **Dernière mise à jour :** 10 avril 2026
+> **Version :** v1.9.8
 > **Branche :** `master`
-> **Dernier commit :** feat(headless): mode autonome backend + low-bandwidth frontend
+> **Dernier commit :** feat(market-structure): no-trade zone + score decompression + market quality gating
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.9.7** |
+| Version courante | **v1.9.8** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1371 tests**, tous passing ✅ |
+| Tests backend | **1426 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v1.9.7 livré** — Mode headless backend, robot autonome sans frontend |
+| Phase courante | **v1.9.8 livré** — Market structure gating, no-trade zone, score décompressé |
 
 ### ⚠️ État de maturité honnête
 
@@ -84,7 +84,15 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
   - **Low-bandwidth frontend** : toggle dans la toolbar qui coupe le WebSocket Binance et réduit les pollings (alertes 60s→300s, news 300s→900s)
   - **useLivePrice paramétrable** : le WebSocket peut être désactivé via `{ enabled: false }`
   - **15 tests** pour le mode autonome (unitaires + endpoints)
-- 1371 tests backend, tsc clean
+- **[v1.9.8] Pivot stratégique moteur scalping** — No-trade zone, score décompressé, market structure
+  - **MarketStructureService** : évaluation qualité marché (price_position, range/ATR, volume_ratio, micro-trend, VWAP)
+  - **No-trade zone** : le moteur refuse de trader si quality_score < 35 (configurable). Bloque les marchés bruités, tight range, sans volume.
+  - **Filtre longs médiocres** : `long_quality_filter=True` bloque les longs au milieu du range sans micro-tendance haussière.
+  - **Score décompressé** : poids Bollinger/StochRSI réduits en tendance (0.6→0.4, 0.7→0.5), convergence boost conditionné au volume, compression renforcée.
+  - **Nouveaux signal interpreters** : `interpret_price_position()`, `interpret_range_quality()` — signaux basés sur la structure réelle du marché.
+  - **Learning v3** : suggestions stale-négatif dominant, longs homogènes à WR faible.
+  - **55 tests** : MarketStructureService, interpreters, score decompression, gating, profil, learning.
+- 1426 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.
@@ -197,7 +205,8 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | test_diagnostic.py | 55 |
 | test_reality_gap.py | 48 |
 | test_autonomous.py | 15 |
-| **TOTAL** | **1371** ✅ |
+| test_market_structure.py | 55 |
+| **TOTAL** | **1426** ✅ |
 
 ---
 

@@ -681,6 +681,138 @@ def interpret_ema_cross(
 
 
 # ============================================================
+# INTERPRÉTEURS MARKET STRUCTURE (v1.9.8)
+# ============================================================
+# Ces interpréteurs évaluent la structure de marché réelle :
+# position du prix, largeur du range, qualité du mouvement.
+# Ils ont plus de valeur que les oscillateurs dérivés seuls.
+
+def interpret_price_position(
+    close: Optional[float],
+    high_n: Optional[float],
+    low_n: Optional[float],
+) -> Optional[SignalItem]:
+    """
+    Interprète la position du prix dans le range récent (N candles).
+
+    Position 0.0 = bas du range (survente structurelle)
+    Position 1.0 = haut du range (surachat structurel)
+    Position 0.5 = milieu (indécis)
+
+    Un prix aux extrêmes a un sens (momentum ou réaction).
+    Un prix au milieu n'a pas de direction → pénalise le score.
+    """
+    if close is None or high_n is None or low_n is None:
+        return None
+
+    range_n = high_n - low_n
+    if range_n <= 0:
+        return None
+
+    position = (close - low_n) / range_n
+
+    if position >= 0.85:
+        # Haut du range — surachat structurel
+        return SignalItem(
+            indicator="price_position",
+            direction=SignalDirection.BEARISH,
+            strength=0.5,
+            value=round(position, 4),
+            message=f"Prix en haut du range récent ({position:.0%}) — surachat structurel",
+        )
+    elif position <= 0.15:
+        # Bas du range — survente structurelle
+        return SignalItem(
+            indicator="price_position",
+            direction=SignalDirection.BULLISH,
+            strength=0.5,
+            value=round(position, 4),
+            message=f"Prix en bas du range récent ({position:.0%}) — survente structurelle",
+        )
+    elif 0.35 <= position <= 0.65:
+        # Milieu du range — zone indécise, freine le consensus
+        return SignalItem(
+            indicator="price_position",
+            direction=SignalDirection.NEUTRAL,
+            strength=0.4,
+            value=round(position, 4),
+            message=f"Prix au milieu du range ({position:.0%}) — zone indécise, pas d'edge",
+        )
+    elif position > 0.65:
+        # Zone haute modérée — léger biais haussier
+        return SignalItem(
+            indicator="price_position",
+            direction=SignalDirection.BULLISH,
+            strength=0.2,
+            value=round(position, 4),
+            message=f"Prix dans la partie haute du range ({position:.0%})",
+        )
+    else:
+        # Zone basse modérée — léger biais baissier
+        return SignalItem(
+            indicator="price_position",
+            direction=SignalDirection.BEARISH,
+            strength=0.2,
+            value=round(position, 4),
+            message=f"Prix dans la partie basse du range ({position:.0%})",
+        )
+
+
+def interpret_range_quality(
+    range_width_atr: Optional[float],
+    volume_ratio: Optional[float],
+) -> Optional[SignalItem]:
+    """
+    Interprète la qualité du range (largeur / ATR) et du volume.
+
+    Un tight range avec faible volume = bruit pur → frein fort sur le score.
+    Un range large avec volume = marché directionnel → confirme les signaux.
+
+    Ce signal agit comme un modificateur de qualité :
+    - Tight range + low volume = NEUTRAL fort (dilue le consensus, pénalise le score)
+    - Wide range + high volume = contribue positivement à la confiance
+    """
+    if range_width_atr is None:
+        return None
+
+    vol = volume_ratio if volume_ratio is not None else 1.0
+
+    # Tight range + low volume = bruit pur
+    if range_width_atr < 1.5 and vol < 0.8:
+        return SignalItem(
+            indicator="range_quality",
+            direction=SignalDirection.NEUTRAL,
+            strength=0.6,  # Poids fort pour diluer le consensus
+            value=round(range_width_atr, 2),
+            message=(
+                f"Range très étroit ({range_width_atr:.1f}x ATR) + volume faible ({vol:.1f}x) "
+                f"— marché bruité, signaux peu fiables"
+            ),
+        )
+    elif range_width_atr < 1.5:
+        return SignalItem(
+            indicator="range_quality",
+            direction=SignalDirection.NEUTRAL,
+            strength=0.4,
+            value=round(range_width_atr, 2),
+            message=f"Range étroit ({range_width_atr:.1f}x ATR) — compression, signaux dégradés",
+        )
+    elif range_width_atr >= 3.0 and vol >= 1.2:
+        # Marché directionnel confirmé par le volume — pas de frein
+        return None  # Pas de signal = pas de frein
+    elif range_width_atr < 2.0:
+        return SignalItem(
+            indicator="range_quality",
+            direction=SignalDirection.NEUTRAL,
+            strength=0.2,
+            value=round(range_width_atr, 2),
+            message=f"Range modéré ({range_width_atr:.1f}x ATR)",
+        )
+    else:
+        return None  # Range normal/large, pas de frein
+
+
+# ============================================================
 # AGRÉGATION : SCORE COMPOSITE (v1.3 — régime-based weighting)
 # ============================================================
 
@@ -688,18 +820,27 @@ def interpret_ema_cross(
 # En tendance forte (ADX ≥ 25), les indicateurs de tendance (MACD, SMA, EMA)
 # sont plus fiables. En range (ADX < 20), les oscillateurs (RSI, Bollinger,
 # StochRSI) sont plus fiables. Ce sont des biais mathématiquement justifiés.
+# [v1.9.8] Bollinger et StochRSI réduits en tendance : ces oscillateurs
+# produisent du bruit bullish permanent en marché haussier, ce qui sature
+# le score à 100 sans vrai pouvoir discriminant.
 REGIME_WEIGHTS = {
     "trending": {
         # Indicateurs de tendance boostés
         "macd": 1.3, "sma": 1.3, "ema_cross": 1.4,
-        # Oscillateurs réduits (faux signaux fréquents en tendance)
-        "rsi": 0.6, "bollinger": 0.6, "stoch_rsi": 0.7,
+        # [v1.9.8] Oscillateurs encore plus réduits en tendance
+        # Bollinger 0.6→0.4, StochRSI 0.7→0.5 : ces indicateurs
+        # ne discriminent pas en marché haussier (toujours bullish).
+        "rsi": 0.6, "bollinger": 0.4, "stoch_rsi": 0.5,
+        # [v1.9.8] Market structure signals — poids normal en tendance
+        "price_position": 1.0, "range_quality": 0.8,
     },
     "ranging": {
         # Indicateurs de tendance réduits (whipsaws)
         "macd": 0.6, "sma": 0.6, "ema_cross": 0.5,
         # Oscillateurs boostés (fonctionnent bien en range)
         "rsi": 1.3, "bollinger": 1.3, "stoch_rsi": 1.4,
+        # [v1.9.8] Market structure signals — poids fort en range
+        "price_position": 1.3, "range_quality": 1.5,
     },
 }
 
@@ -729,9 +870,10 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
             neutral_count=0,
         )
 
-    # Séparer l'ADX et le volume des signaux directionnels
+    # Séparer l'ADX, le volume et les signaux market structure des signaux directionnels
     adx_signal = None
     volume_signal = None
+    range_quality_signal = None
     directional_signals: list[SignalItem] = []
 
     for s in signals:
@@ -739,6 +881,10 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
             adx_signal = s
         elif s.indicator == "volume":
             volume_signal = s
+        elif s.indicator == "range_quality":
+            range_quality_signal = s
+            # Les signaux range_quality participent au comptage pour diluer le consensus
+            directional_signals.append(s)
         else:
             directional_signals.append(s)
 
@@ -812,25 +958,39 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
             # Faible volume : atténue le signal de 15%
             raw_score *= 0.85
 
-    # [v1.9.5] Convergence boost amélioré — meilleure discrimination des scores.
-    # Le boost original (v1.9.3) appliquait un facteur de 0.4 qui ne cassait
-    # pas assez l'homogénéité 71/72. Le facteur est porté à 0.5 pour étirer
-    # davantage les scores extrêmes. La compression pour signaux divisés
-    # est renforcée (0.85→0.75) pour mieux pénaliser les setups ambigus.
+    # [v1.9.8] Convergence boost amélioré — conditionné par la qualité du marché.
+    # Le boost original (v1.9.5) amplifie le score quand les indicateurs convergent.
+    # PROBLÈME : en marché haussier calme, TOUS les indicateurs sont bullish par défaut,
+    # ce qui donne unanimity=1.0 et boost le score à 100 pour CHAQUE tick.
+    # Le résultat : tous les scores se retrouvent à 70-74 après combinaison sentiment.
+    #
+    # FIX : Le boost est maintenant conditionné par :
+    # 1. raw_score >= 0.6 (au lieu de 0.5) — plus sélectif
+    # 2. Volume suffisant (vol_ratio >= 0.8) — pas de boost sans conviction
+    # 3. Pas de range_quality neutre fort — pas de boost en marché bruité
+    # La compression pour signaux divisés est encore renforcée (0.75→0.65).
     total_directional = bullish_count + bearish_count + neutral_count
+    range_quality_present = range_quality_signal is not None
+    vol_ratio_val = volume_signal.value if volume_signal and volume_signal.value is not None else 1.0
+
     if total_directional >= 3:
         dominant_count = max(bullish_count, bearish_count)
         unanimity = dominant_count / total_directional if total_directional > 0 else 0
-        if unanimity >= 0.75 and abs(raw_score) >= 0.5:
-            # Les indicateurs convergent fortement → boost exponentiel
-            # Plus raw_score est élevé, plus le boost amplifie (non-linéaire)
+        if (unanimity >= 0.75
+                and abs(raw_score) >= 0.6
+                and vol_ratio_val >= 0.8
+                and not range_quality_present):
+            # Convergence forte + volume + pas de bruit de range → boost
             sign = 1 if raw_score >= 0 else -1
-            # [v1.9.5] Boost de 12.5-30% (facteur 0.5 au lieu de 0.4)
             boost_factor = 1.0 + (unanimity - 0.5) * abs(raw_score) * 0.5
             raw_score = sign * min(1.0, abs(raw_score) * boost_factor)
         elif unanimity < 0.4 and total_directional >= 4:
-            # [v1.9.5] Signaux très divisés → compression renforcée (0.75 au lieu de 0.85)
-            # Un setup ambigu ne mérite pas un score de 70.
+            # [v1.9.8] Signaux très divisés → compression encore renforcée (0.65)
+            # Un setup ambigu ne mérite jamais un score de 70.
+            raw_score *= 0.65
+        elif range_quality_present and abs(raw_score) > 0.5:
+            # [v1.9.8] Range quality détecté — compresser le score
+            # Le marché est bruité, les indicateurs ne sont pas fiables.
             raw_score *= 0.75
 
     score = int(round(raw_score * 100))
@@ -1061,6 +1221,41 @@ class SignalService:
         if ema_cross_signal:
             signals.append(ema_cross_signal)
 
+        # [v1.9.8] Market structure signals — price position + range quality
+        # Ces signaux évaluent la structure de marché réelle (prix, range, volume)
+        # et ont plus de valeur discriminante que les oscillateurs dérivés seuls.
+        full_series = indicator_result.get("series", [])
+        if full_series and len(full_series) >= 5:
+            lookback = min(20, len(full_series))
+            recent_candles = full_series[-lookback:]
+
+            # Calculer high_n / low_n sur la fenêtre récente
+            highs = [c.get("high") or c.get("close", 0) for c in recent_candles if c.get("high") or c.get("close")]
+            lows = [c.get("low") or c.get("close", 0) for c in recent_candles if c.get("low") or c.get("close")]
+
+            if highs and lows:
+                high_n = max(highs)
+                low_n = min(lows)
+
+                price_pos_signal = interpret_price_position(
+                    latest.get("close"), high_n, low_n,
+                )
+                if price_pos_signal:
+                    signals.append(price_pos_signal)
+
+                # Range quality : largeur du range / ATR
+                atr = latest.get("atr_14")
+                range_n = high_n - low_n
+                range_atr = range_n / atr if atr and atr > 0 else None
+
+                vol = latest.get("volume")
+                vol_sma = latest.get("volume_sma_20")
+                vol_ratio = vol / vol_sma if vol and vol_sma and vol_sma > 0 else None
+
+                rq_signal = interpret_range_quality(range_atr, vol_ratio)
+                if rq_signal:
+                    signals.append(rq_signal)
+
         # Calculer le score composite
         composite = compute_composite_score(signals)
 
@@ -1072,5 +1267,7 @@ class SignalService:
             "signals": [s.model_dump() for s in signals],
             "composite": composite.model_dump(),
             "summary": summary,
+            # [v1.9.8] Série complète exposée pour le market structure gating
+            "series": full_series,
         }
 

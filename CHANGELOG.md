@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.8] - 2026-04-10
+
+### Added
+- **Market Structure Service** — Évaluation de la qualité de marché avant ouverture de position
+  - `MarketStructureService.assess_quality()` : calcul de price_position, range_width_atr, volume_ratio, micro_trend_score, vwap_distance, quality_score (0-100)
+  - `is_no_trade_zone()` : détection des marchés sans edge (tight range + low volume + no trend)
+  - `is_long_quality_sufficient()` : filtrage spécifique des longs médiocres (milieu de range, pas de micro-tendance)
+  
+- **Nouveaux signal interpreters (price/volume/structure)**
+  - `interpret_price_position()` : position du prix dans le range récent (haut/bas/milieu → edge/bruit)
+  - `interpret_range_quality()` : qualité du range (tight range + low volume = frein fort sur le score)
+  - Série de candles propagée depuis SignalService → DecisionService → PaperTradingService
+
+- **No-trade zone pour le scalping** — Le moteur refuse de trader quand le marché est bruité
+  - Gate `_check_market_quality()` dans `_tick_single_slot()` avant ouverture
+  - Configurable via profil : `min_market_quality`, `min_volume_ratio`, `long_quality_filter`
+  - Scalping preset : qualité min 35/100, volume min 0.7x SMA20, filtre long activé
+
+- **Learning Layer v3 — Rejection du bruit**
+  - Suggestion 13 : détection pattern stale-négatif dominant (> 30% des trades)
+  - Suggestion 14 : détection longs scalping à score homogène avec WR < 40%
+  - Nouveaux safety bounds : `min_market_quality`, `min_volume_ratio`
+
+- **55 nouveaux tests** : MarketStructureService, interpret_price_position, interpret_range_quality, score decompression, market quality gating, profile params, learning suggestions, non-régression
+
+### Changed
+- **Score composite décompressé** — Les scores cessent de saturer à 70-72
+  - Poids Bollinger réduit en tendance : 0.6 → 0.4 (ne discrimine pas en marché haussier)
+  - Poids StochRSI réduit en tendance : 0.7 → 0.5 (même problème)
+  - Nouveaux poids pour price_position et range_quality dans les régimes trending/ranging
+  - Convergence boost conditionné au volume (vol_ratio >= 0.8) et à l'absence de range quality
+  - Convergence boost activé à raw_score >= 0.6 (au lieu de 0.5)
+  - Compression renforcée pour signaux divisés : 0.75 → 0.65
+  - Compression si range_quality présent et score > 0.5 : × 0.75
+
+- **Profil scalping recalibré** — Description et paramètres mis à jour
+
+### Fixed
+- Score homogène 70-72 sur tous les ticks du run nocturne → Le score varie enfin selon la qualité du marché
+- Longs médiocres ouverts systématiquement → Le filtre market quality bloque les entrées sans structure
+- Stale négatif comme mode d'échec dominant → Moins de trades ouverts = moins de stale négatifs
+
+### Technical
+- 1426 tests backend, tous passants ✅ (+55 nouveaux)
+- `tsc --noEmit` sans erreur ✅
+- Nouveau fichier : `backend/app/services/market_structure_service.py`
+- Nouveau fichier : `backend/tests/test_market_structure.py`
+
 ## [1.9.7] - 2026-04-09
 
 ### Added
