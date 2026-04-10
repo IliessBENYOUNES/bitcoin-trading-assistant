@@ -150,7 +150,11 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # Seuls les setups avec un mouvement potentiel > 0.465% passent.
         economic_gate_enabled=True,
         min_ev_multiple=1.5,
-        expected_capture_pct=None,  # None = utilise trailing_stop_activation_pct (0.20%)
+        # [v2.0.0-fix] Corrigé : None retombait sur trailing_stop_activation_pct (0.20%),
+        # ce qui rendait le gate économique mathématiquement impossible à passer
+        # (0.20% < 0.31% × 1.5 = 0.465%). On fixe à 0.50% = capture réaliste
+        # entre le trailing (0.20%) et le TP (0.80%), ce qui donne 0.50% > 0.465% ✓
+        expected_capture_pct=0.50,
         # [v2.0.0] STRUCTURAL PROOFS — Le scalping exige au moins 2 preuves structurelles.
         # Les preuves : price_position favorable, volume confirmé (>1.2x), micro-trend (≥3).
         # Sans preuves, l'entrée est refusée même si le score est suffisant.

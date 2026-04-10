@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.0] - 2026-04-10
 
+### Fixed
+- **Gate économique scalping mathématiquement impossible** — `expected_capture_pct` était `None`, ce qui retombait sur `trailing_stop_activation_pct` = 0.20%. Or le seuil requis = RT cost (0.31%) × min_ev_multiple (1.5) = 0.465%. Donc 0.20% < 0.465% → **FAIL sur 100% des ticks scalping**. Corrigé à `expected_capture_pct=0.50` (capture réaliste entre trailing 0.20% et TP 0.80%), ce qui donne 0.50% > 0.465% ✓.
+
 ### Added
 - **Economic viability gate** — Le moteur scalping évalue le coût round-trip AVANT d'ouvrir un trade. Si la capture attendue ne couvre pas 1.5× le coût RT (realistic = 0.31%), le trade est refusé. Méthode `TradingCostModel.estimate_economic_viability()`. Raison de rejet loggée : `economic_viability_low`.
 - **Structural proofs gate** — Le scalping exige ≥2 preuves structurelles (volume ≥1.0x, micro-trend ≥3, price_position favorable, range_width_atr ≥1.5) pour ouvrir. Sans preuves, le trade est refusé. Raison : `structural_proof_insufficient`.

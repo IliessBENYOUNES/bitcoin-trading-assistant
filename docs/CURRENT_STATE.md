@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 10 avril 2026
 > **Version :** v2.0.0
 > **Branche :** `master`
-> **Dernier commit :** feat(engine): pivot stratégique v2.0.0 — aggressive sanctuarisé, refonte scalping price/volume/structure, economic viability gate, momentum fade restricted
+> **Dernier commit :** fix(scalping): expected_capture_pct 0.50% — déblocage gate économique mathématiquement impossible
 
 ---
 
@@ -279,6 +279,7 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | 10 | ~~RiskPanel non rafraîchi après full reset~~ | ~~🟠 Moyenne~~ | ✅ Résolu v1.9.2 : RiskPanel reçoit refreshTrigger |
 | 11 | ~~Pas de confirmation backend pour full reset~~ | ~~🟠 Moyenne~~ | ✅ Résolu v1.9.2 : confirm="RESET" obligatoire |
 | 12 | ~~Bug critique double ouverture du même slot~~ | ~~🔴 CRITIQUE~~ | ✅ Résolu v1.9.6 : guard applicatif dans _open_position() + verrou HTTP dans endpoint tick. 5 tests prouvant l'invariant. |
+| 13 | ~~Gate économique scalping mathématiquement impossible~~ | ~~🔴 CRITIQUE~~ | ✅ Résolu v2.0.0-fix : `expected_capture_pct` était None (fallback 0.20%) vs seuil requis 0.465% → 100% de refus. Fixé à 0.50%. |
 
 ---
 

@@ -80,10 +80,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v1.7.2 livré — Reality gap closure (v1.8) en cours
+### État actuel : v2.0.0 livré — Pivot stratégique déployé, scalping débloqué
 
-> ⚠️ **L'Étape 2 est fonctionnellement livrée mais la validation opérationnelle manque.**
-> Le passage v2.0 est bloqué tant que le reality gap (coûts, campagnes, audit, gate) n'est pas comblé.
+> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. Le gate économique scalping a été corrigé (expected_capture_pct fixé à 0.50% au lieu du fallback 0.20% qui bloquait 100% des trades).
 
 | Composant | Status |
 |-----------|--------|
@@ -427,7 +426,7 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 | 17.6 UI multi-slot | 🟡 Moyenne | 3h | Badges de slot sur les positions, bouton robot 1-clic | ✅ |
 | 17.7 Fix Windows emoji crash | 🟢 Basse | 0.5h | ASCII dans les logs startup | ✅ |
 
-### Phase v1.8 — Reality Gap Closure 🔄 EN COURS
+### Phase v1.8 — Reality Gap Closure ✅ LIVRÉ
 
 > **Objectif** : Fermer l'écart entre la sophistication fonctionnelle et la vérité opérationnelle avant tout passage vers v2.0.
 >
@@ -435,10 +434,10 @@ Même avec les meilleures API payantes, voici ce qu'on **ne pourra PAS** récup�
 
 | Tâche | Priorité | Description | Status |
 |-------|----------|-------------|--------|
-| 18.1 TradingCostModel | 🔴 CRITIQUE | Modèle de coûts (frais maker/taker, spread, slippage) avec presets (optimistic/realistic/stressed). Intégration dans les métriques brut/net. | ⬜ |
-| 18.2 PaperRun/Campagnes | 🔴 Haute | Concept de "run" : période bornée, profil fixe, slots définis, verdict final. Permet de comparer des profils rigoureusement. | ⬜ |
-| 18.3 TruthAudit | 🔴 Haute | Audit de vérité : expectancy nette, drawdown vérifié, impact levier/trailing, contribution par slot/profil, verdict global. | ⬜ |
-| 18.4 V2Gate | 🔴 Haute | Gate formelle v2.0 : checklist de readiness avec critères objectifs, status READY/PARTIAL/NOT_READY. | ⬜ |
+| 18.1 TradingCostModel | 🔴 CRITIQUE | Modèle de coûts (frais maker/taker, spread, slippage) avec presets (optimistic/realistic/stressed). Intégration dans les métriques brut/net. | ✅ Livré v1.8.1 |
+| 18.2 PaperRun/Campagnes | 🔴 Haute | Concept de "run" : période bornée, profil fixe, slots définis, verdict final. Permet de comparer des profils rigoureusement. | ✅ Livré v1.9.0 |
+| 18.3 TruthAudit | 🔴 Haute | Audit de vérité : expectancy nette, drawdown vérifié, impact levier/trailing, contribution par slot/profil, verdict global. | ✅ Livré v1.8.3 |
+| 18.4 V2Gate | 🔴 Haute | Gate formelle v2.0 : checklist de readiness avec critères objectifs, status READY/PARTIAL/NOT_READY. | ✅ Livré v1.8.4 |
 
 ### Phase Production Ready (future)
 
@@ -681,14 +680,12 @@ Aujourd'hui, le moteur de décision est **rule-based** : 8 règles écrites à l
 │   ├── [✅] v1.7.0 — Multi-slot + Mean reversion
 │   ├── [✅] v1.7.1 — Per-slot cooldown + Fix Windows emoji
 │   ├── [✅] v1.7.2 — Trailing stop scalping + Auto-refresh panels
-│   └── [🔄] v1.8.0 — Reality Gap Closure
-│       ├── [ ] v1.8.1 — TradingCostModel (frais/spread/slippage)
-│       ├── [ ] v1.8.2 — PaperRun (campagnes de validation)
-│       ├── [ ] v1.8.3 — TruthAudit (audit métriques)
-│       └── [ ] v1.8.4 — V2Gate (gate formelle v2.0)
+│   ├── [✅] v1.8.x — Reality Gap Closure (TradingCostModel, PaperRun, TruthAudit, V2Gate, ScalpingAudit)
+│   └── [✅] v2.0.0 — Pivot stratégique (aggressive sanctuarisé, economic gate, structural proofs, scoring refondu)
+│       └── [✅] fix: expected_capture_pct 0.50% — gate économique scalping débloqué
 │
 ├── Mai — Juin
-│   └── [ ] v2.0.0 — INFINI Mode Autonome (si gate = READY)
+│   └── [ ] v2.1+ — INFINI Mode Autonome réel (exécution exchange)
 │
 ├── Q4 2026 — Q1 2027
 │   └── [ ] v3.0+ — PHASE ML CONVERGENT 🧠

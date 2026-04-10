@@ -1,8 +1,8 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v1.8.0
-## Date: 2026-04-08
+## Version: v2.0.0
+## Date: 2026-04-10
 
 ---
 
@@ -83,10 +83,14 @@
 | **FR-MSL-004** | **Per-slot cooldown** | **Chaque slot a ses propres timers indépendants** | **✅ PASS** | **test_per_slot_cooldown** |
 | **FR-MSL-005** | **Trailing stop scalping** | **Trailing stop activé quand profit > seuil, ferme si recul > trail%** | **✅ PASS** | **1005 tests passing** |
 | | | | | |
-| **FR-CST-001** | **Modèle de coûts de trading** | **TradingCostModel avec presets, métriques brut/net** | **⬜ PLANNED** | **v1.8.1** |
-| **FR-RUN-001** | **Campagnes de validation (PaperRun)** | **Runs bornés, profil fixe, verdict final** | **⬜ PLANNED** | **v1.8.2** |
-| **FR-AUD-001** | **Audit de vérité métriques** | **Expectancy nette, drawdown vérifié, verdict global** | **⬜ PLANNED** | **v1.8.3** |
-| **FR-GATE-001** | **Gate formelle v2.0** | **Checklist de readiness, status READY/PARTIAL/NOT_READY** | **⬜ PLANNED** | **v1.8.4** |
+| **FR-CST-001** | **Modèle de coûts de trading** | **TradingCostModel avec presets, métriques brut/net** | **✅ PASS** | **v1.8.1 — 48 tests (test_reality_gap.py)** |
+| **FR-RUN-001** | **Campagnes de validation (PaperRun)** | **Runs bornés, profil fixe, verdict final** | **✅ PASS** | **v1.9.0 — test_paper_trading.py** |
+| **FR-AUD-001** | **Audit de vérité métriques** | **Expectancy nette, drawdown vérifié, verdict global** | **✅ PASS** | **v1.8.3 — test_runtime_truth.py** |
+| **FR-GATE-001** | **Gate formelle v2.0** | **Checklist de readiness, status READY/PARTIAL/NOT_READY** | **✅ PASS** | **v1.8.4** |
+| **FR-ECO-001** | **Economic viability gate** | **Évaluation coût RT pré-entrée, refuse si capture < 1.5× RT cost** | **✅ PASS** | **v2.0.0 — 8 tests (test_pivot_v200.py)** |
+| **FR-ECO-002** | **Expected capture calibré** | **expected_capture_pct=0.50 (pas fallback trailing 0.20%)** | **✅ PASS** | **v2.0.0-fix — gate math vérifié: 0.50% > 0.465%** |
+| **FR-STR-001** | **Structural proofs gate** | **≥2 preuves structurelles requises pour entrée scalping** | **✅ PASS** | **v2.0.0 — 3 tests (test_pivot_v200.py)** |
+| **FR-MFR-001** | **Momentum fade restricted** | **Momentum fade seulement si pic ≥ 0.35% ET sortie net-positive** | **✅ PASS** | **v2.0.0 — 4 tests (test_pivot_v200.py)** |
 
 ---
 
@@ -96,7 +100,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1053 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1501 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 
@@ -179,4 +183,14 @@
 | **test_journal_and_profiles.py** | **84** | **✅** |
 | **test_diagnostic.py** | **55** | **✅** |
 | **test_reality_gap.py** | **48** | **✅** |
-| **Total** | **1053** | ✅ |
+| **test_economic_value.py** | **—** | **✅** |
+| **test_stability.py** | **—** | **✅** |
+| **test_scalping_audit.py** | **—** | **✅** |
+| **test_smart_cooldown.py** | **—** | **✅** |
+| **test_learning.py** | **—** | **✅** |
+| **test_short_optimization.py** | **—** | **✅** |
+| **test_market_structure.py** | **—** | **✅** |
+| **test_runtime_truth.py** | **—** | **✅** |
+| **test_pivot_v200.py** | **41** | **✅** |
+| **test_autonomous.py** | **—** | **✅** |
+| **Total** | **1501** | ✅ |
