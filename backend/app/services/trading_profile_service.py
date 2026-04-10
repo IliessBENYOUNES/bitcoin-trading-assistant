@@ -78,6 +78,11 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         leverage_enabled=True,
         max_leverage=3.0,
         stale_exit_minutes=180,
+        # [v1.9.9] Quality gate minimum pour le slot aggressive.
+        # Le run a montré que des trades aggressive pouvaient aussi faire mal
+        # quand le marché n'a aucune structure. Seuil bas mais existant.
+        min_market_quality=25,
+        min_volume_ratio=0.5,
     ),
     "scalping": TradingProfileParams(
         profile_type=TradingProfileType.scalping,
@@ -119,7 +124,9 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # Smart cooldown
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
-        max_cooldown_minutes=5.0,
+        # [v1.9.9] max_cooldown relevé de 5→10 min pour permettre les pénalités
+        # anti-churn après stale négatif. 5 min était insuffisant pour dissuader.
+        max_cooldown_minutes=10.0,
         # [v1.9.1] Protection anti-micro-PnL
         min_hold_seconds=30,
         # Seuil économique
@@ -128,10 +135,12 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         short_min_score=25,
         short_exit_score_threshold=30,
         short_min_hold_seconds=45,
-        # [v1.9.8] Market quality gating — no-trade zone + filtre longs médiocres.
+        # [v1.9.9] Market quality gating — no-trade zone + filtre longs médiocres.
         # Le moteur ne trade plus quand le marché est bruité, sans volume,
         # en tight range, ou quand le prix est coincé au milieu de nulle part.
-        min_market_quality=35,     # Qualité marché minimum pour ouvrir (0-100)
+        # [v1.9.9] Seuil relevé de 35→45 : le run v1.9.8 a prouvé que 35
+        # ne bloquait rien en pratique. 45 est un veto réel.
+        min_market_quality=45,     # Qualité marché minimum pour ouvrir (0-100)
         min_volume_ratio=0.7,      # Volume minimum (ratio vs SMA20)
         long_quality_filter=True,  # Active le filtre de qualité pour les longs
     ),

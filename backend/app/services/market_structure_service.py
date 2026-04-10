@@ -321,11 +321,14 @@ class MarketStructureService:
                 f"Volume insuffisant ({quality.volume_ratio:.2f}x < {min_volume_ratio}x SMA20)"
             )
 
-        # Le milieu du range est acceptable si il y a une micro-tendance
-        if quality.price_zone == "mid" and quality.micro_trend_score <= 0:
+        # [v1.9.9] Le milieu du range est un VETO pour les longs SAUF si
+        # la micro-tendance haussière est CLAIRE (score >= 3).
+        # Un micro_trend de +1 ou +2 est du bruit, pas une tendance.
+        # Avant : micro_trend_score > 0 suffisait (trop permissif).
+        if quality.price_zone == "mid" and quality.micro_trend_score < 3:
             return False, (
-                f"Prix au milieu du range ({quality.price_position_pct:.0%}) "
-                f"sans micro-tendance haussière ({quality.micro_trend_score:+d})"
+                f"VETO long mid-range : prix au milieu du range ({quality.price_position_pct:.0%}) "
+                f"sans micro-tendance haussière claire ({quality.micro_trend_score:+d} < +3 requis)"
             )
 
         return True, ""

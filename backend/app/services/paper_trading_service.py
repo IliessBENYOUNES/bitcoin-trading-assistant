@@ -758,38 +758,61 @@ class PaperTradingService:
                     non_trade_reason="decision_wait",
                 )
 
-            # [v1.9.8] Market quality gating — no-trade zone
-            # Avant d'ouvrir, le moteur vérifie si le marché a une structure
-            # suffisante (volume, range, micro-tendance). Un marché bruité
-            # ou en tight range est une no-trade zone.
+            # [v1.9.9] Market quality gating — no-trade zone + runtime trace
+            # Toujours compute la qualité marché pour le log, même si pas de gate.
+            # Cela permet l'audit runtime de CHAQUE tick.
             min_mq = getattr(profile_params, "min_market_quality", None) if profile_params else None
             min_vr = getattr(profile_params, "min_volume_ratio", None) if profile_params else None
             long_qf = getattr(profile_params, "long_quality_filter", False) if profile_params else False
 
+            mq_reason = None
+            mq_data = None
             if min_mq is not None and min_mq > 0:
-                mq_reason = self._check_market_quality(
+                mq_reason, mq_data = self._check_market_quality(
                     decision_result=decision_result,
                     direction="long" if action == "acheter" else "short",
                     min_quality=min_mq,
                     min_volume_ratio=min_vr or 0.0,
                     long_quality_filter=long_qf,
                 )
-                if mq_reason:
-                    _log_tick(action_taken="hold", btc_price=current_price,
-                              decision_score=score, decision_action=action,
-                              decision_confidence=confidence,
-                              reason_no_trade="market_quality_low",
-                              reason_detail=mq_reason[:500])
-                    return PaperTickResult(
-                        action_taken="hold",
-                        detail=f"No-trade zone : {mq_reason}",
-                        current_price=current_price,
-                        timestamp=now.isoformat(),
-                        decision_score=score,
-                        decision_action=action,
-                        profile_type=profile_name,
-                        non_trade_reason="market_quality_low",
-                    )
+            else:
+                # Compute quality data for tracing even without gating
+                _, mq_data = self._check_market_quality(
+                    decision_result=decision_result,
+                    direction="long" if action == "acheter" else "short",
+                )
+
+            # Helper pour injecter les données de qualité dans le log
+            _qg_log = {}
+            if mq_data:
+                _qg_log = {
+                    "market_quality_score": mq_data.get("market_quality_score"),
+                    "volume_ratio": mq_data.get("volume_ratio"),
+                    "price_position_pct": mq_data.get("price_position_pct"),
+                    "range_width_atr": mq_data.get("range_width_atr"),
+                    "micro_trend_score": mq_data.get("micro_trend_score"),
+                    "vwap_distance_pct": mq_data.get("vwap_distance_pct"),
+                }
+
+            if mq_reason:
+                _log_tick(action_taken="hold", btc_price=current_price,
+                          decision_score=score, decision_action=action,
+                          decision_confidence=confidence,
+                          reason_no_trade="market_quality_low",
+                          reason_detail=mq_reason[:500],
+                          quality_gate_passed=False,
+                          quality_gate_reason=mq_reason[:500],
+                          **_qg_log)
+                return PaperTickResult(
+                    action_taken="hold",
+                    detail=f"No-trade zone : {mq_reason}",
+                    current_price=current_price,
+                    timestamp=now.isoformat(),
+                    decision_score=score,
+                    decision_action=action,
+                    profile_type=profile_name,
+                    non_trade_reason="market_quality_low",
+                )
 
             # [v1.5] Vérification profil — score minimum
             # Les trades de reversal (mean reversion) ne sont pas soumis au
@@ -985,7 +1008,10 @@ class PaperTradingService:
                       leverage_recommended=leverage_recommended,
                       leverage_final=leverage_final,
                       leverage_reason=leverage_reasons,
-                      trade_id=position.id)
+                      trade_id=position.id,
+                      quality_gate_passed=True,
+                      quality_gate_reason="market_quality_ok",
+                      **_qg_log)
 
             return PaperTickResult(
                 action_taken=f"opened_{direction}",
@@ -1194,33 +1220,44 @@ class PaperTradingService:
         min_quality: int = 30,
         min_volume_ratio: float = 0.0,
         long_quality_filter: bool = False,
-    ) -> Optional[str]:
+    ) -> tuple[Optional[str], Optional[dict]]:
         """
-        [v1.9.8] Vérifie la qualité de marché avant ouverture (no-trade zone).
+        [v1.9.9] Vérifie la qualité de marché avant ouverture (no-trade zone).
 
         Utilise le MarketStructureService pour évaluer si le marché a
         assez de structure pour justifier un trade.
 
         Returns:
-            Raison de rejet (str) si no-trade zone, None si OK.
+            (reason_if_rejected, quality_data_dict)
+            reason est None si OK. quality_data est toujours renseigné si possible.
         """
         try:
             from app.services.market_structure_service import MarketStructureService
 
             # Récupérer la série depuis le decision_result
-            # La série est propagée depuis SignalService.analyze() → DecisionService
             series = decision_result.get("_series")
             if not series or len(series) < 5:
-                return None  # Pas assez de données, ne pas bloquer
+                return None, None  # Pas assez de données, ne pas bloquer
 
             quality = MarketStructureService.assess_quality(series)
 
+            # Données de qualité pour le log (toujours renseignées)
+            qdata = {
+                "market_quality_score": quality.quality_score,
+                "volume_ratio": quality.volume_ratio,
+                "price_position_pct": quality.price_position_pct,
+                "range_width_atr": quality.range_width_atr,
+                "micro_trend_score": quality.micro_trend_score,
+                "vwap_distance_pct": quality.vwap_distance_pct,
+            }
+
             # Vérification 1 : No-trade zone globale
             if MarketStructureService.is_no_trade_zone(quality, min_quality):
-                return (
+                reason = (
                     f"Qualité marché {quality.quality_score}/100 < seuil {min_quality} — "
                     f"{'; '.join(quality.reasons[:2])}"
                 )
+                return reason, qdata
 
             # Vérification 2 : Filtre spécifique longs
             if direction == "long" and long_quality_filter:
@@ -1230,19 +1267,20 @@ class PaperTradingService:
                     min_volume_ratio=min_volume_ratio,
                 )
                 if not is_ok:
-                    return reason
+                    return reason, qdata
 
             # Vérification 3 : Volume minimum général
             if min_volume_ratio > 0 and quality.volume_ratio < min_volume_ratio:
-                return (
+                reason = (
                     f"Volume insuffisant ({quality.volume_ratio:.2f}x < {min_volume_ratio}x SMA20)"
                 )
+                return reason, qdata
 
-            return None  # Marché OK
+            return None, qdata  # Marché OK
 
         except Exception as e:
             logger.debug(f"Market quality check error (non-blocking): {e}")
-            return None  # En cas d'erreur, ne pas bloquer le trade
+            return None, None  # En cas d'erreur, ne pas bloquer le trade
 
     def _scalping_reversal_check(self, decision_result: dict) -> Optional[str]:
         """

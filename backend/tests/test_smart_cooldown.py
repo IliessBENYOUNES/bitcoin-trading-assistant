@@ -100,14 +100,14 @@ class TestSmartCooldown:
         )
         assert result == 2.0
 
-    def test_cooldown_reduced_after_stale_exit(self):
-        """Cooldown réduit après une sortie stale (position stagnante)."""
+    def test_cooldown_increased_after_stale_exit(self):
+        """[v1.9.9] Cooldown AUGMENTÉ après une sortie stale (anti-churn)."""
         result = SmartCooldownService.compute_cooldown(
             base_cooldown=2.0,
             last_exit_type="closed_stale",
             last_pnl=0.5,
         )
-        assert result < 2.0
+        assert result >= 2.0
 
     def test_cooldown_reduced_after_trailing_stop(self):
         """Cooldown réduit après un trailing stop."""
@@ -146,8 +146,8 @@ class TestSmartCooldown:
         )
         assert result < 2.0
 
-    def test_cooldown_reduced_after_scratch(self):
-        """Cooldown réduit après un scratch (trade très court et flat)."""
+    def test_cooldown_increased_after_scratch(self):
+        """[v1.9.9] Cooldown augmenté après un scratch (stale + flat = bruit)."""
         result = SmartCooldownService.compute_cooldown(
             base_cooldown=2.0,
             last_exit_type="closed_stale",
@@ -155,7 +155,8 @@ class TestSmartCooldown:
             last_pnl_pct=0.01,
             last_duration_min=1.0,
         )
-        assert result < 1.5
+        # Stale positif/flat → multiplier 2.0 + gain small → 0.8 = 1.6 * 2.0 = 3.2
+        assert result >= 2.0
 
     def test_cooldown_bounded_min(self):
         """Le cooldown ne descend pas en dessous de min_cooldown."""
@@ -438,7 +439,7 @@ class TestScalpingProfileSmartCooldown:
     def test_scalping_preset_max_cooldown(self):
         """Le preset scalping a max_cooldown_minutes."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 5.0
+        assert p.max_cooldown_minutes == 10.0
 
     def test_conservative_no_smart_cooldown(self):
         """Conservative n'a pas de smart cooldown."""

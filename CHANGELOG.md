@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.9] - 2026-04-10
+
+### Fixed
+- **Score technique ne sature plus à 100** — Le soft ceiling plafonne à 88 en conditions normales (95 avec volume ≥ 1.5x + unanimité parfaite). Les signaux NEUTRAL diluent réellement le score (-4%/signal). Le convergence boost exige vol_ratio ≥ 1.2 (était 0.8) et raw_score ≥ 0.75 (était 0.6).
+- **Quality gate = veto réel** — Seuil scalping relevé 35→45. Mid-range veto renforcé : micro_trend_score ≥ 3 requis (était > 0). Le profil aggressive a désormais un gate minimum (25).
+- **Anti-churn stale négatif** — Multiplicateur stale INVERSÉ de 0.5 (réduisait le cooldown !) à 2.0 (le double). Stale négatif : multiplicateur 3x + plancher 4 min incompressible. max_cooldown scalping 5→10 min.
+
+### Added
+- **Runtime trace quality gate** — 8 nouvelles colonnes dans `tick_activity_log` : `market_quality_score`, `volume_ratio`, `price_position_pct`, `range_width_atr`, `micro_trend_score`, `vwap_distance_pct`, `quality_gate_passed`, `quality_gate_reason`. Chaque tick est auditable : pourquoi un trade a été autorisé ou refusé.
+- **34 nouveaux tests** (`test_runtime_truth.py`) : runtime trace (4), anti-saturation (6), quality gate veto (8), anti-churn (8), non-régression (8).
+
+### Technical
+- `_check_market_quality()` retourne désormais un tuple `(reason, quality_data)` au lieu d'un simple string, pour propager les données de qualité au journal.
+- `JournalService.log_tick()` accepte les paramètres quality gate.
+- `SmartCooldownService` : pénalité spécifique stale_negative avec détection `last_pnl < 0`.
+- `compute_composite_score()` : neutral dilution, soft ceiling, convergence boost durci.
+- Tests : 1460 passing (était 1426), tsc clean.
+
 ## [1.9.8] - 2026-04-10
 
 ### Added

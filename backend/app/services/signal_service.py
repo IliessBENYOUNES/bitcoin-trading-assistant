@@ -958,17 +958,20 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
             # Faible volume : atténue le signal de 15%
             raw_score *= 0.85
 
-    # [v1.9.8] Convergence boost amélioré — conditionné par la qualité du marché.
-    # Le boost original (v1.9.5) amplifie le score quand les indicateurs convergent.
-    # PROBLÈME : en marché haussier calme, TOUS les indicateurs sont bullish par défaut,
-    # ce qui donne unanimity=1.0 et boost le score à 100 pour CHAQUE tick.
-    # Le résultat : tous les scores se retrouvent à 70-74 après combinaison sentiment.
+    # [v1.9.9] Convergence boost — conditions durcies pour casser la saturation à 100.
     #
-    # FIX : Le boost est maintenant conditionné par :
-    # 1. raw_score >= 0.6 (au lieu de 0.5) — plus sélectif
-    # 2. Volume suffisant (vol_ratio >= 0.8) — pas de boost sans conviction
-    # 3. Pas de range_quality neutre fort — pas de boost en marché bruité
-    # La compression pour signaux divisés est encore renforcée (0.75→0.65).
+    # PROBLÈME PROUVÉ PAR LE RUN : en marché haussier calme, TOUS les indicateurs
+    # sont bullish par défaut (RSI ~60, MACD positif, SMA ok), ce qui donne
+    # unanimity=1.0 et boost le score à 100 pour CHAQUE tick.
+    # Le résultat : tous les scores se retrouvent à 70-74 après combinaison sentiment,
+    # et le quality gate ne filtre rien.
+    #
+    # FIX v1.9.9 :
+    # 1. Volume minimum pour le boost relevé à 1.2 (vs 0.8) — le boost exige une vraie
+    #    participation de volume, pas juste un volume "pas catastrophique"
+    # 2. raw_score minimum relevé à 0.75 (vs 0.6) — le setup doit être déjà fort
+    # 3. Compression renforcée pour signaux divisés (0.60 vs 0.65)
+    # 4. Compression quand range_quality détecté (0.70 vs 0.75)
     total_directional = bullish_count + bearish_count + neutral_count
     range_quality_present = range_quality_signal is not None
     vol_ratio_val = volume_signal.value if volume_signal and volume_signal.value is not None else 1.0
@@ -977,21 +980,44 @@ def compute_composite_score(signals: list[SignalItem]) -> CompositeScore:
         dominant_count = max(bullish_count, bearish_count)
         unanimity = dominant_count / total_directional if total_directional > 0 else 0
         if (unanimity >= 0.75
-                and abs(raw_score) >= 0.6
-                and vol_ratio_val >= 0.8
+                and abs(raw_score) >= 0.75
+                and vol_ratio_val >= 1.2
                 and not range_quality_present):
-            # Convergence forte + volume + pas de bruit de range → boost
+            # Convergence forte + volume confirmé + pas de bruit de range → boost
             sign = 1 if raw_score >= 0 else -1
-            boost_factor = 1.0 + (unanimity - 0.5) * abs(raw_score) * 0.5
+            boost_factor = 1.0 + (unanimity - 0.5) * abs(raw_score) * 0.4
             raw_score = sign * min(1.0, abs(raw_score) * boost_factor)
         elif unanimity < 0.4 and total_directional >= 4:
-            # [v1.9.8] Signaux très divisés → compression encore renforcée (0.65)
-            # Un setup ambigu ne mérite jamais un score de 70.
-            raw_score *= 0.65
+            # [v1.9.9] Signaux très divisés → compression forte (0.60)
+            raw_score *= 0.60
         elif range_quality_present and abs(raw_score) > 0.5:
-            # [v1.9.8] Range quality détecté — compresser le score
-            # Le marché est bruité, les indicateurs ne sont pas fiables.
-            raw_score *= 0.75
+            # [v1.9.9] Range quality détecté — compresser davantage (0.70)
+            raw_score *= 0.70
+
+    # [v1.9.9] Dilution par les signaux NEUTRAL.
+    # En marché neutre/ranging/milieu de range, les signaux NEUTRAL
+    # doivent empêcher le score de ressembler à un vrai setup fort.
+    # Chaque signal NEUTRAL au-delà du 1er réduit le score de 4%.
+    if neutral_count >= 1 and abs(raw_score) > 0.3:
+        neutral_penalty = min(neutral_count, 4) * 0.04  # Max 16% de pénalité
+        raw_score *= (1.0 - neutral_penalty)
+
+    # [v1.9.9] Soft ceiling — empêche le score de saturer à 100.
+    # Un score technique à 100 doit être EXCEPTIONNEL (1-2% des ticks).
+    # Au-dessus de 85, les rendements sont décroissants.
+    # Seul un setup avec vol_ratio >= 1.5 ET unanimity parfaite peut dépasser 88.
+    if abs(raw_score) > 0.85:
+        sign = 1 if raw_score >= 0 else -1
+        excess = abs(raw_score) - 0.85
+        # Compresser l'excès : au-dessus de 85, chaque point ne vaut plus que 40%
+        dampened = 0.85 + excess * 0.4
+        # Plafond dur à 88 sauf conditions exceptionnelles
+        hard_cap = 0.88
+        if (vol_ratio_val >= 1.5
+                and total_directional >= 3
+                and (max(bullish_count, bearish_count) == total_directional)):
+            hard_cap = 0.95  # Unanimité parfaite + volume fort → plafond relevé
+        raw_score = sign * min(hard_cap, dampened)
 
     score = int(round(raw_score * 100))
     score = max(-100, min(100, score))

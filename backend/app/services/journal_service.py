@@ -82,6 +82,15 @@ class JournalService:
         had_open_position: bool = False,
         unrealized_pnl: Optional[float] = None,
         trade_id: Optional[int] = None,
+        # [v1.9.9] Quality gate trace — audit runtime
+        market_quality_score: Optional[int] = None,
+        volume_ratio: Optional[float] = None,
+        price_position_pct: Optional[float] = None,
+        range_width_atr: Optional[float] = None,
+        micro_trend_score: Optional[int] = None,
+        vwap_distance_pct: Optional[float] = None,
+        quality_gate_passed: Optional[bool] = None,
+        quality_gate_reason: Optional[str] = None,
     ) -> TickActivityLog:
         """Enregistre un tick dans le journal d'activité."""
         entry = TickActivityLog(
@@ -101,6 +110,15 @@ class JournalService:
             had_open_position=1 if had_open_position else 0,
             unrealized_pnl=unrealized_pnl,
             trade_id=trade_id,
+            # Quality gate trace
+            market_quality_score=market_quality_score,
+            volume_ratio=volume_ratio,
+            price_position_pct=price_position_pct,
+            range_width_atr=range_width_atr,
+            micro_trend_score=micro_trend_score,
+            vwap_distance_pct=vwap_distance_pct,
+            quality_gate_passed=1 if quality_gate_passed else (0 if quality_gate_passed is not None else None),
+            quality_gate_reason=quality_gate_reason,
         )
         self.db.add(entry)
         self.db.commit()

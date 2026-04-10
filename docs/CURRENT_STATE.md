@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 10 avril 2026
-> **Version :** v1.9.8
+> **Version :** v1.9.9
 > **Branche :** `master`
-> **Dernier commit :** feat(market-structure): no-trade zone + score decompression + market quality gating
+> **Dernier commit :** fix(engine): lot correctif v1.9.9 — anti-saturation, quality gate veto, anti-churn, runtime trace
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v1.9.8** |
+| Version courante | **v1.9.9** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1426 tests**, tous passing ✅ |
+| Tests backend | **1460 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v1.9.8 livré** — Market structure gating, no-trade zone, score décompressé |
+| Phase courante | **v1.9.9 livré** — Lot correctif structurel : anti-saturation, quality gate veto, anti-churn, runtime trace |
 
 ### ⚠️ État de maturité honnête
 
@@ -93,6 +93,13 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
   - **Learning v3** : suggestions stale-négatif dominant, longs homogènes à WR faible.
   - **55 tests** : MarketStructureService, interpreters, score decompression, gating, profil, learning.
 - 1426 tests backend, tsc clean
+- **[v1.9.9] Lot correctif structurel — Audit de vérité runtime** — Le moteur sait enfin dire NON
+  - **Runtime trace** : 8 nouvelles colonnes dans tick_activity_log (market_quality_score, volume_ratio, price_position_pct, range_width_atr, micro_trend_score, vwap_distance_pct, quality_gate_passed, quality_gate_reason). Chaque tick est auditable.
+  - **Anti-saturation score technique** : soft ceiling à 88 (était 100), convergence boost exige vol_ratio ≥ 1.2 (était 0.8) et raw_score ≥ 0.75 (était 0.6), dilution par signaux NEUTRAL (4%/signal), plafond exceptionnel 95 (vol ≥ 1.5x + unanimité parfaite).
+  - **Quality gate = veto réel** : scalping min_market_quality 35→45, aggressive a désormais un gate (25). Mid-range veto renforcé : exige micro_trend_score ≥ 3 (était > 0).
+  - **Anti-churn stale négatif** : stale cooldown multiplier inversé 0.5→2.0 (AUGMENTE au lieu de réduire). Stale négatif → multiplicateur 3x + plancher 4 min. max_cooldown scalping 5→10 min.
+  - **34 tests ciblés** : runtime trace (4), anti-saturation (6), quality gate veto (8), anti-churn (8), non-régression (8).
+- 1460 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.

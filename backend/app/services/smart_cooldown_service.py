@@ -39,9 +39,13 @@ class SmartCooldownService:
     """
 
     # Multiplicateurs par type de sortie
+    # [v1.9.9] closed_stale INVERSÉ : était 0.5 (réduisait le cooldown !),
+    # maintenant 2.0 (double le cooldown). Un stale est du BRUIT ou une perte
+    # lente — il ne faut PAS réentrer vite après un stale.
+    # C'était le cœur du bug de churn : ouvrir → stale négatif → rouvrir immédiatement.
     EXIT_MULTIPLIERS = {
-        # Sorties rapides/flat → cooldown réduit (le slot est libre, on réessaie vite)
-        "closed_stale": 0.5,
+        # Sorties stale → cooldown ALLONGÉ (anti-churn)
+        "closed_stale": 2.0,
         "closed_trailing_stop": 0.7,
         "closed_momentum_fade": 0.6,
         # Sorties normales → cooldown standard
@@ -88,6 +92,20 @@ class SmartCooldownService:
             exit_mult = cls.EXIT_MULTIPLIERS.get(last_exit_type, 1.0)
             multiplier *= exit_mult
 
+        # [v1.9.9] Pénalité spécifique stale NÉGATIF — anti-churn.
+        # Un stale avec PnL négatif est le mode d'échec principal du moteur :
+        # ouvrir → perdre petit → stale → rouvrir → reperdre.
+        # On applique un multiplicateur 3x (au lieu de 2x pour un stale simple)
+        # ET un plancher de 4 minutes (quelle que soit la borne min configurée).
+        stale_negative = (
+            last_exit_type == "closed_stale"
+            and last_pnl is not None
+            and last_pnl < 0
+        )
+        if stale_negative:
+            # Surcharge le multiplicateur stale normal (2.0 → 3.0)
+            multiplier = multiplier / cls.EXIT_MULTIPLIERS.get("closed_stale", 1.0) * 3.0
+
         # 2. Ajustement par PnL du dernier trade
         if last_pnl is not None:
             if last_pnl >= 0:
@@ -104,10 +122,9 @@ class SmartCooldownService:
 
         # 3. Trade très court et flat → signal de bruit, ALLONGER le cooldown
         # [v1.9.1] Changement de philosophie : un trade très court et flat est du BRUIT.
-        # Il ne faut PAS réentrer vite après du bruit — c'est du churn.
-        # Avant : multiplier *= 0.5 (réentrait très vite = plus de churn)
-        # Maintenant : multiplier *= 1.5 (attend plus longtemps pour un vrai signal)
-        if last_duration_min is not None and last_duration_min < 2.0:
+        # [v1.9.9] Ne s'applique PAS si déjà un stale (pénalité stale est plus forte).
+        if (last_duration_min is not None and last_duration_min < 2.0
+                and last_exit_type != "closed_stale"):
             if last_pnl_pct is not None and abs(last_pnl_pct) < 0.05:
                 # Scratch : trade < 2min et PnL quasi nul → c'est du bruit
                 multiplier *= 1.5
@@ -123,6 +140,14 @@ class SmartCooldownService:
         computed = max(min_cooldown, min(max_cooldown, computed))
         # Bornes de sécurité absolues
         computed = max(ABSOLUTE_MIN_COOLDOWN, min(ABSOLUTE_MAX_COOLDOWN, computed))
+
+        # [v1.9.9] Plancher anti-churn après stale négatif.
+        # Quelle que soit la configuration, un stale négatif impose un minimum
+        # de 4 minutes avant de réentrer. C'est le garde-fou ultime contre
+        # la boucle ouvrir → perdre → stale → rouvrir immédiatement.
+        STALE_NEGATIVE_FLOOR = 4.0
+        if stale_negative:
+            computed = max(STALE_NEGATIVE_FLOOR, computed)
 
         return round(computed, 1)
 

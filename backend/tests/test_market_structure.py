@@ -483,7 +483,7 @@ class TestPaperTradingMarketQualityGating:
 
         decision_result = {"_series": series}
 
-        reason = pts._check_market_quality(
+        reason, qdata = pts._check_market_quality(
             decision_result=decision_result,
             direction="long",
             min_quality=35,
@@ -514,7 +514,7 @@ class TestPaperTradingMarketQualityGating:
 
         decision_result = {"_series": series}
 
-        reason = pts._check_market_quality(
+        reason, qdata = pts._check_market_quality(
             decision_result=decision_result,
             direction="long",
             min_quality=35,
@@ -530,7 +530,7 @@ class TestPaperTradingMarketQualityGating:
         pts = PaperTradingService(db_session)
         decision_result = {}  # Pas de _series
 
-        reason = pts._check_market_quality(
+        reason, qdata = pts._check_market_quality(
             decision_result=decision_result,
             direction="long",
             min_quality=35,
@@ -554,7 +554,7 @@ class TestPaperTradingMarketQualityGating:
             })
         decision_result = {"_series": series}
 
-        reason = pts._check_market_quality(
+        reason, qdata = pts._check_market_quality(
             decision_result=decision_result,
             direction="short",
             min_quality=25,  # Seuil bas

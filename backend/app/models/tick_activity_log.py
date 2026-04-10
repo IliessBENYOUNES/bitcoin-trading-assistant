@@ -75,6 +75,18 @@ class TickActivityLog(Base):
     # --- Trade associé (si un trade a été ouvert ou fermé) ---
     trade_id: Mapped[int] = mapped_column(Integer, nullable=True)
 
+    # --- [v1.9.9] Quality gate trace — audit runtime ---
+    # Persiste les métriques de qualité marché pour chaque tick.
+    # Permet l'audit a posteriori : pourquoi un trade a été autorisé ou refusé.
+    market_quality_score: Mapped[int] = mapped_column(Integer, nullable=True)
+    volume_ratio: Mapped[float] = mapped_column(Float, nullable=True)
+    price_position_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    range_width_atr: Mapped[float] = mapped_column(Float, nullable=True)
+    micro_trend_score: Mapped[int] = mapped_column(Integer, nullable=True)
+    vwap_distance_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    quality_gate_passed: Mapped[bool] = mapped_column(Integer, nullable=True)  # 0/1
+    quality_gate_reason: Mapped[str] = mapped_column(String(500), nullable=True)
+
     def __repr__(self) -> str:
         return (
             f"<TickActivityLog(id={self.id}, action={self.action_taken}, "
