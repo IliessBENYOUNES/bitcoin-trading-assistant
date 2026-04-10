@@ -396,13 +396,16 @@ def start_autonomous(
         interval_seconds: Intervalle entre les ticks (5-3600s).
         profile: Profil de trading à utiliser.
     """
-    # S'assurer que le compte est actif
+    # [v2.0.0-fix] S'assurer que le compte est actif ET multi-slot.
+    # Avant, seul le cas `not is_active` configurait max_open_positions.
+    # Après un full reset (qui recrée le compte is_active=False, max_open_positions=3),
+    # cela fonctionnait. Mais si le compte était déjà actif avec max_open_positions=1
+    # (ex: activé manuellement depuis le frontend), le multi-slot n'était pas restauré.
     service = PaperTradingService(db)
     account = service.get_or_create_account()
-    if not account.is_active:
-        account.is_active = True
-        account.max_open_positions = 3
-        db.commit()
+    account.is_active = True
+    account.max_open_positions = max(account.max_open_positions or 1, 3)
+    db.commit()
 
     manager = AutonomousManager()
     result = manager.start(

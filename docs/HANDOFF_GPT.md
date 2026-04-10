@@ -1,4 +1,4 @@
-# 📋 Handoff GPT — Fix Stale Exit vs Trailing Stop (10 avril 2026)
+# 📋 Handoff GPT — Fix Multi-Slot Perdu Après Full Reset (10 avril 2026)
 
 > Transfert de contexte pour GPT parallèle.
 
@@ -6,65 +6,87 @@
 
 ## 1. Titre et date
 
-**Fix : Stale exit override le trailing stop sur les trades profitables**  
+**Fix : Multi-slot perdu après full reset — le slot aggressive ne se relance pas**  
 Date : 10 avril 2026
 
 ---
 
 ## 2. Problème
 
-Le stale exit fermait des trades profitables (+0.46%) en les classant "stagnants" avant que le trailing stop puisse agir. Runtime : trade #364 fermé à +$11.39 en `closed_stale` après 15 min.
+Après un full reset + relance du run, un seul trade scalping s'ouvre. Le slot aggressive, qui auparavant tournait en parallèle et portait de gros gains, ne se relance plus.
 
 ---
 
 ## 3. Diagnostic
 
-Audit runtime de 603 ticks (~50 minutes) : 4 trades ouverts, 3 fermés `closed_stale`. Le trade #364 à +0.46% aurait dû être géré par le trailing stop (activation 0.20%), pas fermé comme stagnant.
+Trace du flux complet :
+1. Frontend appelle `resetPaperAccount({ initial_capital: capital })` — **sans `max_open_positions`**
+2. `FullResetRequest.max_open_positions` avait un default de **1** (schema Pydantic)
+3. L'endpoint `POST /paper/account/reset` fait `account.max_open_positions = config.max_open_positions` = **1**
+4. `get_enabled_slots(account)` avec `max_open_positions=1` retourne `[active_profile]` (mono-slot)
+5. Pour `active_profile="scalping"`, retourne `["scalping"]` au lieu de `["scalping", "aggressive"]`
 
 ---
 
 ## 4. Cause racine
 
-Ligne 448 de `paper_trading_service.py` :
-```python
-stale_pnl_threshold = profile_params.profit_take_pct  # 0.8%
-```
+Deux champs schema avec default=1 :
+- `FullResetRequest.max_open_positions` (ligne 42 de `schemas/paper_trading.py`)
+- `PaperAccountCreate.max_open_positions` (ligne 29 de `schemas/paper_trading.py`)
 
-Pour les profils tight (scalping, loss_cut ≤ 0.5%), le seuil de stagnation était `profit_take_pct` = 0.8%.  
-Un trade à +0.46% : `abs(0.46) < 0.8` → classé "stagnant" → fermé.  
-Mais le trailing stop (activation 0.20%) était actif depuis longtemps (0.46 > 0.20) et n'a jamais pu agir.
+Le frontend ne passe jamais `max_open_positions` lors du reset ou de l'activation. Le default 1 était appliqué systématiquement.
+
+Problème secondaire : `autonomous/start` ne configurait `max_open_positions=3` que si `is_active=False`. Si le compte était déjà activé manuellement, le multi-slot n'était pas restauré.
 
 ---
 
 ## 5. Correction appliquée
 
-**Fichier :** `backend/app/services/paper_trading_service.py`, bloc stale exit (~ligne 441-448)
+### Fichier 1 : `backend/app/schemas/paper_trading.py`
 
 **AVANT :**
 ```python
-stale_pnl_threshold = 0.1
-if profile_params and profile_params.loss_cut_pct <= 0.5:
-    stale_pnl_threshold = profile_params.profit_take_pct
+# PaperAccountCreate
+max_open_positions: int = Field(default=1, ge=1, le=10, ...)
+# FullResetRequest
+max_open_positions: int = Field(default=1, ge=1, le=10)
 ```
 
 **APRÈS :**
 ```python
-stale_pnl_threshold = 0.1
-if profile_params and profile_params.loss_cut_pct <= 0.5:
-    ts_act = getattr(profile_params, "trailing_stop_activation_pct", None)
-    stale_pnl_threshold = ts_act if ts_act else profile_params.profit_take_pct
+# PaperAccountCreate
+max_open_positions: int = Field(default=3, ge=1, le=10, ...)
+# FullResetRequest
+max_open_positions: int = Field(default=3, ge=1, le=10)
+```
+
+### Fichier 2 : `backend/app/api/routes/paper_trading.py` (autonomous/start)
+
+**AVANT :**
+```python
+if not account.is_active:
+    account.is_active = True
+    account.max_open_positions = 3
+    db.commit()
+```
+
+**APRÈS :**
+```python
+account.is_active = True
+account.max_open_positions = max(account.max_open_positions or 1, 3)
+db.commit()
 ```
 
 ---
 
 ## 6. Ce qui n'a PAS été touché
 
-- ✅ Profil **aggressive** : non impacté (loss_cut_pct > 0.5, branche tight jamais exécutée)
-- ✅ Stale **négatif** : inchangé (positions en perte continuent à sortir normalement)
-- ✅ Tous les autres gates (economic, structural, quality, volume, score) : inchangés
-- ✅ Trailing stop logic : inchangé
-- ✅ SL/TP logic : inchangé
-- ✅ Frontend : aucun changement
+- ✅ `get_enabled_slots()` : logique inchangée, fonctionnait correctement avec `max_open_positions>1`
+- ✅ `reset_account()` service : inchangé
+- ✅ `PaperAccount` model : default DB reste 1 (endpoint override)
+- ✅ Frontend : aucun changement (defaults backend suffisent)
+- ✅ Profils (trading_profile_service) : inchangés
+- ✅ `_tick_single_slot()` : inchangé
 
 ---
 
@@ -72,18 +94,17 @@ if profile_params and profile_params.loss_cut_pct <= 0.5:
 
 | Check | Résultat |
 |-------|----------|
-| Tests ciblés (6 nouveaux) | ✅ 6/6 passed |
-| Suite complète backend | ✅ **1507 passed** (was 1501) |
+| Tests ciblés (5 nouveaux) | ✅ 5/5 passed |
+| Suite complète backend | ✅ **1512 passed** (was 1507) |
 | `tsc --noEmit` frontend | ✅ 0 erreurs |
 
-### Tests ajoutés (TestStaleVsTrailingThreshold)
+### Tests ajoutés (TestMultiSlotAfterReset)
 
-1. `test_stale_threshold_uses_trailing_activation_for_tight_profiles` — scalping utilise ts_act
-2. `test_profitable_position_above_trailing_activation_not_stale` — +0.46% n'est PAS stale
-3. `test_flat_position_below_trailing_activation_is_stale` — +0.05% EST stale
-4. `test_aggressive_not_affected_by_tight_logic` — aggressive garde seuil 0.1%
-5. `test_stale_threshold_fallback_when_no_trailing` — fallback sur profit_take_pct
-6. `test_stale_threshold_code_path_matches_service` — vérifie tous les profils
+1. `test_reset_endpoint_default_max_open_positions_is_3` — reset crée compte avec max_open_positions=3
+2. `test_create_account_default_max_open_positions_is_3` — activate crée avec max_open_positions=3
+3. `test_get_enabled_slots_scalping_multi` — scalping+3 → ["scalping", "aggressive"]
+4. `test_get_enabled_slots_scalping_mono` — scalping+1 → ["scalping"] (mono-slot explicite)
+5. `test_full_reset_then_scalping_gets_multi_slot` — scénario complet reset→scalping→multi-slot
 
 ---
 
@@ -91,17 +112,17 @@ if profile_params and profile_params.loss_cut_pct <= 0.5:
 
 | Document | Changement |
 |----------|------------|
-| `docs/CURRENT_STATE.md` | Dernier commit, tests 1501→1507, ajout ligne v2.0.0-fix stale exit |
-| `CHANGELOG.md` | Nouvelle entrée Fixed pour stale exit, tests 1460→1507 |
+| `docs/CURRENT_STATE.md` | Dernier commit, tests 1507→1512, nouveau fix, problème #14 résolu |
+| `CHANGELOG.md` | Nouvelle entrée Fixed pour multi-slot, tests 1460→1512 |
 | `docs/ROADMAP.md` | Non modifié (pas de changement de phase) |
-| `docs/requirements_traceability.md` | Non modifié (pas de nouvelles exigences, fix de bug) |
+| `docs/requirements_traceability.md` | Non modifié (fix de bug) |
 | `docs/HANDOFF_GPT.md` | Ce fichier |
 
 ---
 
 ## 9. Commit
 
-**Message :** `fix(scalping): stale exit utilise trailing_stop_activation_pct au lieu de profit_take_pct`
+**Message :** `fix(multi-slot): max_open_positions default 1→3 pour que le slot aggressive survive au full reset`
 
 ---
 
@@ -110,20 +131,18 @@ if profile_params and profile_params.loss_cut_pct <= 0.5:
 | Élément | Valeur |
 |---------|--------|
 | Version | v2.0.0 |
-| Tests backend | 1507 passing |
+| Tests backend | 1512 passing |
 | Frontend | tsc clean |
 | Phase | v2.0.0 livré |
 
-**Impact attendu sur les trades gagnants scalping :**
+**Impact attendu :**
 
 | Métrique | Avant | Après |
 |----------|-------|-------|
-| Seuil stale (scalping) | 0.80% (profit_take_pct) | 0.20% (trailing_stop_activation_pct) |
-| Trade à +0.46% | ❌ fermé stale | ✅ trailing stop gère |
-| Trade à +0.05% | ✅ fermé stale | ✅ fermé stale (inchangé) |
-| Durée trades gagnants | ~15 min (coupés stale) | ~15-25 min (trailing gère) |
-| PnL par gagnant | +$11 (0.46%) | +$12-20 (0.50-0.80% estimé) |
-| Profil aggressive | Inchangé | Inchangé |
+| max_open_positions après reset | 1 (mono-slot) | 3 (multi-slot) |
+| Slots avec profil scalping | `["scalping"]` | `["scalping", "aggressive"]` |
+| Slot aggressive après reset | ❌ Ne tourne pas | ✅ Tourne en parallèle |
+| autonomous/start déjà running | Pas de reconfiguration | ✅ Reconfigure toujours |
 
 ---
 
@@ -140,5 +159,5 @@ cd frontend && npm run dev
 cd backend && python -m pytest tests/ -v
 
 # Tests ciblés
-cd backend && python -m pytest tests/test_paper_trading.py::TestStaleVsTrailingThreshold -v
+cd backend && python -m pytest tests/test_paper_trading.py::TestMultiSlotAfterReset -v
 ```

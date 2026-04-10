@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 10 avril 2026
 > **Version :** v2.0.0
 > **Branche :** `master`
-> **Dernier commit :** fix(scalping): stale exit utilise trailing_stop_activation_pct au lieu de profit_take_pct — trades profitables ne sont plus tués
+> **Dernier commit :** fix(multi-slot): max_open_positions default 1→3 pour que le slot aggressive survive au full reset
 
 ---
 
@@ -17,7 +17,7 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1507 tests**, tous passing ✅ |
+| Tests backend | **1512 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
 | Phase courante | **v2.0.0 livré** — Pivot stratégique : aggressive sanctuarisé, scalping refondu, economic viability gate |
 
@@ -34,6 +34,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.0] Scoring refondu** — oscillateurs (Bollinger, StochRSI) dégradés à 0.3x en tendance, price_position boosté à 1.4x
 - **[v2.0.0] Paramètres scalping recalibrés** — TP 0.8% (was 0.6%), trailing activation 0.20% (was 0.15%), max_trades 30 (was 50), market quality 50 (was 45)
 - **[v2.0.0-fix] Stale exit corrigé** — Le seuil de stagnation des profils tight utilise désormais `trailing_stop_activation_pct` (0.20%) au lieu de `profit_take_pct` (0.8%). Un trade à +0.46% n'est plus fermé comme "stagnant" — le trailing stop gère la sortie.
+- **[v2.0.0-fix] Multi-slot préservé après full reset** — `max_open_positions` default passé de 1 à 3 dans `FullResetRequest` et `PaperAccountCreate`. Avant, un full reset recréait le compte en mono-position, empêchant le slot aggressive de tourner. Désormais, le multi-slot est toujours actif par défaut.
 - Backtesting et time-travel walk-forward
 - Paper trading multi-slot avec profils et levier auto
 - Diagnostic fréquence et opportunités manquées
@@ -281,6 +282,7 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | 11 | ~~Pas de confirmation backend pour full reset~~ | ~~🟠 Moyenne~~ | ✅ Résolu v1.9.2 : confirm="RESET" obligatoire |
 | 12 | ~~Bug critique double ouverture du même slot~~ | ~~🔴 CRITIQUE~~ | ✅ Résolu v1.9.6 : guard applicatif dans _open_position() + verrou HTTP dans endpoint tick. 5 tests prouvant l'invariant. |
 | 13 | ~~Gate économique scalping mathématiquement impossible~~ | ~~🔴 CRITIQUE~~ | ✅ Résolu v2.0.0-fix : `expected_capture_pct` était None (fallback 0.20%) vs seuil requis 0.465% → 100% de refus. Fixé à 0.50%. |
+| 14 | ~~Multi-slot perdu après full reset~~ | ~~🔴 CRITIQUE~~ | ✅ Résolu v2.0.0-fix : `max_open_positions` default 1→3 dans `FullResetRequest` et `PaperAccountCreate`. Le slot aggressive survit au reset. |
 
 ---
 

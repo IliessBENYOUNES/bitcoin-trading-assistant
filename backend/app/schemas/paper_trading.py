@@ -22,7 +22,10 @@ class PaperAccountCreate(BaseModel):
     """Configuration pour créer/reset un compte paper."""
     initial_capital: float = Field(default=10000.0, ge=100, le=10_000_000)
     max_open_duration_hours: float = Field(default=168.0, ge=1, le=8760)
-    max_open_positions: int = Field(default=1, ge=1, le=10,
+    # [v2.0.0-fix] Default 1→3 : après reset ou activation, le multi-slot
+    # doit être actif par défaut pour que scalping+aggressive tournent ensemble.
+    # Avant, le reset recréait le compte en mono-position, empêchant le slot aggressive.
+    max_open_positions: int = Field(default=3, ge=1, le=10,
                                     description="Nombre max de positions simultanées (1=mono, >1=multi-slot)")
 
 
@@ -35,7 +38,8 @@ class FullResetRequest(BaseModel):
     confirm: str = Field(..., description="Doit valoir 'RESET' pour confirmer")
     initial_capital: float = Field(default=10000.0, ge=100, le=10_000_000)
     max_open_duration_hours: float = Field(default=168.0, ge=1, le=8760)
-    max_open_positions: int = Field(default=1, ge=1, le=10)
+    # [v2.0.0-fix] Default 1→3 : même logique que PaperAccountCreate.
+    max_open_positions: int = Field(default=3, ge=1, le=10)
 
 
 class FullResetResponse(BaseModel):

@@ -1613,3 +1613,92 @@ class TestStaleVsTrailingThreshold:
                     f"Aggressive stale_pnl_threshold devrait être 0.1, got {stale_pnl_threshold}"
                 )
 
+
+# ============================================================
+# 13. MULTI-SLOT APRÈS FULL RESET
+# ============================================================
+
+class TestMultiSlotAfterReset:
+    """
+    Tests pour vérifier que le multi-slot est préservé après full reset.
+
+    Bug corrigé : après full reset, max_open_positions retombait à 1
+    (défaut schema), empêchant le slot aggressive de tourner en parallèle
+    du scalping.
+    """
+
+    def test_reset_endpoint_default_max_open_positions_is_3(self, client, db_session):
+        """POST /paper/account/reset crée le compte avec max_open_positions=3 par défaut."""
+        _insert_btc_candle(db_session, price=85000.0)
+        # Créer un compte initial
+        client.post("/paper/account", json={"initial_capital": 10000.0})
+        # Reset sans spécifier max_open_positions
+        resp = client.post("/paper/account/reset", json={
+            "confirm": "RESET",
+            "initial_capital": 10000.0,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["account"]["max_open_positions"] == 3, (
+            "Après reset, max_open_positions doit être 3 (multi-slot) par défaut"
+        )
+
+    def test_create_account_default_max_open_positions_is_3(self, client, db_session):
+        """POST /paper/account crée le compte avec max_open_positions=3 par défaut."""
+        resp = client.post("/paper/account", json={"initial_capital": 10000.0})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["max_open_positions"] == 3, (
+            "POST /paper/account doit créer avec max_open_positions=3 par défaut"
+        )
+
+    def test_get_enabled_slots_scalping_multi(self, db_session):
+        """En mode scalping + max_open_positions=3, retourne ['scalping', 'aggressive']."""
+        service = PaperTradingService(db_session)
+        account = service.get_or_create_account()
+        account.active_profile = "scalping"
+        account.max_open_positions = 3
+        db_session.commit()
+
+        slots = service.get_enabled_slots(account)
+        assert slots == ["scalping", "aggressive"], (
+            f"Attendu ['scalping', 'aggressive'], obtenu {slots}"
+        )
+
+    def test_get_enabled_slots_scalping_mono(self, db_session):
+        """En mode scalping + max_open_positions=1, retourne ['scalping'] (mono-slot)."""
+        service = PaperTradingService(db_session)
+        account = service.get_or_create_account()
+        account.active_profile = "scalping"
+        account.max_open_positions = 1
+        db_session.commit()
+
+        slots = service.get_enabled_slots(account)
+        assert slots == ["scalping"], (
+            f"Attendu ['scalping'] en mono-slot, obtenu {slots}"
+        )
+
+    def test_full_reset_then_scalping_gets_multi_slot(self, client, db_session):
+        """
+        Scénario complet : full reset → changer profil en scalping → get_enabled_slots
+        doit retourner scalping + aggressive.
+        """
+        _insert_btc_candle(db_session, price=85000.0)
+        # 1. Créer un compte
+        client.post("/paper/account", json={"initial_capital": 10000.0})
+        # 2. Full reset
+        resp = client.post("/paper/account/reset", json={
+            "confirm": "RESET",
+            "initial_capital": 10000.0,
+        })
+        assert resp.status_code == 200
+        # 3. Changer profil en scalping
+        resp = client.post("/paper/profile", json={"profile": "scalping"})
+        assert resp.status_code == 200
+        # 4. Vérifier get_enabled_slots via le service
+        service = PaperTradingService(db_session)
+        account = db_session.query(PaperAccount).first()
+        assert account.max_open_positions == 3
+        assert account.active_profile == "scalping"
+        slots = service.get_enabled_slots(account)
+        assert slots == ["scalping", "aggressive"]
