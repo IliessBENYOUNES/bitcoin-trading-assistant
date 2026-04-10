@@ -1702,3 +1702,252 @@ class TestMultiSlotAfterReset:
         assert account.active_profile == "scalping"
         slots = service.get_enabled_slots(account)
         assert slots == ["scalping", "aggressive"]
+
+
+# ============================================================
+# [v2.0.1] Tests : Assouplissement du slot Aggressive
+# ============================================================
+
+class TestAggressiveSlotCalibration:
+    """
+    Tests pour vérifier le calibrage v2.0.1 du slot aggressive.
+
+    Changements testés :
+    - analysis_timeframe passe de None (=4h) à "1h"
+    - buy_threshold explicite à 20 (était None → 25 global)
+    - sell_threshold explicite à 15 (était None → 20 global)
+    - Le slot reste distinct du scalping
+    """
+
+    def test_aggressive_timeframe_is_1h(self):
+        """Le slot aggressive utilise le timeframe 1h (pas 4h)."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        aggressive = PROFILE_PRESETS["aggressive"]
+        assert aggressive.analysis_timeframe == "1h", (
+            f"Attendu '1h', obtenu '{aggressive.analysis_timeframe}'"
+        )
+
+    def test_aggressive_buy_threshold_is_20(self):
+        """Le slot aggressive a un buy_threshold explicite de 20."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        aggressive = PROFILE_PRESETS["aggressive"]
+        assert aggressive.buy_threshold == 20, (
+            f"Attendu 20, obtenu {aggressive.buy_threshold}"
+        )
+
+    def test_aggressive_sell_threshold_is_15(self):
+        """Le slot aggressive a un sell_threshold explicite de 15."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        aggressive = PROFILE_PRESETS["aggressive"]
+        assert aggressive.sell_threshold == 15, (
+            f"Attendu 15, obtenu {aggressive.sell_threshold}"
+        )
+
+    def test_aggressive_distinct_from_scalping_timeframe(self):
+        """Le timeframe aggressive (1h) est différent du scalping (15m)."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        agg = PROFILE_PRESETS["aggressive"]
+        scl = PROFILE_PRESETS["scalping"]
+        assert agg.analysis_timeframe != scl.analysis_timeframe, (
+            "Les timeframes doivent être distincts : aggressive vs scalping"
+        )
+        assert agg.analysis_timeframe == "1h"
+        assert scl.analysis_timeframe == "15m"
+
+    def test_aggressive_distinct_from_scalping_risk_profile(self):
+        """Le profil de risque aggressive reste distinct du scalping."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        agg = PROFILE_PRESETS["aggressive"]
+        scl = PROFILE_PRESETS["scalping"]
+        # TP plus large
+        assert agg.profit_take_pct > scl.profit_take_pct, (
+            f"Aggressive TP ({agg.profit_take_pct}) doit être > scalping TP ({scl.profit_take_pct})"
+        )
+        # SL plus large
+        assert agg.loss_cut_pct > scl.loss_cut_pct, (
+            f"Aggressive SL ({agg.loss_cut_pct}) doit être > scalping SL ({scl.loss_cut_pct})"
+        )
+        # Durée max plus longue
+        assert agg.max_position_duration_hours > scl.max_position_duration_hours, (
+            f"Aggressive duration ({agg.max_position_duration_hours}h) doit être > scalping ({scl.max_position_duration_hours}h)"
+        )
+        # Pas de trailing stop (scalping en a un)
+        assert agg.trailing_stop_pct is None, "Aggressive ne doit pas avoir de trailing stop"
+        assert scl.trailing_stop_pct is not None, "Scalping doit avoir un trailing stop"
+
+    def test_aggressive_no_economic_gate(self):
+        """Le slot aggressive n'a pas de gate économique (contrairement au scalping)."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        agg = PROFILE_PRESETS["aggressive"]
+        scl = PROFILE_PRESETS["scalping"]
+        assert agg.economic_gate_enabled is False
+        assert scl.economic_gate_enabled is True
+
+    def test_aggressive_no_structural_proofs(self):
+        """Le slot aggressive n'exige pas de preuves structurelles."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        agg = PROFILE_PRESETS["aggressive"]
+        assert agg.min_structural_proofs == 0
+
+    def test_aggressive_stale_exit_much_longer_than_scalping(self):
+        """Le stale exit aggressive (180min) est bien plus long que scalping (15min)."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        agg = PROFILE_PRESETS["aggressive"]
+        scl = PROFILE_PRESETS["scalping"]
+        assert agg.stale_exit_minutes == 180
+        assert scl.stale_exit_minutes == 15
+        assert agg.stale_exit_minutes > scl.stale_exit_minutes * 5
+
+    def test_aggressive_uses_1h_in_tick(self, db_session):
+        """
+        Vérifie que _tick_single_slot résout bien le timeframe 1h pour aggressive.
+        Le DecisionService doit être appelé avec timeframe='1h'.
+        """
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        profile = PROFILE_PRESETS["aggressive"]
+        # Vérifier le calcul fait dans _tick_single_slot
+        _analysis_tf = getattr(profile, "analysis_timeframe", None) or "4h"
+        assert _analysis_tf == "1h", f"Timeframe résolu: '{_analysis_tf}' (attendu '1h')"
+        # history_days : 1h n'est PAS dans la liste short
+        _analysis_days = 1 if _analysis_tf in ("1m", "3m", "5m", "15m", "30m") else 7
+        assert _analysis_days == 7, f"history_days résolu: {_analysis_days} (attendu 7)"
+
+    def test_aggressive_works_in_multislot_with_scalping(self, db_session):
+        """Le slot aggressive fonctionne dans l'orchestrateur multi-slot à côté du scalping."""
+        service = PaperTradingService(db_session)
+        account = service.get_or_create_account()
+        account.active_profile = "scalping"
+        account.max_open_positions = 3
+        db_session.commit()
+
+        slots = service.get_enabled_slots(account)
+        assert "aggressive" in slots, f"'aggressive' doit être dans les slots: {slots}"
+        assert "scalping" in slots, f"'scalping' doit être dans les slots: {slots}"
+
+    def test_aggressive_decision_threshold_allows_score_21(self):
+        """
+        Avec buy_threshold=20, un score de 21 (> 20) produit action='acheter'.
+        Avant le fix (threshold=25), un score de 24 restait en 'attendre'.
+        Note : DecisionService utilise '>' strict, pas '>='.
+        """
+        from app.services.decision_service import DecisionService
+        from app.schemas.signal import SignalDirection
+        from app.schemas.decision import Scenario
+
+        scenarios = [
+            Scenario(
+                label="Hausse",
+                probability=0.55,
+                direction=SignalDirection.BULLISH,
+                description="Test hausse",
+            ),
+            Scenario(
+                label="Stable",
+                probability=0.25,
+                direction=SignalDirection.NEUTRAL,
+                description="Test stable",
+            ),
+            Scenario(
+                label="Baisse",
+                probability=0.20,
+                direction=SignalDirection.BEARISH,
+                description="Test baisse",
+            ),
+        ]
+
+        # Score = 21 avec buy_threshold=20 → 21 > 20 → DOIT donner "acheter"
+        ds = DecisionService.__new__(DecisionService)
+        rec = ds.generate_recommendation(
+            scenarios=scenarios,
+            rules=[],
+            combined_score=21,
+            buy_threshold=20,
+            sell_threshold=15,
+        )
+        assert rec.action == "acheter", (
+            f"Score 21 + buy_threshold=20 devrait donner 'acheter', obtenu '{rec.action}'"
+        )
+
+    def test_aggressive_decision_score_24_was_blocked_now_passes(self):
+        """
+        Le score runtime observé (~24) qui bloquait avec l'ancien seuil (25)
+        passe maintenant avec le nouveau seuil (20).
+        """
+        from app.services.decision_service import DecisionService
+        from app.schemas.signal import SignalDirection
+        from app.schemas.decision import Scenario
+
+        scenarios = [
+            Scenario(
+                label="Hausse",
+                probability=0.55,
+                direction=SignalDirection.BULLISH,
+                description="Test hausse",
+            ),
+            Scenario(label="Stable", probability=0.25,
+                     direction=SignalDirection.NEUTRAL, description="stable"),
+            Scenario(label="Baisse", probability=0.20,
+                     direction=SignalDirection.BEARISH, description="baisse"),
+        ]
+
+        ds = DecisionService.__new__(DecisionService)
+
+        # Avec l'ancien seuil (25) : score 24 → "attendre"
+        rec_old = ds.generate_recommendation(
+            scenarios=scenarios, rules=[], combined_score=24,
+            buy_threshold=25, sell_threshold=20,
+        )
+        assert rec_old.action == "attendre", "Score 24 + threshold 25 devrait être 'attendre'"
+
+        # Avec le nouveau seuil (20) : score 24 → "acheter"
+        rec_new = ds.generate_recommendation(
+            scenarios=scenarios, rules=[], combined_score=24,
+            buy_threshold=20, sell_threshold=15,
+        )
+        assert rec_new.action == "acheter", (
+            f"Score 24 + threshold 20 devrait être 'acheter', obtenu '{rec_new.action}'"
+        )
+
+    def test_aggressive_decision_threshold_allows_short_at_minus_16(self):
+        """
+        Avec sell_threshold=15, un score de -16 (< -15) produit action='vendre'.
+        Avant le fix (threshold=20), il fallait score < -20.
+        Note : DecisionService utilise '<' strict, pas '<='.
+        """
+        from app.services.decision_service import DecisionService
+        from app.schemas.signal import SignalDirection
+        from app.schemas.decision import Scenario
+
+        scenarios = [
+            Scenario(
+                label="Baisse",
+                probability=0.55,
+                direction=SignalDirection.BEARISH,
+                description="Test baisse",
+            ),
+            Scenario(
+                label="Stable",
+                probability=0.25,
+                direction=SignalDirection.NEUTRAL,
+                description="Test stable",
+            ),
+            Scenario(
+                label="Hausse",
+                probability=0.20,
+                direction=SignalDirection.BULLISH,
+                description="Test hausse",
+            ),
+        ]
+
+        ds = DecisionService.__new__(DecisionService)
+        rec = ds.generate_recommendation(
+            scenarios=scenarios,
+            rules=[],
+            combined_score=-16,
+            buy_threshold=20,
+            sell_threshold=15,
+        )
+        assert rec.action == "vendre", (
+            f"Score -16 + sell_threshold=15 devrait donner 'vendre', obtenu '{rec.action}'"
+        )
+

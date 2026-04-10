@@ -68,7 +68,11 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # [v2.0.0] L'aggressive est le moteur principal de capture de valeur.
         # Sanctuarisé : ne pas appliquer les filtres scalping sans justification.
         # Le run v1.9.9 a prouvé son edge (+28.72 net realistic sur 2 trades).
-        description="Moteur principal de valeur — sanctuarisé. Positions swing intraday avec levier modéré.",
+        # [v2.0.1] Passage 4h→1h + seuils abaissés pour rendre le slot plus vivant.
+        # Le 4h produisait un score ≈24 quasi-statique, sous le BUY_THRESHOLD=25,
+        # ce qui rendait le slot muet. Le 1h offre 4× plus de data fraîche et des
+        # scores plus dynamiques, tout en restant distinct du scalping (15m).
+        description="Moteur principal de valeur — swing intraday 1h, levier modéré, seuils abaissés.",
         min_score=10,
         min_confidence="low",
         min_scenario_dominance=0.38,
@@ -80,6 +84,16 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         loss_cut_score_threshold=10,
         leverage_enabled=True,
         max_leverage=3.0,
+        # [v2.0.1] Timeframe 4h→1h : 4× plus réactif, scores plus dynamiques.
+        # Le 4h produisait des scores quasi-statiques (~24) qui ne franchissaient
+        # jamais le seuil d'entrée. Le 1h reste macro vs le 15m scalping.
+        analysis_timeframe="1h",
+        # [v2.0.1] Seuils abaissés : buy 25→20, sell 20→15.
+        # Avec le 4h, le score stagnait à ~24 (< 25). Même en 1h, 25 reste
+        # trop exigeant pour un slot censé capturer les swings intraday.
+        # Le sell à 15 compense le biais haussier structurel de BTC.
+        buy_threshold=20,
+        sell_threshold=15,
         stale_exit_minutes=180,
         # [v1.9.9] Quality gate minimum pour le slot aggressive.
         min_market_quality=25,

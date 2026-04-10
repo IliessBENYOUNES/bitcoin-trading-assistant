@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.1] - 2026-04-10
+
+### Changed
+- **Slot aggressive rendu vivant** — Le slot aggressive était muet en runtime car le timeframe 4h produisait un score quasi-statique (~24) sous le buy_threshold global (25). L'action restait "attendre" sur chaque tick.
+  - **Timeframe 4h→1h** : 4× plus de données fraîches, scores plus dynamiques. Le 1h reste "macro" vs le 15m scalping. `history_days` reste 7 (168 candles 1h = couverture suffisante pour les indicateurs).
+  - **buy_threshold explicite 25→20** : le score runtime (~24) passe désormais le seuil. Avant, le seuil global 25 bloquait systématiquement.
+  - **sell_threshold explicite 20→15** : permet les shorts agressifs avec un score modérément négatif, compensant le biais haussier structurel de BTC.
+
+### Added
+- **13 tests** (`TestAggressiveSlotCalibration` dans `test_paper_trading.py`) :
+  - Configuration : timeframe 1h, buy_threshold 20, sell_threshold 15
+  - Distinction scalping : timeframe ≠, TP >, SL >, durée >, pas de trailing, pas de gate économique, pas de proofs structurels, stale exit 12× plus long
+  - Intégration multi-slot : fonctionne dans l'orchestrateur avec scalping
+  - Seuils : score 21 → "acheter" (OK), score 24 bloqué avec ancien seuil 25 → passe avec nouveau 20
+  - Test de régression short : score -16 → "vendre" avec nouveau sell_threshold 15
+
+### Technical
+- `PROFILE_PRESETS["aggressive"]` : 3 paramètres modifiés (`analysis_timeframe`, `buy_threshold`, `sell_threshold`). Tous les autres paramètres inchangés — l'identité du slot est préservée.
+- Nombre total de tests : 1512→1525 (13 ajoutés, 0 supprimé).
+
 ## [2.0.0] - 2026-04-10
 
 ### Fixed
