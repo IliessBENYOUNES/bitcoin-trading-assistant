@@ -118,6 +118,9 @@ class LearningService:
             duration_min=duration_min,
         )
 
+        # [v2.0.2] Calcul du contexte BTC (best-effort, non bloquant)
+        btc_ctx = self._compute_btc_context(trade)
+
         sample = LearningSignal(
             trade_id=trade.id,
             score=trade.decision_score,
@@ -138,6 +141,12 @@ class LearningService:
             cost_estimated=round(cost_estimated, 4),
             pnl_net_estimated=round(pnl_net, 4),
             usefulness_category=usefulness,
+            # [v2.0.2] Contexte BTC
+            btc_trend_at_entry=btc_ctx.get("trend"),
+            btc_move_during_pct=btc_ctx.get("move_during"),
+            btc_move_after_exit_pct=btc_ctx.get("move_after"),
+            missed_favorable_move=1 if btc_ctx.get("missed_favorable") else 0,
+            capture_efficiency_pct=btc_ctx.get("capture_eff"),
         )
         self.db.add(sample)
         try:
@@ -148,6 +157,99 @@ class LearningService:
             logger.error(f"Erreur enregistrement LearningSignal: {e}")
             self.db.rollback()
             return None
+
+    def _compute_btc_context(self, trade: PaperTrade) -> dict:
+        """
+        [v2.0.2] Calcule le contexte BTC autour d'un trade (best-effort).
+
+        Retourne un dict avec :
+        - trend: "up" / "down" / "flat"
+        - move_during: variation BTC % pendant le trade
+        - move_after: variation BTC % après la sortie (1 bougie)
+        - missed_favorable: True si stale exit avec mouvement BTC favorable après
+        - capture_eff: % du mouvement BTC capturé par ce trade
+        """
+        try:
+            from app.models.candle import Candle
+
+            entry_ts = trade.entry_ts
+            exit_ts = trade.exit_ts or entry_ts
+
+            # Chercher des bougies 1h, fallback 4h
+            candle = None
+            for tf in ("1h", "4h"):
+                candle = (
+                    self.db.query(Candle)
+                    .filter(
+                        Candle.timeframe == tf,
+                        Candle.timestamp <= entry_ts,
+                    )
+                    .order_by(Candle.timestamp.desc())
+                    .first()
+                )
+                if candle:
+                    break
+
+            result = {}
+
+            # Trend à l'entrée
+            if candle and candle.open_price > 0:
+                move = (candle.close_price - candle.open_price) / candle.open_price * 100
+                if move > 0.02:
+                    result["trend"] = "up"
+                elif move < -0.02:
+                    result["trend"] = "down"
+                else:
+                    result["trend"] = "flat"
+
+            # BTC move pendant le trade
+            if trade.entry_price and trade.exit_price and trade.entry_price > 0:
+                move_during = (trade.exit_price - trade.entry_price) / trade.entry_price * 100
+                result["move_during"] = round(move_during, 4)
+
+                # Capture efficiency
+                trade_pnl_pct = trade.pnl_pct or 0
+                if abs(move_during) > 0.001:
+                    if trade.direction == "long" and move_during > 0:
+                        result["capture_eff"] = round(min(100, abs(trade_pnl_pct / move_during * 100)), 1)
+                    elif trade.direction == "short" and move_during < 0:
+                        result["capture_eff"] = round(min(100, abs(trade_pnl_pct / move_during * 100)), 1)
+                    else:
+                        result["capture_eff"] = 0.0
+
+            # BTC move après la sortie (1 bougie suivante)
+            next_candle = None
+            for tf in ("1h", "4h"):
+                next_candle = (
+                    self.db.query(Candle)
+                    .filter(
+                        Candle.timeframe == tf,
+                        Candle.timestamp > exit_ts,
+                    )
+                    .order_by(Candle.timestamp.asc())
+                    .first()
+                )
+                if next_candle:
+                    break
+
+            if next_candle and next_candle.open_price > 0:
+                after_move = (next_candle.close_price - next_candle.open_price) / next_candle.open_price * 100
+                result["move_after"] = round(after_move, 4)
+
+                # Missed favorable move (stale exit + BTC favorable après)
+                if trade.status == "closed_stale":
+                    is_favorable = (
+                        (trade.direction == "long" and after_move > 0.1)
+                        or (trade.direction == "short" and after_move < -0.1)
+                    )
+                    if is_favorable:
+                        result["missed_favorable"] = True
+
+            return result
+
+        except Exception as e:
+            logger.debug(f"BTC context computation failed (non-blocking): {e}")
+            return {}
 
     @staticmethod
     def _classify_usefulness(

@@ -66,6 +66,18 @@ class LearningSignal(Base):
     # useful / insignificant / churn / loss_useful / loss_destructive
     usefulness_category: Mapped[str] = mapped_column(String(30), nullable=True)
 
+    # [v2.0.2] Contexte BTC — corrélation prix / trade
+    # Tendance BTC à l'entrée (up / down / flat) — direction de la bougie couvrant l'entrée
+    btc_trend_at_entry: Mapped[str] = mapped_column(String(10), nullable=True)
+    # Variation BTC % entre entry et exit
+    btc_move_during_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    # Variation BTC % dans la fenêtre post-exit (1 bougie après)
+    btc_move_after_exit_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    # 1 si le BTC a bougé favorablement après un stale exit
+    missed_favorable_move: Mapped[bool] = mapped_column(Integer, nullable=False, default=0)
+    # % du mouvement BTC capturé par ce trade
+    capture_efficiency_pct: Mapped[float] = mapped_column(Float, nullable=True)
+
     # Timestamp
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False

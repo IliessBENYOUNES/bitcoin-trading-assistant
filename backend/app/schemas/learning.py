@@ -31,6 +31,12 @@ class LearningSignalItem(BaseModel):
     cost_estimated: Optional[float] = None
     pnl_net_estimated: Optional[float] = None
     usefulness_category: Optional[str] = None  # useful / insignificant / churn / loss_useful / loss_destructive
+    # [v2.0.2] Contexte BTC
+    btc_trend_at_entry: Optional[str] = None
+    btc_move_during_pct: Optional[float] = None
+    btc_move_after_exit_pct: Optional[float] = None
+    missed_favorable_move: bool = False
+    capture_efficiency_pct: Optional[float] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}

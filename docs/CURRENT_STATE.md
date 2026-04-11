@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
-> **Dernière mise à jour :** 10 avril 2026
-> **Version :** v2.0.1
+> **Dernière mise à jour :** 11 avril 2026
+> **Version :** v2.0.2
 > **Branche :** `master`
-> **Dernier commit :** feat(aggressive): timeframe 4h→1h + seuils buy/sell abaissés pour rendre le slot plus vivant
+> **Dernier commit :** feat(audit): runtime correlation BTC + learning enrichi contexte BTC (17 tests)
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.1** |
+| Version courante | **v2.0.2** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1525 tests**, tous passing ✅ |
+| Tests backend | **1542 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.1 livré** — Slot aggressive rendu vivant (1h + seuils abaissés) |
+| Phase courante | **v2.0.2 livré** — Corrélation runtime BTC + learning enrichi |
 
 ### ⚠️ État de maturité honnête
 
@@ -29,6 +29,8 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - Moteur de décision rule-based fonctionnel
 - **[v2.0.0] Slot aggressive sanctuarisé** comme moteur principal de valeur
 - **[v2.0.1] Slot aggressive rendu vivant** — Timeframe 4h→1h (4× plus réactif), buy_threshold 25→20, sell_threshold 20→15. Le slot ne change pas d'identité (TP 1%, SL 1%, durée 48h, pas de trailing, pas de gate économique) mais franchit enfin les seuils d'entrée en runtime. 13 tests dédiés.
+- **[v2.0.2] Corrélation runtime BTC** — Service `RuntimeCorrelationService` qui corrèle chaque trade avec le mouvement BTC réel : tendance à l'entrée, mouvement pendant le trade, mouvement post-sortie, détection de sorties prématurées (stale + BTC favorable après), efficacité de capture. Endpoint `GET /audit/runtime-correlation`.
+- **[v2.0.2] Learning enrichi contexte BTC** — 5 nouvelles colonnes sur `LearningSignal` : `btc_trend_at_entry`, `btc_move_during_pct`, `btc_move_after_exit_pct`, `missed_favorable_move`, `capture_efficiency_pct`. Le learning sait maintenant si un trade a été fermé trop tôt par rapport au mouvement BTC réel.
 - **[v2.0.0] Economic viability gate** — refuse les trades scalping non-viables après frais
 - **[v2.0.0] Momentum fade restricted** — ne sort que si le pic dépasse le seuil d'amplitude ET que la sortie est net-positive
 - **[v2.0.0] Structural proofs gate** — exige ≥2 preuves structurelles (volume, micro-trend, price_position, range) pour entrer en scalping
@@ -222,7 +224,7 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | test_reality_gap.py | 48 |
 | test_autonomous.py | 15 |
 | test_market_structure.py | 55 |
-| **TOTAL** | **1525** ✅ |
+| **TOTAL** | **1542** ✅ |
 
 ---
 

@@ -1,80 +1,128 @@
-# 🔄 HANDOFF GPT — Intervention v2.0.1
+# HANDOFF GPT — 11 avril 2026
 
-> **Date :** 10 avril 2026
-> **Intervention :** Rendre le slot aggressive plus vivant sans le dénaturer
+## Intervention : Audit runtime nocturne + Corrélation BTC + Learning enrichi
 
 ---
 
 ## Problème
 
-Le slot aggressive ne tradait presque pas en runtime réel. Diagnostic runtime :
-- Multi-slot actif ✅, slots `["scalping", "aggressive"]` ✅
-- Score observé ≈ 24, action = "attendre", confidence = "low"
-- **Pas un bug technique** — un problème de **calibrage / seuils**.
+Le run nocturne (57 trades fermés) a révélé un moteur qui survit (+4.06 USD) mais qui travaille beaucoup pour presque rien. Les sorties `closed_stale` dominent (91.2%), le trailing stop est le seul créateur de valeur, et le moteur ne sait pas corréler ses trades avec le mouvement réel du BTC.
+
+---
 
 ## Diagnostic
 
-Le flux dans `_tick_single_slot()` :
-1. `DecisionService.analyze(timeframe="4h")` avec `buy_threshold=None` (→ global 25)
-2. Score ≈ 24 → `24 > 25` = False → action = `"attendre"`
-3. Retour immédiat "hold" → `min_score=10` n'est **jamais atteint**
+### Données runtime extraites de PostgreSQL :
+- **57 trades** : 21 gagnants / 36 perdants, WR=36.84%, PnL=+4.05 USD
+- **Exit distribution** : closed_stale=52 (91.2%!), closed_trailing_stop=4 (100% WR, +22.84 USD), closed_sl=1 (-5.12 USD)
+- **Slots** : scalping=54 (WR=37%, +14.31 USD), aggressive=3 (WR=33.3%, -10.25 USD)
+- **Direction** : 100% long, 0 shorts
+- **Scores** : 63-66 pour 55/57 trades (saturation totale)
 
-**Cause racine** : Le timeframe 4h est trop lent et le score ne traverse jamais le seuil global 25. Le `min_score=10` est un seuil mort car évalué APRÈS la décision du moteur.
+### Verdicts :
+1. **Le trailing stop est le SEUL créateur de valeur** : 4 trades, 100% WR, +22.84 USD
+2. **Le stale exit est le problème #1** : 52/57 trades, 67% négatifs, contribution -336.5% du PnL total
+3. **Le score ne discrimine pas** : 96% des trades dans une bande de 4 points (63-66)
+4. **Le moteur ne capturait pas le contexte BTC** : aucune corrélation entre trades et mouvement réel du prix
+
+---
+
+## Cause racine
+
+Le learning layer n'avait aucune information sur ce que faisait le BTC pendant et après chaque trade. Impossible de savoir si une sortie stale était prématurée ou justifiée. Impossible de mesurer l'efficacité de capture du mouvement BTC.
+
+---
 
 ## Correction appliquée
 
-**Fichier :** `backend/app/services/trading_profile_service.py`
-**Bloc :** `PROFILE_PRESETS["aggressive"]`
+### 1. RuntimeCorrelationService (NOUVEAU)
+- **Fichier** : `backend/app/services/runtime_correlation_service.py`
+- Corrèle chaque trade fermé avec les bougies BTC (1h, fallback 4h)
+- Calcule : trend_at_entry, btc_move_during, btc_move_after_exit, missed_favorable_move, capture_efficiency
+- Détecte les mouvements manqués entre trades (gaps sans position)
 
-| Paramètre | Avant | Après | Justification |
-|---|---|---|---|
-| `analysis_timeframe` | `None` (= "4h") | `"1h"` | 4× plus de data fraîche, scores dynamiques |
-| `buy_threshold` | `None` (= 25 global) | `20` | Score ~24 passe maintenant |
-| `sell_threshold` | `None` (= 20 global) | `15` | Shorts accessibles plus tôt |
+### 2. Learning enrichi (MODIFIÉ)
+- **Fichier** : `backend/app/models/learning.py` — 5 nouvelles colonnes
+- **Fichier** : `backend/app/services/learning_service.py` — méthode `_compute_btc_context()` ajoutée
+- **Fichier** : `backend/app/schemas/learning.py` — 5 champs ajoutés à LearningSignalItem
 
-**Tous les autres paramètres sont INCHANGÉS** :
-- TP 1.0%, SL 1.0%, durée max 48h, max_leverage 3.0
-- Pas de trailing stop, pas de gate économique, pas de structural proofs
-- min_score=10, cooldown 15min, max 15 trades/jour
-- stale_exit 180min, market_quality 25, volume_ratio 0.5
+### 3. Endpoint (MODIFIÉ)
+- **Fichier** : `backend/app/api/routes/audit.py` — `GET /audit/runtime-correlation` ajouté
+
+### 4. Migration
+- **Fichier** : `backend/migrate_v202.py` — exécuté sur PostgreSQL prod
+
+---
 
 ## Ce qui n'a PAS été touché
 
-- ❌ Scalping (aucun paramètre modifié)
-- ❌ DecisionService (aucune modification du moteur)
-- ❌ SignalService (aucune modification des scores)
-- ❌ PaperTradingService._tick_single_slot (logique intacte)
+- ❌ Paramètres des profils scalping/aggressive (aucun changement de comportement)
+- ❌ Logic de décision (seuils, scoring, règles)
+- ❌ Logic de sortie (stale, trailing, momentum fade)
 - ❌ Frontend (aucune modification)
-- ❌ Autres profils (conservative, balanced)
+- ❌ Scheduler / jobs
+
+---
 
 ## Validations
 
-- ✅ **1525 tests backend** passent (était 1512, +13 nouveaux)
-- ✅ `tsc --noEmit` sans erreur (frontend clean)
-- ✅ 13 tests spécifiques `TestAggressiveSlotCalibration` passent
+- ✅ 17/17 tests `test_runtime_correlation.py` passent
+- ✅ 1542/1542 tests totaux passent (0 régression)
+- ✅ `tsc --noEmit` sans erreur
+- ✅ Migration PostgreSQL exécutée
+
+---
 
 ## Documentation mise à jour
 
-| Document | Changement |
-|---|---|
-| `docs/CURRENT_STATE.md` | Version 2.0.1, test count 1525, description v2.0.1, aggressive in "solide" |
-| `CHANGELOG.md` | Nouvelle entrée [2.0.1] avec Changed, Added, Technical |
-| `docs/HANDOFF_GPT.md` | Ce fichier (écrasé) |
-| `docs/ROADMAP.md` | Pas de changement de phase nécessaire |
-| `docs/requirements_traceability.md` | Pas de nouvelles exigences FR |
+| Document | Changements |
+|----------|-------------|
+| `docs/CURRENT_STATE.md` | Version v2.0.2, 1542 tests, features v2.0.2, nouveau fichier test |
+| `CHANGELOG.md` | Nouvelle entrée [2.0.2] complète (Added, Technical) |
+| `docs/ROADMAP.md` | v2.0.2 ajouté dans la timeline, état actuel mis à jour |
+| `docs/requirements_traceability.md` | FR-COR-001/002/003 ajoutés, test count 1542 |
+
+---
 
 ## Commit
 
-**Message :** `feat(aggressive): timeframe 4h→1h + seuils buy/sell abaissés pour rendre le slot plus vivant`
+```
+feat(audit): runtime correlation BTC + learning enrichi contexte BTC (17 tests)
+```
+
+---
 
 ## État actuel
 
 | Élément | Valeur |
-|---|---|
-| Version | v2.0.1 |
-| Tests | 1525 passing ✅ |
-| tsc | clean ✅ |
-| Prochaine action | Lancer un run runtime pour observer le slot aggressive en action |
+|---------|--------|
+| Version | v2.0.2 |
+| Tests | 1542 passing |
+| Frontend | tsc clean |
+| Phase | Audit runtime + corrélation BTC livrés |
+
+---
+
+## Recommandation stratégique (basée sur les données runtime)
+
+### Priorité #1 : Ajuster le stale exit (CRITIQUE)
+
+**Le stale exit est le mode de sortie dans 91.2% des trades, et 67% sont négatifs.** C'est LE problème principal.
+
+**Constat :**
+- Le trailing stop (4 trades, 100% WR, +22.84 USD) crée TOUTE la valeur
+- Le stale exit (52 trades) est la "poubelle" où finissent les trades qui n'atteignent ni TP ni SL ni trailing
+
+**Actions recommandées (par priorité) :**
+
+| # | Action | Impact attendu | Risque |
+|---|--------|----------------|--------|
+| **A** | **Réduire le stale exit time** de 15min à 8-10min pour positions à PnL < 0 | Réduit la durée d'exposition des perdants | Faible |
+| **B** | **Augmenter la sélectivité d'entrée** (buy_threshold, min_score) | Moins de trades mais meilleure qualité | Modéré |
+| **C** | **Élargir le trailing stop** (activation + trail) pour capturer plus de trades | Plus de closed_trailing_stop, moins de closed_stale | Faible |
+| **D** | **Ajouter un filtre BTC trend** : ne pas entrer en scalping long si BTC micro-trend ≤ 0 | Filtre les entrées contre-tendance | Modéré |
+
+---
 
 ## Commandes de relance
 
@@ -85,24 +133,12 @@ cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 80
 # Frontend
 cd frontend && npm run dev
 
-# Tests backend
+# Tests
 cd backend && python -m pytest tests/ -v
 
-# Tests ciblés aggressive
-cd backend && python -m pytest tests/test_paper_trading.py::TestAggressiveSlotCalibration -v
-
-# TypeScript check
+# TypeScript
 cd frontend && npx tsc --noEmit
 
-# Mode headless (robot autonome)
-curl -X POST http://localhost:8000/paper/autonomous/start -H "Content-Type: application/json" -d '{"interval_seconds": 10, "profile": "scalping"}'
+# Endpoint corrélation
+curl http://localhost:8000/audit/runtime-correlation
 ```
-
-## Protocole de validation runtime
-
-1. Démarrer le backend + mode autonome headless
-2. Observer les logs aggressive : `analysis_timeframe="1h"`, `buy_threshold=20`
-3. Vérifier que le slot aggressive produit des actions `"acheter"` / `"vendre"` (pas seulement `"attendre"`)
-4. Comparer : aggressive doit avoir ~3-8 trades/jour (vs 0-1 avant), avec des durées de 30min-4h (vs scalping 1-15min)
-5. Vérifier que les TP/SL sont bien à ±1% (vs scalping ±0.2-0.8%)
-6. Après 24h, exporter les trades et vérifier que le PnL net est positif

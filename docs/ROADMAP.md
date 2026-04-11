@@ -80,9 +80,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v2.0.0 livré — Pivot stratégique déployé, scalping débloqué
+### État actuel : v2.0.2 livré — Corrélation runtime BTC + Learning enrichi
 
-> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. Le gate économique scalping a été corrigé (expected_capture_pct fixé à 0.50% au lieu du fallback 0.20% qui bloquait 100% des trades).
+> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. Le gate économique scalping a été corrigé (expected_capture_pct fixé à 0.50% au lieu du fallback 0.20% qui bloquait 100% des trades). La v2.0.2 ajoute la corrélation runtime trades↔BTC et enrichit le learning avec le contexte BTC.
 
 | Composant | Status |
 |-----------|--------|

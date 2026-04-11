@@ -18,6 +18,7 @@ from app.services.scalping_audit_service import ScalpingAuditService
 from app.services.v2_gate_service import V2GateService
 from app.services.run_value_audit_service import RunValueAuditService
 from app.services.stability_audit_service import StabilityAuditService
+from app.services.runtime_correlation_service import RuntimeCorrelationService
 from app.services.trading_cost_service import (
     COST_PRESETS, get_cost_model,
 )
@@ -147,3 +148,35 @@ def get_stability_audit(
     """
     service = StabilityAuditService(db)
     return service.run_audit(window_size=window)
+
+
+@router.get("/audit/runtime-correlation", summary="Corrélation runtime trades vs BTC")
+def get_runtime_correlation(
+    symbol: str = Query(
+        default="BTC/USD",
+        description="Symbole BTC (ex: BTC/USD)",
+    ),
+    missed_threshold_pct: float = Query(
+        default=0.15,
+        ge=0.01,
+        le=5.0,
+        description="Seuil minimum de mouvement BTC pour qualifier un 'missed movement' (%)",
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    Corrélation runtime : chaque trade vs mouvement BTC réel.
+
+    Retourne :
+    - Chaque trade enrichi avec le contexte BTC (trend à l'entrée, mouvement pendant/après)
+    - Mouvements BTC significatifs ratés (aucun trade ouvert)
+    - Efficacité de capture globale (% du mouvement BTC monétisé)
+    - Identification des sorties stale prématurées
+    - Verdicts : stale, capture, timing
+    """
+    service = RuntimeCorrelationService(db)
+    return service.build_correlation(
+        symbol=symbol,
+        missed_threshold_pct=missed_threshold_pct,
+    )
+

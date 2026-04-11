@@ -1,8 +1,8 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v2.0.0
-## Date: 2026-04-10
+## Version: v2.0.2
+## Date: 2026-04-11
 
 ---
 
@@ -100,7 +100,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1501 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1542 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 
@@ -193,4 +193,5 @@
 | **test_runtime_truth.py** | **—** | **✅** |
 | **test_pivot_v200.py** | **41** | **✅** |
 | **test_autonomous.py** | **—** | **✅** |
-| **Total** | **1501** | ✅ |
+| **test_runtime_correlation.py** | **17** | **✅** |
+| **Total** | **1542** | ✅ |

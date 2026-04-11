@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.2] - 2026-04-11
+
+### Added
+- **RuntimeCorrelationService** — Service de corrélation trades vs mouvement BTC réel
+  - Corrèle chaque trade fermé avec les bougies BTC (1h, fallback 4h) : tendance à l'entrée (up/down/flat), mouvement BTC pendant le trade, mouvement BTC après la sortie.
+  - **Détection de sorties prématurées** : identifie les trades `closed_stale` suivis d'un mouvement BTC favorable (>0.15%). Flag `missed_favorable_move`.
+  - **Efficacité de capture** : mesure le % du mouvement BTC réellement capturé par le trade (0% si direction contraire, 100% si prise optimale, cap à 100%).
+  - **Détection de mouvements manqués** : identifie les gaps entre trades pendant lesquels BTC a bougé significativement sans position ouverte.
+  - **Endpoint `GET /audit/runtime-correlation`** avec paramètre `missed_threshold_pct` configurable.
+- **Learning enrichi contexte BTC** — 5 nouvelles colonnes sur `LearningSignal` :
+  - `btc_trend_at_entry` (VARCHAR(10)) : tendance BTC au moment de l'entrée
+  - `btc_move_during_pct` (FLOAT) : variation BTC % pendant le trade
+  - `btc_move_after_exit_pct` (FLOAT) : variation BTC % dans la bougie post-sortie
+  - `missed_favorable_move` (INTEGER) : flag si sortie stale prématurée + BTC favorable après
+  - `capture_efficiency_pct` (FLOAT) : % du mouvement BTC capturé
+- **`_compute_btc_context()`** dans `LearningService.record_sample()` — enrichit automatiquement chaque échantillon d'apprentissage avec le contexte BTC (graceful degradation si pas de bougies).
+- **17 nouveaux tests** (`test_runtime_correlation.py`) :
+  - `TestRuntimeCorrelationService` (10) : DB vide, trades sans bougies, 1 trade + bougies, fallback 4h, missed movement, premature stale, capture efficiency (positif + négatif), summary stats
+  - `TestLearningBtcContext` (4) : record sample avec/sans bougies, missed favorable flaggé, non-stale non flaggé
+  - `TestRuntimeCorrelationEndpoint` (3) : 200 vide, paramètre threshold, summary zéro
+- **Migration `migrate_v202.py`** — Ajout des 5 colonnes BTC context à la table `learning_signal` en PostgreSQL.
+
+### Technical
+- Nouveau fichier : `backend/app/services/runtime_correlation_service.py` (~320 LOC)
+- Nouveau fichier : `backend/app/schemas/runtime_correlation.py` (~100 LOC)
+- Nouveau fichier : `backend/tests/test_runtime_correlation.py` (~465 LOC)
+- Nouveau fichier : `backend/migrate_v202.py`
+- Modifié : `backend/app/models/learning.py` (5 colonnes ajoutées)
+- Modifié : `backend/app/services/learning_service.py` (`_compute_btc_context()` ajouté)
+- Modifié : `backend/app/schemas/learning.py` (5 champs ajoutés à `LearningSignalItem`)
+- Modifié : `backend/app/api/routes/audit.py` (endpoint `GET /audit/runtime-correlation` ajouté)
+- Nombre total de tests : 1525→1542 (17 ajoutés, 0 supprimé).
+
 ## [2.0.1] - 2026-04-10
 
 ### Changed
