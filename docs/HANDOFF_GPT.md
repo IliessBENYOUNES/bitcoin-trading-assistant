@@ -2,7 +2,7 @@
 
 **Date :** 12 avril 2026  
 **Version :** v2.0.5  
-**Commit :** `(pending)` — fix(profile): préservation du profil actif lors du reset — anti-bascule conservative
+**Commit :** `ab038da` — fix(profile): préservation du profil actif lors du reset — anti-bascule conservative
 
 ---
 

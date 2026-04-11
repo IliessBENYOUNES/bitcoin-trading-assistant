@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 12 avril 2026
 > **Version :** v2.0.5
 > **Branche :** `master`
-> **Dernier commit :** `(pending)` — fix(profile): préservation du profil actif lors du reset — anti-bascule conservative
+> **Dernier commit :** `ab038da` — fix(profile): préservation du profil actif lors du reset — anti-bascule conservative
 
 ---
 
