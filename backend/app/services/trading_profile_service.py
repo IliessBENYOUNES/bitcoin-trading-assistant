@@ -182,10 +182,13 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         min_structural_proofs=2,
         # [v2.0.3] GATE MICRO-TENDANCE — L'audit runtime montre que les entrées
         # sans micro-tendance favorable finissent en stale 91% du temps.
-        # Exiger micro_trend_score ≥ 2 filtre les longs ouverts sur du bruit.
-        # Distinct de la preuve structurelle (qui vérifie ≥ 3 mais n'est qu'1 preuve parmi 4).
-        # Ici c'est un VETO : pas de micro-trend ≥ 2, pas de long.
-        min_micro_trend_long=2,
+        # [v2.0.4] Assoupli de 2→1 : l'audit post-v2.0.3 montre que le gate à 2
+        # bloque 100% des ticks scalping (966/966) car le micro_trend_score
+        # stagne à -2 dans les phases baissières. Aucun autre gate n'est jamais
+        # atteint (le score est 65, bien au-dessus du buy_threshold 30).
+        # mt≥1 = début de reprise, suffisant pour tenter un long scalping.
+        # mt≤0 = flat ou baissier, toujours bloqué.
+        min_micro_trend_long=1,
     ),
 }
 

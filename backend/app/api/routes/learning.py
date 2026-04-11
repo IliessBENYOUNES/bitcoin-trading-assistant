@@ -122,6 +122,26 @@ def get_learning_signals(
     return [LearningSignalItem.model_validate(s) for s in samples]
 
 
+@router.post("/learn-runtime", response_model=list[StrategyFeedbackItem])
+def learn_from_runtime(
+    profile_type: str = Query(default="scalping"),
+    db: Session = Depends(get_db),
+):
+    """
+    [v2.0.4] Apprentissage basé sur les données runtime (TickActivityLog).
+
+    Analyse les ticks du profil spécifié pour identifier :
+    - Les gates sur-bloquants (micro_trend, quality, economic, etc.)
+    - Les paramètres à assouplir quand le moteur veut trader mais est bloqué
+
+    Génère des suggestions en mode shadow basées sur les refus runtime,
+    contrairement à /learning/analyze qui se base sur les trades fermés.
+    """
+    svc = LearningService(db)
+    suggestions = svc.learn_from_runtime(profile_type)
+    return [StrategyFeedbackItem.model_validate(s) for s in suggestions]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PaperRun — Campagnes de validation
 # ─────────────────────────────────────────────────────────────────────────────

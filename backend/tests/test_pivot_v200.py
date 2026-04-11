@@ -436,11 +436,11 @@ class TestScalpingV203MiniLot:
         scalp = PROFILE_PRESETS["scalping"]
         assert scalp.trailing_stop_pct == 0.10
 
-    def test_min_micro_trend_long_is_2(self):
-        """Gate micro-tendance obligatoire pour longs : micro_trend_score ≥ 2."""
+    def test_min_micro_trend_long_is_1(self):
+        """[v2.0.4] Gate micro-tendance assoupli pour longs : micro_trend_score ≥ 1."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.min_micro_trend_long == 2, (
-            f"Attendu 2, obtenu {scalp.min_micro_trend_long}"
+        assert scalp.min_micro_trend_long == 1, (
+            f"Attendu 1, obtenu {scalp.min_micro_trend_long}"
         )
 
     def test_min_micro_trend_long_absent_on_aggressive(self):
@@ -503,3 +503,77 @@ class TestScalpingV203MiniLot:
         assert agg.buy_threshold == 20, "aggressive buy_threshold doit rester 20"
         assert agg.sell_threshold == 15, "aggressive sell_threshold doit rester 15"
         assert agg.economic_gate_enabled is False, "aggressive economic gate doit rester off"
+
+
+# ================================================================
+# TESTS : Assouplissement micro-tendance v2.0.4
+# ================================================================
+
+class TestScalpingV204MicroTrendRelax:
+    """
+    Tests pour l'assouplissement du gate micro-tendance v2.0.4.
+
+    Audit post-v2.0.3 : 966 ticks scalping, 100% bloqués par micro_trend_insufficient.
+    Tous avaient micro_trend_score=-2 et decision_score=65 (bien au-dessus du seuil 30).
+    Le gate à mt≥2 était trop restrictif : il exigeait une tendance confirmée.
+
+    Correction : min_micro_trend_long 2→1.
+    """
+
+    def test_min_micro_trend_long_lowered_to_1(self):
+        """min_micro_trend_long abaissé de 2 à 1 pour débloquer les débuts de reprise."""
+        scalp = PROFILE_PRESETS["scalping"]
+        assert scalp.min_micro_trend_long == 1, (
+            f"Attendu 1, obtenu {scalp.min_micro_trend_long}"
+        )
+
+    def test_micro_trend_score_1_passes_gate(self):
+        """Un micro_trend_score de 1 doit passer le gate (début de reprise)."""
+        scalp = PROFILE_PRESETS["scalping"]
+        mt_threshold = scalp.min_micro_trend_long
+        assert 1 >= mt_threshold, "micro_trend_score=1 doit passer le gate"
+
+    def test_micro_trend_score_0_still_blocked(self):
+        """Un micro_trend_score de 0 reste bloqué (flat = pas de tendance)."""
+        scalp = PROFILE_PRESETS["scalping"]
+        mt_threshold = scalp.min_micro_trend_long
+        assert 0 < mt_threshold, "micro_trend_score=0 doit être bloqué"
+
+    def test_micro_trend_score_negative_still_blocked(self):
+        """Un micro_trend_score négatif reste bloqué (baissier)."""
+        scalp = PROFILE_PRESETS["scalping"]
+        mt_threshold = scalp.min_micro_trend_long
+        assert -2 < mt_threshold, "micro_trend_score=-2 doit être bloqué"
+
+    def test_buy_threshold_unchanged(self):
+        """Le buy_threshold reste à 30 — l'audit montre que le score (65) le franchit déjà."""
+        scalp = PROFILE_PRESETS["scalping"]
+        assert scalp.buy_threshold == 30, "buy_threshold ne doit pas changer"
+
+    def test_min_score_unchanged(self):
+        """Le min_score reste à 30 — pas le gate responsable du blocage."""
+        scalp = PROFILE_PRESETS["scalping"]
+        assert scalp.min_score == 30, "min_score ne doit pas changer"
+
+    def test_aggressive_still_no_micro_trend_gate(self):
+        """L'aggressive n'a toujours pas de gate micro-tendance (sanctuarisé)."""
+        agg = PROFILE_PRESETS["aggressive"]
+        assert getattr(agg, "min_micro_trend_long", None) is None
+
+    def test_all_other_scalping_params_unchanged(self):
+        """Aucun autre paramètre scalping n'a bougé (correction chirurgicale)."""
+        scalp = PROFILE_PRESETS["scalping"]
+        assert scalp.trailing_stop_activation_pct == 0.15
+        assert scalp.trailing_stop_pct == 0.10
+        assert scalp.profit_take_pct == 0.8
+        assert scalp.loss_cut_pct == 0.20
+        assert scalp.min_market_quality == 50
+        assert scalp.min_volume_ratio == 0.8
+        assert scalp.min_structural_proofs == 2
+        assert scalp.economic_gate_enabled is True
+        assert scalp.expected_capture_pct == 0.50
+        assert scalp.min_ev_multiple == 1.5
+        assert scalp.stale_exit_minutes == 15
+        assert scalp.cooldown_minutes == 2
+        assert scalp.max_trades_per_day == 30
+

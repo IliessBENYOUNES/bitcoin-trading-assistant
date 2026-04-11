@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.4] - 2026-04-11
+
+### Changed
+- **Gate micro-tendance assoupli** (`min_micro_trend_long` 2→1) — L'audit post-v2.0.3 révèle que 966/966 ticks scalping (100%) sont bloqués par `micro_trend_insufficient`. Tous avaient `micro_trend_score=-2` et `decision_score=65` (bien au-dessus du seuil 30). Le gate à mt≥2 exigeait une tendance haussière confirmée ; mt≥1 suffit pour un début de reprise. mt≤0 reste bloqué.
+- **Safety bounds learning** — Ajout de `min_micro_trend_long: (0, 5)` aux bornes de sécurité du learning service.
+
+### Added
+- **Export enrichi tick-par-tick** (`EnrichedExportService`) — Service + schéma + endpoint `GET /audit/enriched-export`. Export complet de chaque tick avec :
+  - Prix BTC + variation % inter-tick
+  - Décision moteur (action, score, confidence)
+  - Raison de non-trade + catégorie de rejet
+  - Position ouverte, PnL latent/réalisé
+  - Market quality context (micro_trend_score, volume_ratio)
+  - Ventilation des refus par gate (`GateBlockDistribution`)
+  - Détection des tendances BTC ratées (`MissedTrendAnalysis`)
+- **Learning runtime** (`LearningService.learn_from_runtime()`) — Analyse les TickActivityLog pour identifier les gates sur-bloquants. Endpoint `POST /learning/learn-runtime`.
+  - Suggestion 15 : détecte si le gate micro-trend bloque > 50% des ticks avec score > buy_threshold
+  - Suggestion 16 : détecte si un seul gate bloque > 70% des ticks buy/sell
+- **33 nouveaux tests** :
+  - `test_enriched_export.py` (25) : export vide, avec données, gate distribution, variation BTC, tendances ratées, learn_from_runtime, safety bounds, endpoints
+  - `TestScalpingV204MicroTrendRelax` dans `test_pivot_v200.py` (8) : mt=1 passe, mt=0 bloqué, mt négatif bloqué, autres params inchangés
+
+### Technical
+- Nouveau : `backend/app/schemas/enriched_export.py` — Schémas Pydantic (EnrichedTickRow, GateBlockDistribution, MissedTrendAnalysis, EnrichedExportSummary, EnrichedExportResponse)
+- Nouveau : `backend/app/services/enriched_export_service.py` — Service d'export enrichi (~270 LOC)
+- Nouveau : `backend/tests/test_enriched_export.py` — 25 tests
+- Modifié : `backend/app/services/trading_profile_service.py` — min_micro_trend_long 2→1 + commentaire d'audit
+- Modifié : `backend/app/services/learning_service.py` — +SAFETY_BOUNDS min_micro_trend_long, +learn_from_runtime() (~120 LOC)
+- Modifié : `backend/app/api/routes/audit.py` — +endpoint GET /audit/enriched-export
+- Modifié : `backend/app/api/routes/learning.py` — +endpoint POST /learning/learn-runtime
+- Modifié : `backend/app/schemas/__init__.py` — exports enriched_export
+- Modifié : `backend/tests/test_pivot_v200.py` — 8 tests ajoutés (TestScalpingV204MicroTrendRelax), 1 test modifié (min_micro_trend_long 2→1)
+- Nombre total de tests : 1554→1587 (33 ajoutés, 0 supprimé).
+
 ## [2.0.3] - 2026-04-11
 
 ### Changed

@@ -55,6 +55,7 @@ SAFETY_BOUNDS = {
     "momentum_fade_retention": (0.2, 0.8),  # [v1.9.5] rétention du pic pour momentum fade
     "min_market_quality": (0, 80),           # [v1.9.8] qualité marché minimum
     "min_volume_ratio": (0.0, 2.0),          # [v1.9.8] ratio volume minimum
+    "min_micro_trend_long": (0, 5),          # [v2.0.4] gate micro-tendance pour longs
 }
 
 # Nombre minimum d'échantillons pour qu'un pattern soit significatif
@@ -1045,6 +1046,174 @@ class LearningService:
             learning_enabled=True,
             mode="shadow",
         )
+
+    # ================================================================
+    # [v2.0.4] LEARN FROM RUNTIME — Apprentissage basé sur les tick logs
+    # ================================================================
+
+    def learn_from_runtime(self, profile_type: str = "scalping") -> list[StrategyFeedback]:
+        """
+        Analyse les TickActivityLog pour identifier les gates sur-bloquants
+        et générer des suggestions d'assouplissement basées sur les données runtime.
+
+        Contrairement à suggest_adjustments() qui se base sur les LearningSignal
+        (trades fermés), cette méthode analyse les REFUS de trades (ticks sans ouverture)
+        pour identifier les paramètres qui bloquent trop.
+
+        Retourne les suggestions créées en mode shadow.
+        """
+        from app.models.tick_activity_log import TickActivityLog
+        from app.models.paper_account import PaperAccount
+
+        account = self.db.query(PaperAccount).first()
+        if account is None:
+            return []
+
+        # Charger les ticks du profil
+        ticks = (
+            self.db.query(TickActivityLog)
+            .filter(
+                TickActivityLog.account_id == account.id,
+                TickActivityLog.profile_type == profile_type,
+            )
+            .order_by(TickActivityLog.timestamp.asc())
+            .all()
+        )
+
+        if len(ticks) < 10:
+            logger.info(f"Pas assez de ticks runtime pour le learning ({len(ticks)}/10)")
+            return []
+
+        params = PROFILE_PRESETS.get(profile_type)
+        if params is None:
+            return []
+
+        suggestions = []
+        version = self._next_version()
+
+        # Ventilation des refus par raison
+        reason_counts = defaultdict(list)
+        for t in ticks:
+            if t.reason_no_trade:
+                reason_counts[t.reason_no_trade].append(t)
+
+        total_ticks = len(ticks)
+        total_holds = sum(len(v) for v in reason_counts.values())
+
+        # Suggestion 15 : Gate micro-trend sur-bloquant
+        # Si > 50% des refus sont micro_trend_insufficient, et que les ticks
+        # rejetés avaient un score d'entrée > buy_threshold (le moteur VEUT trader),
+        # alors le gate micro-trend est trop restrictif.
+        mt_rejected = reason_counts.get("micro_trend_insufficient", [])
+        if len(mt_rejected) >= 10 and total_holds > 0:
+            mt_pct = len(mt_rejected) / total_holds * 100
+            # Score moyen quand bloqué par micro-trend
+            mt_scores = [
+                t.decision_score for t in mt_rejected
+                if t.decision_score is not None
+            ]
+            avg_mt_score = sum(mt_scores) / len(mt_scores) if mt_scores else 0
+            # Si le score moyen est bien au-dessus du seuil d'entrée
+            buy_th = getattr(params, "buy_threshold", 30) or 30
+            score_above_threshold = avg_mt_score > buy_th
+
+            if mt_pct > 50 and score_above_threshold:
+                current_mt = getattr(params, "min_micro_trend_long", 2) or 2
+                # Vérifier les micro_trend_score dans les ticks rejetés
+                mt_values = [
+                    t.micro_trend_score for t in mt_rejected
+                    if t.micro_trend_score is not None
+                ]
+                # Proposer d'abaisser de 1 si possible
+                suggested = max(current_mt - 1, 0)
+
+                # Compter combien de ticks auraient passé avec le nouveau seuil
+                would_pass = sum(
+                    1 for v in mt_values if v >= suggested
+                ) if suggested < current_mt else 0
+                pass_pct = would_pass / len(mt_values) * 100 if mt_values else 0
+
+                suggestions.append(self._create_feedback(
+                    parameter_name="min_micro_trend_long",
+                    original_value=current_mt,
+                    suggested_value=suggested,
+                    reason=(
+                        f"{mt_pct:.0f}% des refus runtime sont micro_trend_insufficient "
+                        f"({len(mt_rejected)}/{total_holds}). "
+                        f"Score moyen des ticks rejetés: {avg_mt_score:.0f} (seuil={buy_th}). "
+                        f"Le moteur veut trader mais le gate micro-trend bloque. "
+                        f"Abaisser de {current_mt}→{suggested} déverrouillerait {pass_pct:.0f}% "
+                        f"des ticks rejetés."
+                    ),
+                    sample_size=len(mt_rejected),
+                    win_rate_observed=0,
+                    avg_pnl_observed=0,
+                    profile_type=profile_type,
+                    version=version,
+                ))
+
+        # Suggestion 16 : Un gate domine > 70% des refus sur des ticks buy/sell
+        # Si un seul gate bloque > 70% des ticks avec decision_action=acheter|vendre,
+        # c'est un goulot d'étranglement trop restrictif.
+        for reason, rejected_ticks in reason_counts.items():
+            if reason == "micro_trend_insufficient":
+                continue  # Déjà traité par suggestion 15
+
+            if total_holds == 0:
+                continue
+
+            reason_pct = len(rejected_ticks) / total_holds * 100
+            # Vérifier que ces ticks avaient une action d'achat/vente
+            buy_sell_in_rejected = [
+                t for t in rejected_ticks
+                if t.decision_action in ("acheter", "vendre")
+            ]
+
+            if reason_pct > 70 and len(buy_sell_in_rejected) >= 5:
+                # Mapper la raison vers un paramètre
+                param_map = {
+                    "score_too_low": "min_score",
+                    "market_quality_low": "min_market_quality",
+                    "economic_viability_low": "min_ev_multiple",
+                    "structural_proof_insufficient": "min_structural_proofs",
+                    "cooldown_active": "cooldown_minutes",
+                }
+                param_name = param_map.get(reason)
+                if param_name is None:
+                    continue
+
+                current_val = getattr(params, param_name, None)
+                if current_val is None:
+                    continue
+
+                # Proposer un assouplissement de 10-20%
+                if isinstance(current_val, (int, float)):
+                    suggested = current_val * 0.85  # -15%
+                    suggestions.append(self._create_feedback(
+                        parameter_name=param_name,
+                        original_value=current_val,
+                        suggested_value=round(suggested, 2),
+                        reason=(
+                            f"Le gate '{reason}' bloque {reason_pct:.0f}% des refus runtime "
+                            f"({len(rejected_ticks)}/{total_holds}). "
+                            f"Dont {len(buy_sell_in_rejected)} ticks avec un signal buy/sell actif. "
+                            f"Le paramètre {param_name}={current_val} est un goulot d'étranglement. "
+                            f"Proposer un assouplissement à {suggested:.2f}."
+                        ),
+                        sample_size=len(buy_sell_in_rejected),
+                        win_rate_observed=0,
+                        avg_pnl_observed=0,
+                        profile_type=profile_type,
+                        version=version,
+                    ))
+
+        # Sauvegarder les suggestions runtime en mode shadow
+        for fb in suggestions:
+            self.db.add(fb)
+        if suggestions:
+            self.db.commit()
+
+        return suggestions
 
     # ================================================================
     # HELPERS

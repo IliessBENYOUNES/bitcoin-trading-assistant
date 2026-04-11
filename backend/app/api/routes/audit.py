@@ -7,6 +7,7 @@ Endpoints :
 - GET /audit/costs : Presets de coûts disponibles
 - GET /audit/costs/impact : Impact des coûts sur les trades existants
 - GET /v2/readiness : Gate formelle de passage vers v2.0
+- GET /audit/enriched-export : Export enrichi tick-par-tick avec corrélation BTC
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -19,9 +20,11 @@ from app.services.v2_gate_service import V2GateService
 from app.services.run_value_audit_service import RunValueAuditService
 from app.services.stability_audit_service import StabilityAuditService
 from app.services.runtime_correlation_service import RuntimeCorrelationService
+from app.services.enriched_export_service import EnrichedExportService
 from app.services.trading_cost_service import (
     COST_PRESETS, get_cost_model,
 )
+from app.schemas.enriched_export import EnrichedExportResponse
 
 router = APIRouter(tags=["Audit & Gate"])
 
@@ -177,6 +180,51 @@ def get_runtime_correlation(
     service = RuntimeCorrelationService(db)
     return service.build_correlation(
         symbol=symbol,
+        missed_threshold_pct=missed_threshold_pct,
+    )
+
+
+@router.get(
+    "/audit/enriched-export",
+    response_model=EnrichedExportResponse,
+    summary="Export enrichi tick-par-tick",
+)
+def get_enriched_export(
+    profile_type: str = Query(
+        default=None,
+        description="Filtrer par profil (scalping, aggressive, etc.). None = tous.",
+    ),
+    limit: int = Query(
+        default=5000,
+        ge=1,
+        le=50000,
+        description="Nombre max de ticks à retourner",
+    ),
+    missed_threshold_pct: float = Query(
+        default=0.15,
+        ge=0.01,
+        le=5.0,
+        description="Seuil minimum de mouvement BTC pour qualifier une tendance ratée (%)",
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    Export enrichi tick-par-tick avec corrélation BTC et analyse des gates.
+
+    Retourne :
+    - Chaque tick avec contexte complet (prix BTC, décision, score, raison de non-trade)
+    - Événements de trade (entrée/sortie/PnL)
+    - Ventilation des refus par gate (quel paramètre bloque le plus)
+    - Détection des tendances BTC ratées (le moteur ne trade pas mais BTC bouge)
+    - Indicateurs de mouvement raté par tick
+
+    Conçu pour l'analyse minute-par-minute de la corrélation
+    entre les décisions du moteur et le mouvement BTC réel.
+    """
+    service = EnrichedExportService(db)
+    return service.build_export(
+        profile_type=profile_type,
+        limit=limit,
         missed_threshold_pct=missed_threshold_pct,
     )
 

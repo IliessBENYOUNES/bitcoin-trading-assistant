@@ -130,6 +130,14 @@ from app.schemas.trading_cost import (
     CostPresetsResponse,
 )
 
+from app.schemas.enriched_export import (
+    EnrichedTickRow,
+    GateBlockDistribution,
+    MissedTrendAnalysis,
+    EnrichedExportSummary,
+    EnrichedExportResponse,
+)
+
 __all__ = [
     # ...existing exports...
     "CandleBase",
@@ -224,4 +232,10 @@ __all__ = [
     "TradingCostImpact",
     "CostAuditMetrics",
     "CostPresetsResponse",
+    # v2.0.4 — Enriched Export
+    "EnrichedTickRow",
+    "GateBlockDistribution",
+    "MissedTrendAnalysis",
+    "EnrichedExportSummary",
+    "EnrichedExportResponse",
 ]
