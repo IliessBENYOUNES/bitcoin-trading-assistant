@@ -35,7 +35,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.0] Momentum fade restricted** — ne sort que si le pic dépasse le seuil d'amplitude ET que la sortie est net-positive
 - **[v2.0.0] Structural proofs gate** — exige ≥2 preuves structurelles (volume, micro-trend, price_position, range) pour entrer en scalping
 - **[v2.0.0] Scoring refondu** — oscillateurs (Bollinger, StochRSI) dégradés à 0.3x en tendance, price_position boosté à 1.4x
-- **[v2.0.0] Paramètres scalping recalibrés** — TP 0.8% (was 0.6%), trailing activation 0.20% (was 0.15%), max_trades 30 (was 50), market quality 50 (was 45)
+- **[v2.0.3] Paramètres scalping recalibrés** — buy_threshold 30 (was 25), min_score 30 (was 25), trailing activation 0.15% (was 0.20%), gate micro-trend ≥2 pour longs, short_min_score 30 (was 25)
 - **[v2.0.0-fix] Stale exit corrigé** — Le seuil de stagnation des profils tight utilise désormais `trailing_stop_activation_pct` (0.20%) au lieu de `profit_take_pct` (0.8%). Un trade à +0.46% n'est plus fermé comme "stagnant" — le trailing stop gère la sortie.
 - **[v2.0.0-fix] Multi-slot préservé après full reset** — `max_open_positions` default passé de 1 à 3 dans `FullResetRequest` et `PaperAccountCreate`. Avant, un full reset recréait le compte en mono-position, empêchant le slot aggressive de tourner. Désormais, le multi-slot est toujours actif par défaut.
 - Backtesting et time-travel walk-forward

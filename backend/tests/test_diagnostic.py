@@ -279,10 +279,10 @@ class TestScalpingProfile:
     """Tests pour le profil Scalping."""
 
     def test_scalping_preset_exists(self):
-        """Le preset scalping existe avec les bons paramètres (v2.0.0 refondu)."""
+        """Le preset scalping existe avec les bons paramètres (v2.0.3 recalibré)."""
         assert "scalping" in PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_score == 25           # [v2.0.0] maintenu à 25
+        assert p.min_score == 30           # [v2.0.3] 25→30
         assert p.cooldown_minutes == 2     # recalibré (was 1)
         assert p.max_trades_per_day == 30  # [v2.0.0] 50→30
         # [v2.0.0] TP élargi, SL maintenu
@@ -290,7 +290,7 @@ class TestScalpingProfile:
         assert p.loss_cut_pct == 0.20      # maintenu
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
-        assert p.buy_threshold == 25       # [v1.9.5] recalibré 20→25
+        assert p.buy_threshold == 30       # [v2.0.3] recalibré 25→30
         assert p.sell_threshold == 20      # [v1.9.5] recalibré 15→20
         assert p.momentum_fade_enabled is True
         assert p.stale_exit_minutes == 15
@@ -319,9 +319,9 @@ class TestScalpingProfile:
         assert p.analysis_timeframe == "15m"
 
     def test_scalping_params_buy_threshold(self):
-        """Scalping a un seuil BUY recalibré."""
+        """Scalping a un seuil BUY recalibré (v2.0.3: 25→30)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.buy_threshold == 25  # [v1.9.5] recalibré 20→25
+        assert p.buy_threshold == 30  # [v2.0.3] recalibré 25→30
 
     def test_scalping_params_sell_threshold(self):
         """Scalping a un seuil SELL recalibré."""

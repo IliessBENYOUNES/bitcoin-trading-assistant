@@ -93,9 +93,9 @@ class TestShortMinScore:
         assert p.short_min_score > 0
 
     def test_short_min_score_value(self):
-        """[v1.9.6] Le short_min_score est configuré à 25 (la 2-convergence suffit comme filtre)."""
+        """[v2.0.3] Le short_min_score est configuré à 30 (aligné avec min_score relevé)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_score == 25
+        assert p.short_min_score == 30
 
     def test_short_min_score_filters_weak_setups(self):
         """Un score abs de 20 < short_min_score de 25 → short rejeté."""
@@ -630,9 +630,9 @@ class TestScalpingPresetNonRegression:
         assert p.analysis_timeframe == "15m"
 
     def test_scalping_trailing_stop(self):
-        """[v2.0.0] Les paramètres trailing stop recalibrés."""
+        """[v2.0.3] Les paramètres trailing stop recalibrés."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.20  # [v2.0.0] was 0.15
+        assert p.trailing_stop_activation_pct == 0.15  # [v2.0.3] 0.20→0.15
         assert p.trailing_stop_pct == 0.10             # unchanged
 
     def test_scalping_leverageééévalues(self):
@@ -724,13 +724,13 @@ class TestReversalSelectivity:
         assert result is None, "tech_score seul ne suffit pas"
 
     def test_short_min_score_rejects_weak(self):
-        """[v1.9.6] Le short_min_score à 25 rejette les shorts avec abs(score) < 25."""
+        """[v2.0.3] Le short_min_score à 30 rejette les shorts avec abs(score) < 30."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_score == 25
-        # Score de 20 → rejeté
-        assert abs(20) < p.short_min_score
-        # Score de 30 → accepté
-        assert abs(30) >= p.short_min_score
+        assert p.short_min_score == 30
+        # Score de 25 → rejeté
+        assert abs(25) < p.short_min_score
+        # Score de 35 → accepté
+        assert abs(35) >= p.short_min_score
 
 
 # ================================================================

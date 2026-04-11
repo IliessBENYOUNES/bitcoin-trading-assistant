@@ -118,6 +118,11 @@ class TradingProfileParams(BaseModel):
     # Les preuves sont : price_position favorable, volume confirmé, micro-trend,
     # breakout récent. Sans preuve, pas d'entrée.
     min_structural_proofs: int = Field(default=0, description="Nombre minimum de signaux structurels pour ouvrir (0=désactivé)")
+    # [v2.0.3] Gate micro-tendance obligatoire pour les longs scalping.
+    # L'audit runtime montre 91% de closed_stale = entrées sur bruit sans tendance.
+    # Exiger micro_trend_score ≥ N pour ouvrir un long filtre le bruit directionnel.
+    # None = pas de filtre. 2 = tendance légère minimum. 3 = tendance claire.
+    min_micro_trend_long: Optional[int] = Field(default=None, description="micro_trend_score minimum pour ouvrir un long (None=pas de filtre)")
 
 
 class TradingProfileResponse(BaseModel):

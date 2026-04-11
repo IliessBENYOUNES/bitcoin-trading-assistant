@@ -53,6 +53,7 @@ REASON_LABELS = {
     "no_price": "Prix indisponible",
     "economic_viability_low": "Non-viable économiquement (coûts > capture)",
     "structural_proof_insufficient": "Preuve structurelle insuffisante",
+    "micro_trend_insufficient": "Micro-tendance insuffisante pour long",
     "other": "Autre",
 }
 

@@ -962,6 +962,38 @@ class PaperTradingService:
                         non_trade_reason="structural_proof_insufficient",
                     )
 
+            # [v2.0.3] Gate micro-tendance obligatoire pour les longs scalping.
+            # L'audit runtime montre 91% de closed_stale = entrées sur bruit sans tendance.
+            # Ce gate est un VETO : pas de micro-trend ≥ min_micro_trend_long, pas de long.
+            # Distinct de la preuve structurelle (qui vérifie ≥ 3 mais n'est qu'1 preuve parmi 4).
+            min_mt_long = getattr(profile_params, "min_micro_trend_long", None) if profile_params else None
+            if min_mt_long is not None and min_mt_long > 0 and mq_data:
+                direction_check = "long" if action == "acheter" else "short"
+                if direction_check == "long":
+                    mt = mq_data.get("micro_trend_score", 0) or 0
+                    if mt < min_mt_long:
+                        detail = (
+                            f"Gate micro-tendance : micro_trend_score {mt:+d} < {min_mt_long} requis pour long"
+                        )
+                        _log_tick(action_taken="hold", btc_price=current_price,
+                                  decision_score=score, decision_action=action,
+                                  decision_confidence=confidence,
+                                  reason_no_trade="micro_trend_insufficient",
+                                  reason_detail=detail[:500],
+                                  quality_gate_passed=True,
+                                  rejection_category="structure",
+                                  **_qg_log, **_econ_log)
+                        return PaperTickResult(
+                            action_taken="hold",
+                            detail=detail,
+                            current_price=current_price,
+                            timestamp=now.isoformat(),
+                            decision_score=score,
+                            decision_action=action,
+                            profile_type=profile_name,
+                            non_trade_reason="micro_trend_insufficient",
+                        )
+
             # [v1.5] Vérification profil — score minimum
             # Les trades de reversal (mean reversion) ne sont pas soumis au
             # seuil de score car leur signal vient des oscillateurs, pas du score.

@@ -402,9 +402,9 @@ class TestScalpingRecalibratedV191:
         assert net_tp > 0, f"Net TP {net_tp}% est négatif → aucune marge"
 
     def test_description_updated(self):
-        """La description du profil scalping est mise à jour."""
+        """La description du profil scalping est mise à jour (v2.0.3)."""
         p = PROFILE_PRESETS["scalping"]
-        assert "structure" in p.description.lower() or "sélection" in p.description.lower()
+        assert "seuils" in p.description.lower() or "micro-trend" in p.description.lower()
 
 
 # ================================================================

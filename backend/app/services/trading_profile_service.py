@@ -110,8 +110,12 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # [v2.0.0] REFONTE COMPLÈTE — Le scalping doit prouver sa valeur économique.
         # Doctrine : prix + volume + structure > oscillateurs dérivés.
         # Plus aucun trade de poussière. Chaque trade doit couvrir ses frais.
-        description="Scalping refondu v2.0 — structure de marché obligatoire, viabilité économique pré-entrée, trailing prioritaire.",
-        min_score=25,   # [v1.9.5→v2.0.0] Maintenu : le score est secondaire, c'est la structure qui filtre
+        # [v2.0.3] MINI-LOT CORRECTIF POST-AUDIT RUNTIME :
+        # 57 trades, 52 closed_stale (91.2%), 4 trailing_stop seulement.
+        # Cause : trop d'entrées sur bruit directionnel sans tendance réelle.
+        # Correction : seuils relevés + gate micro-trend + trailing plus atteignable.
+        description="Scalping refondu v2.0.3 — seuils relevés, micro-trend obligatoire, trailing plus atteignable.",
+        min_score=30,   # [v2.0.3] 25→30 : relever le plancher de score pour filtrer le bruit
         min_confidence="low",
         min_scenario_dominance=0.35,
         max_trades_per_day=30,  # [v2.0.0] 50→30 : moins de trades, meilleurs trades
@@ -127,7 +131,7 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         leverage_enabled=True,
         max_leverage=1.5,
         analysis_timeframe="15m",
-        buy_threshold=25,
+        buy_threshold=30,   # [v2.0.3] 25→30 : exiger un signal directionnel plus fort
         sell_threshold=20,
         # [v2.0.0] Momentum fade = RESTRICTED : principal destructeur de valeur identifié.
         # Le momentum fade sortait à +$1.59 avg quand le coût RT est $7.75.
@@ -139,17 +143,20 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         momentum_fade_retention=0.55,
         stale_exit_minutes=15,
         stale_negative_exit_minutes=5,
-        # [v2.0.0] Trailing stop élargi pour capturer plus d'amplitude.
-        # Activation relevée 0.15%→0.20% : ne pas activer sur de la poussière.
-        # Trail maintenu à 0.10%.
-        trailing_stop_activation_pct=0.20,
+        # [v2.0.3] Trailing stop activation abaissée pour capturer plus de trades.
+        # L'audit montre que 91% des trades meurent stale sans jamais atteindre 0.20%.
+        # En abaissant à 0.15%, plus de trades activent le trailing stop.
+        # Les 4 trailing stops du run portaient l'essentiel de la valeur.
+        # Trail maintenu à 0.10% — minimum capture = 0.15% - 0.10% = 0.05%.
+        # Même un trailing à 0.05% est meilleur qu'un stale à 0.00%.
+        trailing_stop_activation_pct=0.15,
         trailing_stop_pct=0.10,
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
         max_cooldown_minutes=10.0,
         min_hold_seconds=30,
         min_economic_pnl_pct=0.15,
-        short_min_score=25,
+        short_min_score=30,  # [v2.0.3] 25→30 : aligné avec min_score relevé
         short_exit_score_threshold=30,
         short_min_hold_seconds=45,
         # [v2.0.0] Market quality gate relevé 45→50 : plus exigeant sur la structure.
@@ -167,12 +174,18 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # [v2.0.0-fix] Corrigé : None retombait sur trailing_stop_activation_pct (0.20%),
         # ce qui rendait le gate économique mathématiquement impossible à passer
         # (0.20% < 0.31% × 1.5 = 0.465%). On fixe à 0.50% = capture réaliste
-        # entre le trailing (0.20%) et le TP (0.80%), ce qui donne 0.50% > 0.465% ✓
+        # entre le trailing (0.15%) et le TP (0.80%), ce qui donne 0.50% > 0.465% ✓
         expected_capture_pct=0.50,
         # [v2.0.0] STRUCTURAL PROOFS — Le scalping exige au moins 2 preuves structurelles.
         # Les preuves : price_position favorable, volume confirmé (>1.2x), micro-trend (≥3).
         # Sans preuves, l'entrée est refusée même si le score est suffisant.
         min_structural_proofs=2,
+        # [v2.0.3] GATE MICRO-TENDANCE — L'audit runtime montre que les entrées
+        # sans micro-tendance favorable finissent en stale 91% du temps.
+        # Exiger micro_trend_score ≥ 2 filtre les longs ouverts sur du bruit.
+        # Distinct de la preuve structurelle (qui vérifie ≥ 3 mais n'est qu'1 preuve parmi 4).
+        # Ici c'est un VETO : pas de micro-trend ≥ 2, pas de long.
+        min_micro_trend_long=2,
     ),
 }
 

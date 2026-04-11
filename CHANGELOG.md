@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.3] - 2026-04-11
+
+### Changed
+- **Scalping plus sélectif** — Mini-lot correctif post-audit runtime (57 trades, 52 closed_stale = 91.2%, 4 trailing_stop seulement).
+  - **buy_threshold 25→30** : exige un signal directionnel plus fort pour ouvrir un long scalping. Filtre les entrées sur bruit.
+  - **min_score 25→30** : relève le plancher de score composite minimum. Les trades à score faible qui finissaient stale sont rejetés.
+  - **trailing_stop_activation_pct 0.20→0.15** : le trailing s'active plus tôt. L'audit montre que 91% des trades n'atteignaient jamais 0.20%. En abaissant à 0.15%, plus de trades activent le trailing (seul vrai créateur de valeur du run). Trail maintenu à 0.10%.
+
+### Added
+- **Gate micro-tendance obligatoire** (`min_micro_trend_long=2`) — Nouveau paramètre `TradingProfileParams.min_micro_trend_long`. Le scalping exige désormais un `micro_trend_score ≥ 2` pour ouvrir un long. C'est un VETO indépendant des preuves structurelles (qui vérifient ≥ 3 mais ne sont qu'1 preuve parmi 4). Sans micro-tendance, pas d'entrée long.
+- **Raison de non-trade `micro_trend_insufficient`** dans le journal — Nouveau label pour le diagnostic des entrées rejetées par le gate micro-tendance.
+- **14 nouveaux tests** (`TestScalpingV203MiniLot` dans `test_pivot_v200.py`) :
+  - Configuration : buy_threshold 30, min_score 30, trailing_activation 0.15, min_micro_trend_long 2
+  - Isolation : paramètres non ciblés inchangés, aggressive sanctuarisé, conservative non affecté
+  - Économie : gate économique toujours valide, capture minimum cohérente
+- **3 tests mis à jour** (`TestScalpingRecalibration` dans `test_scalping_audit.py`, `TestScalpingProfileV200` + `TestReasonLabels` dans `test_pivot_v200.py`)
+
+### Technical
+- Modifié : `backend/app/schemas/journal.py` — Ajout champ `min_micro_trend_long` à `TradingProfileParams`
+- Modifié : `backend/app/services/trading_profile_service.py` — Preset scalping recalibré (3 paramètres + 1 nouveau)
+- Modifié : `backend/app/services/paper_trading_service.py` — Gate micro-trend dans la boucle d'entrée (~30 LOC)
+- Modifié : `backend/app/services/journal_service.py` — Label `micro_trend_insufficient` ajouté à `REASON_LABELS`
+- Modifié : `backend/tests/test_pivot_v200.py` — 14 tests ajoutés, 2 mis à jour
+- Modifié : `backend/tests/test_scalping_audit.py` — 3 tests mis à jour
+- Nombre total de tests : 1542→1556 (14 ajoutés, 0 supprimé).
+
 ## [2.0.2] - 2026-04-11
 
 ### Added

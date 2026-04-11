@@ -278,9 +278,9 @@ class TestScalpingRecalibration:
     """Tests pour les paramètres recalibrés du scalping v1.9.5."""
 
     def test_trailing_stop_activation_increased(self):
-        """[v2.0.0] Trailing stop activation relevé de 0.15% à 0.20%."""
+        """[v2.0.3] Trailing stop activation abaissé de 0.20% à 0.15% (plus atteignable)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.20
+        assert p.trailing_stop_activation_pct == 0.15
 
     def test_trailing_stop_trail_increased(self):
         """[v1.9.5] Trailing stop trail resserré de 0.12% à 0.10%."""
@@ -288,9 +288,9 @@ class TestScalpingRecalibration:
         assert p.trailing_stop_pct == 0.10
 
     def test_buy_threshold_increased(self):
-        """[v1.9.5] Buy threshold augmenté de 20 à 25 pour meilleure sélectivité."""
+        """[v2.0.3] Buy threshold augmenté de 25 à 30 pour filtrer le bruit."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.buy_threshold == 25
+        assert p.buy_threshold == 30
 
     def test_sell_threshold_increased(self):
         """[v1.9.5] Sell threshold augmenté de 15 à 20."""
@@ -298,9 +298,9 @@ class TestScalpingRecalibration:
         assert p.sell_threshold == 20
 
     def test_min_score_increased(self):
-        """[v2.0.0] Min score maintenu à 25."""
+        """[v2.0.3] Min score relevé de 25 à 30."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_score == 25
+        assert p.min_score == 30
 
     def test_cooldown_increased(self):
         """Cooldown augmenté de 1 à 2 min."""

@@ -90,28 +90,28 @@ class TestScalpingParamsV195:
         assert PROFILE_PRESETS["scalping"].profit_take_pct == 0.8
 
     def test_trailing_stop_activation(self):
-        """[v2.0.0] Activation trailing relevée de 0.15% → 0.20%."""
-        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.20
+        """[v2.0.3] Activation trailing abaissée de 0.20% → 0.15%."""
+        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.15
 
     def test_trailing_stop_pct(self):
         """Trail resserré de 0.12% → 0.10%."""
         assert PROFILE_PRESETS["scalping"].trailing_stop_pct == 0.10
 
     def test_buy_threshold(self):
-        """Buy threshold relevé de 20 → 25."""
-        assert PROFILE_PRESETS["scalping"].buy_threshold == 25
+        """[v2.0.3] Buy threshold relevé de 25 → 30."""
+        assert PROFILE_PRESETS["scalping"].buy_threshold == 30
 
     def test_sell_threshold(self):
         """Sell threshold relevé de 15 → 20."""
         assert PROFILE_PRESETS["scalping"].sell_threshold == 20
 
     def test_min_score(self):
-        """[v2.0.0] Min score maintenu à 25."""
-        assert PROFILE_PRESETS["scalping"].min_score == 25
+        """[v2.0.3] Min score relevé de 25 → 30."""
+        assert PROFILE_PRESETS["scalping"].min_score == 30
 
     def test_short_min_score(self):
-        """Short min score → 25 (v1.9.6)."""
-        assert PROFILE_PRESETS["scalping"].short_min_score == 25
+        """[v2.0.3] Short min score aligné à 30 avec min_score relevé."""
+        assert PROFILE_PRESETS["scalping"].short_min_score == 30
 
     def test_short_exit_score_threshold(self):
         """Short exit threshold → 30 (v1.9.6)."""
@@ -868,9 +868,9 @@ class TestShortRebalanceV196:
     """Tests pour le rééquilibrage des shorts v1.9.6."""
 
     def test_short_min_score_25(self):
-        """Short min score abaissé à 25 pour la convergence."""
+        """[v2.0.3] Short min score aligné à 30 avec min_score relevé."""
         params = PROFILE_PRESETS["scalping"]
-        assert params.short_min_score == 25
+        assert params.short_min_score == 30
 
     def test_short_exit_threshold_30(self):
         """Short exit score threshold remonté à 30 pour laisser respirer."""
