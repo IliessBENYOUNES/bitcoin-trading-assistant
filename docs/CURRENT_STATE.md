@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 11 avril 2026
 > **Version :** v2.0.4
 > **Branche :** `master`
-> **Dernier commit :** feat(scalping+learning): assouplissement micro-trend 2→1, export enrichi, learning runtime
+> **Dernier commit :** `73cdb28` — feat(scalping+learning): assouplissement micro-trend 2→1, export enrichi, learning runtime
 
 ---
 
