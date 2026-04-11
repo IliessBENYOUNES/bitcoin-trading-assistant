@@ -1955,3 +1955,230 @@ class TestAggressiveSlotCalibration:
             f"Score -16 + sell_threshold=15 devrait donner 'vendre', obtenu '{rec.action}'"
         )
 
+
+# ============================================================
+# [v2.0.5] Tests : Préservation du profil actif (anti-bascule)
+# ============================================================
+
+class TestProfilePreservation:
+    """
+    Tests de non-régression pour l'incident v2.0.5 :
+    le profil actif ne doit JAMAIS basculer en "conservative"
+    sans action explicite utilisateur.
+
+    Couvre :
+    - Full reset préserve le profil
+    - get_or_create_account avec profil explicite
+    - Tick ne modifie pas le profil
+    - Autonomous start avec profil
+    - Self-healing (activation) ne modifie pas le profil
+    - Création de compte avec profil personnalisé
+    """
+
+    def test_full_reset_preserves_scalping_profile(self, db_session):
+        """[v2.0.5] Full reset doit préserver le profil scalping, pas basculer en conservative."""
+        _insert_btc_candle(db_session, price=85000.0)
+        service = PaperTradingService(db_session)
+
+        # 1. Créer un compte et le mettre en scalping
+        account = service.get_or_create_account()
+        account.active_profile = "scalping"
+        account.is_active = True
+        db_session.commit()
+        assert account.active_profile == "scalping"
+
+        # 2. Full reset
+        new_account, purged = service.reset_account(initial_capital=10000.0)
+
+        # 3. Le profil doit être "scalping", pas "conservative"
+        assert new_account.active_profile == "scalping", (
+            f"INCIDENT v2.0.5 : Le reset a basculé le profil de 'scalping' → "
+            f"'{new_account.active_profile}'. Attendu 'scalping'."
+        )
+
+    def test_full_reset_preserves_aggressive_profile(self, db_session):
+        """[v2.0.5] Full reset doit préserver le profil aggressive."""
+        _insert_btc_candle(db_session, price=85000.0)
+        service = PaperTradingService(db_session)
+
+        account = service.get_or_create_account()
+        account.active_profile = "aggressive"
+        account.is_active = True
+        db_session.commit()
+
+        new_account, purged = service.reset_account(initial_capital=10000.0)
+        assert new_account.active_profile == "aggressive", (
+            f"Le reset a basculé le profil de 'aggressive' → '{new_account.active_profile}'"
+        )
+
+    def test_full_reset_preserves_balanced_profile(self, db_session):
+        """[v2.0.5] Full reset doit préserver le profil balanced."""
+        _insert_btc_candle(db_session, price=85000.0)
+        service = PaperTradingService(db_session)
+
+        account = service.get_or_create_account()
+        account.active_profile = "balanced"
+        db_session.commit()
+
+        new_account, _ = service.reset_account(initial_capital=10000.0)
+        assert new_account.active_profile == "balanced"
+
+    def test_full_reset_with_explicit_profile_override(self, db_session):
+        """[v2.0.5] Full reset avec preserve_profile explicite utilise le profil demandé."""
+        _insert_btc_candle(db_session, price=85000.0)
+        service = PaperTradingService(db_session)
+
+        account = service.get_or_create_account()
+        account.active_profile = "conservative"
+        db_session.commit()
+
+        # Forcer "scalping" via preserve_profile
+        new_account, _ = service.reset_account(
+            initial_capital=10000.0,
+            preserve_profile="scalping"
+        )
+        assert new_account.active_profile == "scalping", (
+            f"preserve_profile='scalping' non respecté : '{new_account.active_profile}'"
+        )
+
+    def test_get_or_create_account_with_profile(self, db_session):
+        """[v2.0.5] get_or_create_account avec active_profile crée le bon profil."""
+        service = PaperTradingService(db_session)
+
+        # Aucun compte n'existe
+        assert db_session.query(PaperAccount).count() == 0
+
+        # Créer avec profil "scalping"
+        account = service.get_or_create_account(active_profile="scalping")
+        assert account.active_profile == "scalping", (
+            f"Le compte a été créé avec active_profile='{account.active_profile}' "
+            f"au lieu de 'scalping'"
+        )
+
+    def test_get_or_create_account_does_not_overwrite_existing_profile(self, db_session):
+        """[v2.0.5] get_or_create_account ne doit PAS écraser le profil d'un compte existant."""
+        service = PaperTradingService(db_session)
+
+        # Créer un compte en scalping
+        account = service.get_or_create_account(active_profile="scalping")
+        assert account.active_profile == "scalping"
+
+        # Re-appeler avec un profil différent — ne doit PAS changer
+        same_account = service.get_or_create_account(active_profile="conservative")
+        assert same_account.active_profile == "scalping", (
+            f"get_or_create_account a écrasé le profil existant ! "
+            f"'scalping' → '{same_account.active_profile}'"
+        )
+
+    def test_tick_does_not_change_profile(self, client, db_session):
+        """[v2.0.5] POST /paper/tick ne doit PAS modifier le profil actif."""
+        _insert_btc_candle(db_session, price=85000.0)
+
+        # 1. Créer un compte en scalping, actif
+        service = PaperTradingService(db_session)
+        account = service.get_or_create_account()
+        account.active_profile = "scalping"
+        account.is_active = True
+        account.max_open_positions = 3
+        db_session.commit()
+
+        # 2. Exécuter un tick
+        resp = client.post("/paper/tick")
+        assert resp.status_code == 200
+
+        # 3. Vérifier que le profil n'a pas changé
+        db_session.expire_all()
+        account = db_session.query(PaperAccount).first()
+        assert account.active_profile == "scalping", (
+            f"POST /paper/tick a basculé le profil de 'scalping' → "
+            f"'{account.active_profile}'"
+        )
+
+    def test_create_account_endpoint_does_not_change_profile(self, client, db_session):
+        """[v2.0.5] POST /paper/account ne doit PAS écraser le profil d'un compte existant."""
+        _insert_btc_candle(db_session, price=85000.0)
+
+        # 1. Créer un compte et le mettre en scalping
+        service = PaperTradingService(db_session)
+        account = service.get_or_create_account()
+        account.active_profile = "scalping"
+        account.is_active = True
+        db_session.commit()
+
+        # 2. Appeler POST /paper/account (self-healing / activation)
+        resp = client.post("/paper/account", json={
+            "initial_capital": 10000.0,
+            "max_open_positions": 3,
+        })
+        assert resp.status_code == 200
+
+        # 3. Vérifier que le profil n'a pas changé
+        db_session.expire_all()
+        account = db_session.query(PaperAccount).first()
+        assert account.active_profile == "scalping", (
+            f"POST /paper/account a basculé le profil de 'scalping' → "
+            f"'{account.active_profile}'"
+        )
+
+    def test_full_reset_endpoint_preserves_profile(self, client, db_session):
+        """[v2.0.5] POST /paper/account/reset doit préserver le profil via le backend."""
+        _insert_btc_candle(db_session, price=85000.0)
+
+        # 1. Créer un compte en scalping
+        client.post("/paper/account", json={"initial_capital": 10000.0})
+        resp = client.post("/paper/profile", json={"profile": "scalping"})
+        assert resp.status_code == 200
+
+        # 2. Full reset
+        resp = client.post("/paper/account/reset", json={
+            "confirm": "RESET",
+            "initial_capital": 10000.0,
+        })
+        assert resp.status_code == 200
+
+        # 3. Vérifier que le profil est toujours "scalping"
+        db_session.expire_all()
+        account = db_session.query(PaperAccount).first()
+        assert account.active_profile == "scalping", (
+            f"POST /paper/account/reset a basculé le profil de 'scalping' → "
+            f"'{account.active_profile}'"
+        )
+
+    def test_full_reset_no_prior_account_defaults_to_conservative(self, db_session):
+        """[v2.0.5] Full reset sans compte existant → conservative est acceptable (aucun profil à sauver)."""
+        _insert_btc_candle(db_session, price=85000.0)
+
+        # Aucun compte n'existe
+        assert db_session.query(PaperAccount).count() == 0
+
+        service = PaperTradingService(db_session)
+        new_account, _ = service.reset_account(initial_capital=10000.0)
+
+        # Sans ancien compte, conservative est le default attendu
+        assert new_account.active_profile == "conservative"
+
+    def test_autonomous_start_preserves_profile_via_endpoint(self, client, db_session):
+        """[v2.0.5] POST /paper/autonomous/start avec profile=scalping doit poser le profil."""
+        _insert_btc_candle(db_session, price=85000.0)
+
+        # 1. Créer un compte
+        client.post("/paper/account", json={"initial_capital": 10000.0})
+
+        # 2. Démarrer le mode autonome avec scalping
+        resp = client.post("/paper/autonomous/start", json={
+            "interval_seconds": 30,
+            "profile": "scalping",
+        })
+        assert resp.status_code == 200
+
+        # 3. Vérifier le profil
+        db_session.expire_all()
+        account = db_session.query(PaperAccount).first()
+        assert account.active_profile == "scalping", (
+            f"Autonomous start avec profile=scalping a donné "
+            f"active_profile='{account.active_profile}'"
+        )
+
+        # Cleanup : arrêter le mode autonome
+        client.post("/paper/autonomous/stop")
+

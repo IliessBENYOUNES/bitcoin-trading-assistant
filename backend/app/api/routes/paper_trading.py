@@ -409,13 +409,15 @@ def start_autonomous(
         profile: Profil de trading à utiliser.
     """
     # [v2.0.0-fix] S'assurer que le compte est actif ET multi-slot.
-    # Avant, seul le cas `not is_active` configurait max_open_positions.
-    # Après un full reset (qui recrée le compte is_active=False, max_open_positions=3),
-    # cela fonctionnait. Mais si le compte était déjà actif avec max_open_positions=1
-    # (ex: activé manuellement depuis le frontend), le multi-slot n'était pas restauré.
+    # [v2.0.5-fix] On pose le profil explicitement dans TOUS les cas :
+    # - Si le compte n'existe pas, get_or_create_account le crée avec le bon profil
+    # - Si le compte existe déjà, on écrase active_profile avec le profil demandé
+    # Cela garantit que POST /autonomous/start?profile=scalping résulte TOUJOURS
+    # en active_profile="scalping", même si le compte pré-existait en "conservative".
     service = PaperTradingService(db)
-    account = service.get_or_create_account()
+    account = service.get_or_create_account(active_profile=request.profile)
     account.is_active = True
+    account.active_profile = request.profile  # [v2.0.5-fix] Force le profil demandé
     account.max_open_positions = max(account.max_open_positions or 1, 3)
     db.commit()
 

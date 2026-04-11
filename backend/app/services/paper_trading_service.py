@@ -72,24 +72,32 @@ class PaperTradingService:
     # ================================================================
 
     def get_or_create_account(
-        self, initial_capital: float = 10000.0
+        self, initial_capital: float = 10000.0, active_profile: str = None
     ) -> PaperAccount:
-        """Retourne le compte paper, le crée s'il n'existe pas."""
+        """Retourne le compte paper, le crée s'il n'existe pas.
+
+        [v2.0.5-fix] active_profile : si fourni et qu'un nouveau compte est créé,
+        le profil est initialisé avec cette valeur au lieu du default "conservative".
+        Si le compte existe déjà, son profil n'est PAS écrasé.
+        """
         account = self.db.query(PaperAccount).first()
         if account is None:
+            # [v2.0.5-fix] Utiliser le profil demandé, pas le default SQLAlchemy
+            profile = active_profile or "conservative"
             account = PaperAccount(
                 initial_capital=initial_capital,
                 current_capital=initial_capital,
                 peak_capital=initial_capital,
                 is_active=False,
+                active_profile=profile,
             )
             self.db.add(account)
             self.db.commit()
             self.db.refresh(account)
-            logger.info(f"Compte paper créé avec capital={initial_capital}")
+            logger.info(f"Compte paper créé avec capital={initial_capital}, active_profile={profile}")
         return account
 
-    def reset_account(self, initial_capital: float = 10000.0) -> tuple["PaperAccount", dict]:
+    def reset_account(self, initial_capital: float = 10000.0, preserve_profile: str = None) -> tuple["PaperAccount", dict]:
         """
         FULL RESET — Hard reset total cohérent.
 
@@ -106,6 +114,11 @@ class PaperTradingService:
 
         Contrat métier : après full reset, aucun artefact de l'ancien
         état ne doit subsister dans aucun panneau.
+
+        [v2.0.5-fix] preserve_profile : si fourni, le nouveau compte est créé
+        avec ce profil. Sinon, le profil de l'ancien compte est préservé.
+        Cela empêche la bascule silencieuse vers "conservative" (default SQLAlchemy)
+        lors d'un full reset.
         """
         from app.models.tick_activity_log import TickActivityLog
         from app.models.risk_config import RiskConfig
@@ -113,6 +126,16 @@ class PaperTradingService:
         from app.models.paper_run import PaperRun
 
         purged = {}
+
+        # [v2.0.5-fix] Capturer le profil AVANT la purge.
+        # Sans cela, le default SQLAlchemy "conservative" écrase le profil actif.
+        old_account = self.db.query(PaperAccount).first()
+        saved_profile = preserve_profile
+        if not saved_profile and old_account:
+            saved_profile = getattr(old_account, "active_profile", None)
+        # Fallback ultime : "conservative" (ne devrait jamais arriver en pratique)
+        if not saved_profile:
+            saved_profile = "conservative"
 
         # 1. Purge tick_activity_log — évite pollution diagnostic
         purged["tick_activity_log"] = self.db.query(TickActivityLog).delete()
@@ -147,19 +170,23 @@ class PaperTradingService:
 
         btc_price = self._get_current_price()
 
+        # [v2.0.5-fix] Le profil est explicitement restauré dans le nouveau compte.
+        # Avant ce fix, le default SQLAlchemy "conservative" écrasait silencieusement
+        # le profil demandé lors de chaque full reset.
         account = PaperAccount(
             initial_capital=initial_capital,
             current_capital=initial_capital,
             peak_capital=initial_capital,
             btc_price_at_start=btc_price,
             is_active=False,
+            active_profile=saved_profile,
         )
         self.db.add(account)
         self.db.commit()
         self.db.refresh(account)
         logger.info(
             f"🔥 FULL RESET : capital={initial_capital}, "
-            f"btc_price_start={btc_price}, purged={purged}"
+            f"btc_price_start={btc_price}, active_profile={saved_profile}, purged={purged}"
         )
         return account, purged
 

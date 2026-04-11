@@ -340,6 +340,9 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
 
   // Reset COMPLET — DESTRUCTIF : supprime TOUT (trades, learning, runs, logs, risk)
   // Protégé par saisie obligatoire du mot "RESET"
+  // [v2.0.5-fix] Après le reset, le profil sélectionné est restauré explicitement.
+  // Avant, le backend recréait le compte avec active_profile="conservative" (default SQLAlchemy)
+  // et le frontend ne le restaurait jamais → bascule silencieuse.
   const handleFullReset = async () => {
     const confirmation = window.prompt(
       '⚠️ ATTENTION : Ceci effectue un FULL RESET TOTAL.\n\n' +
@@ -350,17 +353,27 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
       '• Toutes les suggestions IA\n' +
       '• Toutes les campagnes de validation (runs)\n' +
       '• Le risk config sera réinitialisé\n\n' +
+      'Le profil actif (' + selectedProfile + ') sera CONSERVÉ.\n\n' +
       'Cette action est IRRÉVERSIBLE.\n\n' +
       'Pour confirmer, tapez RESET en majuscules :'
     );
     if (confirmation === 'RESET') {
       const result = await reset(Number(capital) || 10000);
+      // [v2.0.5-fix] Restaurer le profil actif après le reset.
+      // Le backend préserve déjà le profil (v2.0.5-fix), mais on double la sécurité
+      // avec une restauration explicite côté frontend.
+      try {
+        await setPaperProfile(selectedProfile);
+        setActiveProfile(selectedProfile);
+      } catch {
+        console.error('Impossible de restaurer le profil après reset');
+      }
       // Notifier le parent pour rafraîchir RiskPanel et autres panels
       onResetComplete?.();
       if (result) {
         // Afficher un résumé de ce qui a été purgé
         const summary = result.reset_details.join('\n');
-        window.alert(`✅ ${result.message}\n\n${summary}`);
+        window.alert(`✅ ${result.message}\n\nProfil restauré : ${selectedProfile}\n\n${summary}`);
       }
     }
   };
@@ -381,6 +394,14 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
     // [v2.0.3-fix] Activer le compte avant de démarrer l'auto-tick.
     // Avant, "Auto custom" démarrait les ticks sans activation,
     // ce qui causait des réponses "inactive" en boucle.
+    // [v2.0.5-fix] On pose aussi le profil sélectionné pour éviter
+    // qu'un compte fraîchement créé garde le default "conservative".
+    try {
+      await setPaperProfile(selectedProfile);
+      setActiveProfile(selectedProfile);
+    } catch {
+      // Non bloquant — le profil sera celui de la DB
+    }
     const isActive = status?.account?.is_active ?? false;
     if (!isActive) {
       await createPaperAccount({

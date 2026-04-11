@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.5] - 2026-04-12
+
+### Fixed
+- **INCIDENT GRAVE : Bascule silencieuse du profil actif vers "conservative"** — Le full reset (`reset_account()`) détruisait le compte et en recréait un avec le default SQLAlchemy `active_profile="conservative"`, écrasant le profil choisi par l'utilisateur (ex: scalping). Le même problème existait dans `get_or_create_account()` lors de la création initiale d'un compte. Corrigé : le profil est maintenant **capturé avant la purge** et **restauré dans le nouveau compte**. La route `POST /paper/autonomous/start` pose désormais le profil explicitement.
+- **Frontend : `handleFullReset` ne restaurait pas le profil** — Après un full reset, le frontend ne rappelait jamais `setPaperProfile()`. Le profil "conservative" (default) persistait. Corrigé : `handleFullReset` restaure explicitement le profil sélectionné après le reset.
+- **Frontend : `handleStartAuto` ne posait pas le profil** — Le mode auto custom démarrait sans poser le profil sélectionné. Corrigé : appel `setPaperProfile()` avant le démarrage.
+
+### Added
+- **11 tests de non-régression** (`TestProfilePreservation`) :
+  - Full reset préserve scalping / aggressive / balanced
+  - Full reset avec `preserve_profile` explicite
+  - `get_or_create_account` avec profil ne crée pas conservative
+  - `get_or_create_account` ne réécrit pas un profil existant
+  - `POST /paper/tick` ne modifie pas le profil
+  - `POST /paper/account` ne modifie pas le profil existant
+  - `POST /paper/account/reset` préserve le profil
+  - Full reset sans compte existant → conservative (attendu)
+  - `POST /paper/autonomous/start` avec profile=scalping → scalping
+
+### Technical
+- Modifié : `backend/app/services/paper_trading_service.py` — `reset_account()` capture et restaure le profil ; `get_or_create_account()` accepte `active_profile`
+- Modifié : `backend/app/services/autonomous_manager.py` — `_set_profile()` passe le profil à `get_or_create_account`
+- Modifié : `backend/app/api/routes/paper_trading.py` — `start_autonomous()` force `account.active_profile = request.profile`
+- Modifié : `frontend/src/components/PaperTradingPanel.tsx` — `handleFullReset` restaure le profil ; `handleStartAuto` pose le profil
+- Nombre total de tests : 1587→1598 (11 ajoutés, 0 supprimé).
+
 ## [2.0.4] - 2026-04-11
 
 ### Changed

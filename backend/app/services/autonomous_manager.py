@@ -254,8 +254,10 @@ class AutonomousManager:
             db = SessionLocal()
 
             # S'assurer que le compte existe et est actif
+            # [v2.0.5-fix] Passer le profil demandé pour que si le compte est créé,
+            # il ait le bon profil dès le départ (pas le default "conservative")
             service = PaperTradingService(db)
-            account = service.get_or_create_account()
+            account = service.get_or_create_account(active_profile=profile)
             if not account.is_active:
                 account.is_active = True
             # Activer multi-slot (3 positions simultanées)

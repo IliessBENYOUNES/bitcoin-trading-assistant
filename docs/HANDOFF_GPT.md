@@ -1,81 +1,81 @@
-# HANDOFF GPT — Audit scalping + Export enrichi + Learning runtime v2.0.4
+# HANDOFF GPT — Incident grave : bascule silencieuse du profil actif v2.0.5
 
-**Date :** 11 avril 2026  
-**Version :** v2.0.4  
-**Commit :** `73cdb28` — feat(scalping+learning): assouplissement micro-trend 2→1, export enrichi, learning runtime
+**Date :** 12 avril 2026  
+**Version :** v2.0.5  
+**Commit :** `(pending)` — fix(profile): préservation du profil actif lors du reset — anti-bascule conservative
 
 ---
 
 ## Problème
 
-Le scalping était complètement bloqué depuis le déploiement v2.0.3. Aucun trade scalping n'a été ouvert. Seul le slot aggressive produisait des trades. L'utilisateur demandait un audit chirurgical avec chiffres exacts.
+Le profil actif du paper trading basculait silencieusement de "scalping" vers "conservative" sans aucune action explicite de l'utilisateur. L'export runtime montrait `active_profile = "conservative"` avec un slot conservative ouvert, alors que l'utilisateur avait lancé le run en mode scalping.
 
 ## Diagnostic
 
-Audit des 966 ticks scalping en base (TickActivityLog) :
+Audit exhaustif de **tous les chemins** qui lisent ou écrivent `active_profile` dans le code. 5 chemins identifiés comme responsables :
 
-| Métrique | Valeur |
-|----------|--------|
-| Total ticks scalping | **966** |
-| Bloqués par `micro_trend_insufficient` | **966 (100%)** |
-| `micro_trend_score` dominant | **-2** (100% des ticks) |
-| `decision_action` | **acheter** (100% — le moteur VEUT acheter) |
-| `decision_score` | **65** (100% — bien au-dessus du seuil 30) |
+| # | Chemin | Fichier | Gravité |
+|---|--------|---------|---------|
+| 1 | `reset_account()` crée PaperAccount sans active_profile | `paper_trading_service.py:150` | 🔴 CRITIQUE |
+| 2 | `get_or_create_account()` crée PaperAccount sans active_profile | `paper_trading_service.py:80` | 🔴 CRITIQUE |
+| 3 | Fallback `or "conservative"` masque le None | `paper_trading_service.py:199, :1832` | 🟡 MASQUE |
+| 4 | Default SQLAlchemy `default="conservative"` | `paper_account.py:43` | 🟠 RACINE |
+| 5 | Frontend self-healing appelle `createPaperAccount` sans profil | `usePaperTrading.ts:178` | 🟡 INDIRECT |
 
 ## Cause racine
 
-Le gate `min_micro_trend_long=2` (ajouté en v2.0.3) exige un `micro_trend_score ≥ 2` pour ouvrir un long scalping. Or le BTC était en micro-tendance baissière persistante (mt_score=-2). Ce gate VETO bloquait 100% des ticks scalping. Aucun autre gate (buy_threshold, economic, structural) n'était même atteint.
+**Catégorie : C — Valeur par défaut destructrice + D — Reset qui écrase le profil.**
+
+Le modèle SQLAlchemy `PaperAccount` a `active_profile` avec `default="conservative"` (ligne 43 de `paper_account.py`). C'est le comportement attendu pour une création initiale, mais c'est destructeur quand le compte est recréé par un `reset_account()` : l'ancien profil est détruit avec le compte, et le nouveau est créé avec le default "conservative" — le profil demandé par l'utilisateur est perdu.
+
+**Scénario reproduit :**
+1. L'utilisateur sélectionne "scalping" et lance le robot
+2. `setPaperProfile("scalping")` → `active_profile="scalping"` ✅
+3. Un full reset est déclenché (bouton frontend ou via processus)
+4. `reset_account()` → DELETE old PaperAccount → INSERT new PaperAccount(active_profile="conservative") ❌
+5. Aucun code ne restaure le profil après → le robot tourne en conservative
 
 ## Correction appliquée
 
-### BLOC A — Assouplissement scalping
+### Backend
 
-**Fichier :** `backend/app/services/trading_profile_service.py`  
-**Avant :** `min_micro_trend_long=2`  
-**Après :** `min_micro_trend_long=1`
+**Fichier 1 : `backend/app/services/paper_trading_service.py`**
+- `reset_account()` : Ajout du paramètre `preserve_profile`. Le profil de l'ancien compte est capturé AVANT la purge et restauré dans le nouveau compte.
+- `get_or_create_account()` : Ajout du paramètre `active_profile`. Si le compte est créé pour la première fois, le profil demandé est utilisé au lieu du default. Si le compte existe déjà, le profil n'est PAS écrasé.
 
-Justification :
-- mt≥1 = début de reprise → suffisant pour tenter un long
-- mt≤0 = flat ou baissier → toujours bloqué
-- Le buy_threshold (30) n'est PAS responsable (score=65)
-- Impact attendu : le scalping se déverrouille dès que BTC passe en début de reprise (mt=1), sans accepter le bruit directionnel (mt≤0)
+**Fichier 2 : `backend/app/api/routes/paper_trading.py`**
+- `start_autonomous()` : Ajout de `account.active_profile = request.profile` — force le profil demandé dans TOUS les cas (compte existant ou nouveau).
 
-### BLOC B — Export enrichi + Learning runtime
+**Fichier 3 : `backend/app/services/autonomous_manager.py`**
+- `_set_profile()` : Passe le profil à `get_or_create_account(active_profile=profile)`.
 
-1. **EnrichedExportService** — Export tick-par-tick avec contexte complet :
-   - Prix BTC + variation inter-tick
-   - Décision moteur + raison de non-trade
-   - Ventilation des refus par gate (GateBlockDistribution)
-   - Détection des tendances BTC ratées (MissedTrendAnalysis)
-   - Endpoint `GET /audit/enriched-export`
+### Frontend
 
-2. **LearningService.learn_from_runtime()** — Apprentissage basé sur les refus :
-   - Analyse les TickActivityLog (pas les trades fermés)
-   - Suggestion 15 : gate micro-trend sur-bloquant (>50% des refus)
-   - Suggestion 16 : gate unique dominant (>70% des refus)
-   - Endpoint `POST /learning/learn-runtime`
+**Fichier 4 : `frontend/src/components/PaperTradingPanel.tsx`**
+- `handleFullReset()` : Après le reset, appel explicite `setPaperProfile(selectedProfile)` pour restaurer le profil.
+- `handleStartAuto()` : Appel `setPaperProfile(selectedProfile)` avant de démarrer l'auto-tick.
 
 ## Ce qui n'a PAS été touché
 
 - ❌ Aggressive (sanctuarisé)
-- ❌ buy_threshold (pas le problème, score=65 >> 30)
-- ❌ min_score (pas le problème)
-- ❌ Trailing stop, stale exit, momentum fade
-- ❌ Economic gate, structural proofs
-- ❌ Frontend (aucun changement)
+- ❌ Logique de trading / tick / SL/TP
+- ❌ Gate économique, structural proofs
+- ❌ Decision engine, scoring
+- ❌ Default SQLAlchemy dans le modèle (gardé pour la rétrocompatibilité, le fix est au niveau service)
+- ❌ Schema PaperAccountCreate (pas de champ active_profile ajouté — le profil se gère via `POST /paper/profile`)
 
 ## Validations
 
-- ✅ **1587 tests** backend passent (1554 + 33 nouveaux)
+- ✅ **1598 tests** backend passent (1587 + 11 nouveaux)
 - ✅ `tsc --noEmit` clean
-- ✅ Endpoints testés et accessibles
+- ✅ 11 tests de non-régression spécifiques à l'incident
 
 ## Documentation mise à jour
 
 | Document | Mis à jour |
 |----------|-----------|
-| `docs/CURRENT_STATE.md` | ✅ Version, tests, features v2.0.4 |
-| `CHANGELOG.md` | ✅ Nouvelle entrée [2.0.4] |
+| `docs/CURRENT_STATE.md` | ✅ Version 2.0.5, tests 1598, feature fix |
+| `CHANGELOG.md` | ✅ Nouvelle entrée [2.0.5] avec Fixed + Added + Technical |
 | `docs/ROADMAP.md` | — (pas de changement de phase) |
 | `docs/requirements_traceability.md` | — (pas de nouvelles exigences formelles) |
 | `docs/HANDOFF_GPT.md` | ✅ Ce fichier |
@@ -84,18 +84,18 @@ Justification :
 
 | Élément | Valeur |
 |---------|--------|
-| Version | v2.0.4 |
-| Tests backend | 1587 passing ✅ |
+| Version | v2.0.5 |
+| Tests backend | 1598 passing ✅ |
 | TypeScript | tsc --noEmit clean ✅ |
-| Scalping gate micro-trend | mt≥1 (était mt≥2) |
-| Export enrichi | GET /audit/enriched-export |
-| Learning runtime | POST /learning/learn-runtime |
+| Profil préservé lors du reset | ✅ Prouvé par 11 tests |
+| Chemins corrigés | 5/5 |
 
 ## Prochaine action recommandée
 
-1. **Laisser tourner** le robot — quand BTC passera en micro-tendance ≥1, le scalping se déverrouillera
-2. **Vérifier** via `GET /audit/enriched-export?profile_type=scalping` que les gates suivants fonctionnent correctement une fois micro-trend dépassé
-3. **Si aucun trade après plusieurs heures avec mt≥1** : utiliser `POST /learning/learn-runtime` pour identifier le gate suivant
+1. **Commit + push** le fix
+2. **Relancer un run scalping** propre
+3. **Vérifier** via `GET /paper/profile` que le profil reste "scalping" après chaque action
+4. **Si le profil bascule encore** : utiliser les tests de diagnostic
 
 ## Commandes de relance
 
@@ -106,12 +106,15 @@ cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 80
 # Frontend
 cd frontend && npm run dev
 
-# Tests
+# Tests complets
 cd backend && python -m pytest tests/ -v
 
-# Export enrichi scalping
-curl http://localhost:8000/audit/enriched-export?profile_type=scalping
+# Tests spécifiques anti-bascule
+cd backend && python -m pytest tests/test_paper_trading.py::TestProfilePreservation -v
 
-# Learning runtime
-curl -X POST http://localhost:8000/learning/learn-runtime?profile_type=scalping
+# Vérifier le profil actif
+curl http://localhost:8000/paper/profile
+
+# Lancer un run scalping autonome
+curl -X POST http://localhost:8000/paper/autonomous/start -H "Content-Type: application/json" -d '{"interval_seconds": 10, "profile": "scalping"}'
 ```

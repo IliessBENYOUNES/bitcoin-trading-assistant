@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
-> **Dernière mise à jour :** 11 avril 2026
-> **Version :** v2.0.4
+> **Dernière mise à jour :** 12 avril 2026
+> **Version :** v2.0.5
 > **Branche :** `master`
-> **Dernier commit :** `73cdb28` — feat(scalping+learning): assouplissement micro-trend 2→1, export enrichi, learning runtime
+> **Dernier commit :** `(pending)` — fix(profile): préservation du profil actif lors du reset — anti-bascule conservative
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.4** |
+| Version courante | **v2.0.5** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1587 tests**, tous passing ✅ |
+| Tests backend | **1598 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.4 livré** — Audit scalping + export enrichi + learning runtime |
+| Phase courante | **v2.0.5 livré** — Fix incident bascule profil |
 
 ### ⚠️ État de maturité honnête
 
@@ -42,6 +42,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.
 - **[v2.0.0-fix] Stale exit corrigé** — Le seuil de stagnation des profils tight utilise désormais `trailing_stop_activation_pct` (0.20%) au lieu de `profit_take_pct` (0.8%). Un trade à +0.46% n'est plus fermé comme "stagnant" — le trailing stop gère la sortie.
 - **[v2.0.0-fix] Multi-slot préservé après full reset** — `max_open_positions` default passé de 1 à 3 dans `FullResetRequest` et `PaperAccountCreate`. Avant, un full reset recréait le compte en mono-position, empêchant le slot aggressive de tourner. Désormais, le multi-slot est toujours actif par défaut.
+- **[v2.0.5-fix] Préservation du profil actif lors du reset** — INCIDENT GRAVE : le full reset écrasait `active_profile` vers "conservative" (default SQLAlchemy). Corrigé : le profil est capturé avant la purge et restauré dans le nouveau compte. La route autonomous/start force le profil demandé. Le frontend restaure le profil après reset. 11 tests de non-régression ajoutés.
 - Backtesting et time-travel walk-forward
 - Paper trading multi-slot avec profils et levier auto
 - Diagnostic fréquence et opportunités manquées
