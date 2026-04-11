@@ -1,68 +1,71 @@
-# HANDOFF GPT — Fix auto-activation paper trading v2.0.3
+# HANDOFF GPT — État du run live v2.0.3
 
 **Date :** 11 avril 2026  
-**Version :** v2.0.3
+**Version :** v2.0.3  
+**Commit :** `de99aca` — fix(paper): auto-activation du compte dans POST /paper/tick + self-healing frontend
 
 ---
 
-## Problème
+## Contexte
 
-Après un full reset ou au premier lancement, le paper trading reste "INACTIF" même quand le robot est lancé. Le message "Paper trading désactivé. Activez-le via POST /paper/account." s'affiche en boucle dans les auto-ticks. L'utilisateur final ne peut pas trader sans faire une requête POST manuelle via Postman.
+L'utilisateur a lancé le robot en mode **Scalping** depuis le frontend (bouton "Lancer le Robot"). Le robot tourne avec tick auto toutes les **5 secondes**. Le multi-slot est actif : **scalping** (15m) + **aggressive** (1h) en parallèle, jusqu'à 3 positions simultanées.
 
-## Diagnostic
+## Fix appliqué juste avant ce run
 
-Le bouton "Lancer le Robot" appelle bien `createPaperAccount()` pour activer le compte, puis `startAuto()` pour démarrer les ticks automatiques. Mais si l'activation échoue silencieusement (erreur réseau, timing, etc.) ou si le bouton "Auto custom" est utilisé (qui ne fait AUCUNE activation), le robot tourne en boucle sur un compte inactif.
+Le paper trading était bloqué sur "INACTIF" après un full reset. Le message "Activez-le via POST /paper/account" apparaissait — inadapté pour un utilisateur final. 
 
-## Cause racine
+**Corrections (commit `de99aca`) :**
+1. `POST /paper/tick` auto-active le compte si inactif + configure multi-slot ≥3
+2. Frontend `doAutoTick` + `manualTick` : si "inactive" → `createPaperAccount()` + retry (self-healing)
+3. Frontend `handleStartAuto` : active le compte avant de démarrer l'auto-tick
+4. Message UX : "Cliquez sur Lancer le Robot" au lieu de "POST /paper/account"
 
-1. **`POST /paper/tick` ne fait pas d'auto-activation** : si le compte est inactif, le tick retourne juste "inactive" sans rien faire
-2. **`handleStartAuto` (bouton "Auto custom") ne fait aucune activation** : il appelle `startAuto()` directement sans vérifier/activer le compte
-3. **Pas de self-healing frontend** : si un tick retourne "inactive", le frontend affiche le message sans tenter de corriger
-4. **Message technique inadapté** : "Activez-le via POST /paper/account." est un message développeur, pas un message utilisateur final
+## Diagnostic du run en cours (après ~10 min)
 
-## Correction appliquée
+**Aucun trade ouvert.** Les deux slots retournent `hold` à chaque tick :
 
-### 4 changements (backend + frontend) :
+| Slot | Résultat | Raison | Détail |
+|------|----------|--------|--------|
+| ⚡ Scalping | `hold` | `micro_trend_insufficient` | `micro_trend_score = -2` < 2 requis. La micro-tendance BTC est baissière — le gate v2.0.3 bloque les longs sans tendance. |
+| 🔥 Aggressive | `hold` | score trop faible | Score = 17, confiance = LOW. Seuil buy = 20 → pas atteint. |
 
-| Fichier | Changement |
-|---------|-----------|
-| `backend/app/api/routes/paper_trading.py` | `POST /paper/tick` auto-active le compte si inactif + configure multi-slot ≥3 |
-| `backend/app/services/paper_trading_service.py` | Message UX : "Cliquez sur Lancer le Robot" au lieu de "POST /paper/account" |
-| `frontend/src/hooks/usePaperTrading.ts` | `doAutoTick` + `manualTick` : si "inactive" → `createPaperAccount()` + retry |
-| `frontend/src/components/PaperTradingPanel.tsx` | `handleStartAuto` active le compte avant de démarrer l'auto-tick |
-| `backend/tests/test_paper_trading.py` | 1 test endpoint mis à jour (inactive → no_price après auto-activation) |
+**BTC :** ~$73 550 (en légère baisse)
 
-## Ce qui n'a PAS été touché
+## Analyse
 
-- ❌ Slot aggressive (sanctuarisé)
-- ❌ Scoring global / DecisionService
-- ❌ Stale exit logic
-- ❌ Momentum fade
-- ❌ Economic viability gate
-- ❌ Scheduler paper_trading_job (garde le check is_active — le scheduler ne doit PAS auto-activer)
-- ❌ Service tick() (le check is_active reste dans le service, l'auto-activation est dans la route HTTP)
-- ❌ Full Reset (crée toujours le compte avec is_active=False — c'est correct)
+Le comportement est **normal et attendu** après les corrections v2.0.3 :
+- **Avant v2.0.3** : 57 trades/nuit, 91% closed_stale (morts) — le robot entrait sur du bruit
+- **Après v2.0.3** : les gates filtrent les entrées sans tendance. Les seuils sont :
+  - Scalping : `buy_threshold=30`, `min_score=30`, `min_micro_trend_long=2`
+  - Aggressive : `buy_threshold=20`, analyse sur 1h
 
-## Validations
+Le BTC est actuellement en micro-tendance baissière (`micro_trend_score = -2`), avec un score composite faible (17). Aucun des deux slots ne voit d'opportunité.
 
-- ✅ 1554 tests backend passent (0 ajouté, 0 supprimé, 1 mis à jour)
-- ✅ Aucune régression
-- ✅ `tsc --noEmit` sans erreur
-- ✅ L'auto-activation est triple-couche : backend endpoint + frontend doAutoTick + frontend handleStartAuto
+**Ce n'est PAS un bug.** C'est la correction qui fonctionne : le robot attend une vraie opportunité au lieu d'entrer sur du bruit.
 
-## Documentation mise à jour
+## Ce qui va déclencher un trade
 
-| Document | Changement |
-|----------|-----------|
-| `docs/CURRENT_STATE.md` | Version v2.0.3, tests 1554, auto-activation documentée |
-| `CHANGELOG.md` | Section Fixed ajoutée dans v2.0.3 + Technical mis à jour |
-| `docs/HANDOFF_GPT.md` | Ce fichier |
+- **Scalping long** : quand `micro_trend_score ≥ 2` ET `composite_score ≥ 30` ET `structural_proofs ≥ 2`
+- **Scalping short** : quand `score ≤ -30` ET mean-reversion confirmée (2 oscillateurs convergents)
+- **Aggressive** : quand `score ≥ 20` (ou `≤ -15` pour short) sur timeframe 1h
 
-## État actuel
+## Prochaines actions recommandées
 
-- **Version :** v2.0.3
-- **Tests :** 1554 passing
-- **Prochaine action :** Lancer le robot depuis le frontend, vérifier que le paper trading s'active automatiquement et que les ticks fonctionnent
+1. **Laisser tourner** le robot — les conditions de marché changent, un trade finira par passer
+2. **Si aucun trade après plusieurs heures** : considérer un léger assouplissement du `min_micro_trend_long` (2→1) ou du `buy_threshold` (30→28) pour le scalping
+3. **Pour un run nocturne** : passer en mode **Headless** (bouton vert) pour que le robot tourne côté serveur même navigateur fermé
+
+## État technique
+
+| Élément | Valeur |
+|---------|--------|
+| Version | v2.0.3 |
+| Tests backend | 1554 passing ✅ |
+| TypeScript | tsc --noEmit clean ✅ |
+| Backend | `uvicorn app.main:app --reload --port 8000` |
+| Frontend | `npm run dev` (Vite) |
+| Profil actif | scalping (multi-slot: scalping + aggressive) |
+| Compte | actif, capital $10 000, 0 trades |
 
 ## Commandes de relance
 
@@ -70,9 +73,12 @@ Le bouton "Lancer le Robot" appelle bien `createPaperAccount()` pour activer le 
 # Backend
 cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 8000
 
+# Frontend
+cd frontend && npm run dev
+
 # Tests
 cd backend && python -m pytest tests/ -v
 
-# Frontend
-cd frontend && npm run dev
+# Diagnostic rapide tick
+cd backend && python -c "import urllib.request, json; req = urllib.request.Request('http://localhost:8000/paper/tick', method='POST', headers={'Content-Type': 'application/json'}, data=b''); r = urllib.request.urlopen(req); t = json.loads(r.read()); print(t['action_taken'], '-', t['detail'][:200])"
 ```

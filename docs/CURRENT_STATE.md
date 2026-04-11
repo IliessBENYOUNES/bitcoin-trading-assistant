@@ -117,6 +117,14 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.
 - ⚠️ **Gate v2.0 = NOT_READY** : La gate existe mais le système n'a pas encore assez de trades pour passer les critères.
 
+**État du run live v2.0.3 (11 avril 2026) :**
+- Robot lancé en mode Scalping (multi-slot : scalping + aggressive)
+- Après ~10 min : 0 trades ouverts — **comportement attendu**
+- Scalping bloqué par gate micro-tendance (`micro_trend_score = -2` < 2 requis)
+- Aggressive bloqué par score insuffisant (17 < buy_threshold 20)
+- BTC ~$73 550 en micro-tendance baissière → pas d'opportunité détectée
+- Le robot attend une vraie opportunité au lieu d'entrer sur du bruit (c'est le but de v2.0.3)
+
 ---
 
 ## 2. Architecture
