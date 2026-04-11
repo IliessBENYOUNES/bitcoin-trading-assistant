@@ -377,7 +377,18 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
     }
   };
 
-  const handleStartAuto = () => {
+  const handleStartAuto = async () => {
+    // [v2.0.3-fix] Activer le compte avant de démarrer l'auto-tick.
+    // Avant, "Auto custom" démarrait les ticks sans activation,
+    // ce qui causait des réponses "inactive" en boucle.
+    const isActive = status?.account?.is_active ?? false;
+    if (!isActive) {
+      await createPaperAccount({
+        initial_capital: Number(capital) || 10000,
+        max_open_positions: 3,
+      });
+      await refresh();
+    }
     startAuto(selectedInterval);
   };
 

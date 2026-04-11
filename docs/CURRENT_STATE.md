@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 11 avril 2026
-> **Version :** v2.0.2
+> **Version :** v2.0.3
 > **Branche :** `master`
-> **Dernier commit :** feat(audit): runtime correlation BTC + learning enrichi contexte BTC (17 tests)
+> **Dernier commit :** fix(paper): auto-activation du compte dans POST /paper/tick + self-healing frontend
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.2** |
+| Version courante | **v2.0.3** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1542 tests**, tous passing ✅ |
+| Tests backend | **1554 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.2 livré** — Corrélation runtime BTC + learning enrichi |
+| Phase courante | **v2.0.3 livré** — Scalping recalibré + auto-activation paper trading |
 
 ### ⚠️ État de maturité honnête
 
@@ -36,6 +36,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.0] Structural proofs gate** — exige ≥2 preuves structurelles (volume, micro-trend, price_position, range) pour entrer en scalping
 - **[v2.0.0] Scoring refondu** — oscillateurs (Bollinger, StochRSI) dégradés à 0.3x en tendance, price_position boosté à 1.4x
 - **[v2.0.3] Paramètres scalping recalibrés** — buy_threshold 30 (was 25), min_score 30 (was 25), trailing activation 0.15% (was 0.20%), gate micro-trend ≥2 pour longs, short_min_score 30 (was 25)
+- **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.
 - **[v2.0.0-fix] Stale exit corrigé** — Le seuil de stagnation des profils tight utilise désormais `trailing_stop_activation_pct` (0.20%) au lieu de `profit_take_pct` (0.8%). Un trade à +0.46% n'est plus fermé comme "stagnant" — le trailing stop gère la sortie.
 - **[v2.0.0-fix] Multi-slot préservé après full reset** — `max_open_positions` default passé de 1 à 3 dans `FullResetRequest` et `PaperAccountCreate`. Avant, un full reset recréait le compte en mono-position, empêchant le slot aggressive de tourner. Désormais, le multi-slot est toujours actif par défaut.
 - Backtesting et time-travel walk-forward

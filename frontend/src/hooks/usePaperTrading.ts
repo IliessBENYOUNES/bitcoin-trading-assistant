@@ -133,7 +133,14 @@ export function usePaperTrading({
 
   const manualTick = useCallback(async (): Promise<PaperTickResult | null> => {
     try {
-      const result = await paperTick();
+      let result = await paperTick();
+
+      // [v2.0.3-fix] Auto-activation si inactif (même logique que doAutoTick)
+      if (result.action_taken === 'inactive') {
+        await createPaperAccount({ max_open_positions: 3 });
+        result = await paperTick();
+      }
+
       setLastTick(result);
       if (isTradeAction(result.action_taken)) {
         setTradeVersion(prev => prev + 1);
@@ -162,7 +169,16 @@ export function usePaperTrading({
     if (autoTickingRef.current) return;
     autoTickingRef.current = true;
     try {
-      const result = await paperTick();
+      let result = await paperTick();
+
+      // [v2.0.3-fix] Self-healing : si le compte est inactif, l'activer
+      // automatiquement et relancer le tick. L'utilisateur ne doit jamais
+      // avoir à faire de requête manuelle pour activer le paper trading.
+      if (result.action_taken === 'inactive') {
+        await createPaperAccount({ max_open_positions: 3 });
+        result = await paperTick();
+      }
+
       setLastTick(result);
       setAutoTickCount(prev => prev + 1);
       if (isTradeAction(result.action_taken)) {

@@ -19,14 +19,25 @@ All notable changes to this project will be documented in this file.
   - Économie : gate économique toujours valide, capture minimum cohérente
 - **3 tests mis à jour** (`TestScalpingRecalibration` dans `test_scalping_audit.py`, `TestScalpingProfileV200` + `TestReasonLabels` dans `test_pivot_v200.py`)
 
+### Fixed
+- **Auto-activation paper trading** — Le compte paper trading est désormais auto-activé quand un tick est demandé. Avant, si le compte était inactif (après un full reset ou au premier lancement), le tick retournait "Paper trading désactivé. Activez-le via POST /paper/account." et l'utilisateur devait faire une requête POST manuelle. Maintenant :
+  - **Backend** : `POST /paper/tick` auto-active le compte si inactif (+ configure multi-slot ≥3)
+  - **Frontend** : `doAutoTick` et `manualTick` font du self-healing (si "inactive" → activation + retry)
+  - **Frontend** : `handleStartAuto` (bouton "Auto custom") active le compte comme "Lancer le Robot"
+  - **Backend** : Le message d'erreur est devenu user-friendly ("Cliquez sur Lancer le Robot" au lieu de "POST /paper/account")
+
 ### Technical
 - Modifié : `backend/app/schemas/journal.py` — Ajout champ `min_micro_trend_long` à `TradingProfileParams`
 - Modifié : `backend/app/services/trading_profile_service.py` — Preset scalping recalibré (3 paramètres + 1 nouveau)
-- Modifié : `backend/app/services/paper_trading_service.py` — Gate micro-trend dans la boucle d'entrée (~30 LOC)
+- Modifié : `backend/app/services/paper_trading_service.py` — Gate micro-trend dans la boucle d'entrée (~30 LOC) + message UX "Cliquez sur Lancer le Robot"
+- Modifié : `backend/app/api/routes/paper_trading.py` — Auto-activation du compte dans `POST /paper/tick`
 - Modifié : `backend/app/services/journal_service.py` — Label `micro_trend_insufficient` ajouté à `REASON_LABELS`
+- Modifié : `frontend/src/hooks/usePaperTrading.ts` — Self-healing dans `doAutoTick` et `manualTick` (inactive → activate + retry)
+- Modifié : `frontend/src/components/PaperTradingPanel.tsx` — `handleStartAuto` active le compte avant de démarrer
 - Modifié : `backend/tests/test_pivot_v200.py` — 14 tests ajoutés, 2 mis à jour
 - Modifié : `backend/tests/test_scalping_audit.py` — 3 tests mis à jour
-- Nombre total de tests : 1542→1556 (14 ajoutés, 0 supprimé).
+- Modifié : `backend/tests/test_paper_trading.py` — 1 test endpoint mis à jour (inactive → no_price après auto-activation)
+- Nombre total de tests : 1542→1554 (14 ajoutés, 0 supprimé).
 
 ## [2.0.2] - 2026-04-11
 

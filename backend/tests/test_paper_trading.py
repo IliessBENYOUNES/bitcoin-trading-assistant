@@ -967,13 +967,17 @@ class TestPaperTradingEndpoints:
         assert "buy_hold_pnl_pct" in data
 
     def test_tick_manual(self, client, db_session):
-        """POST /paper/tick exécute un tick."""
+        """POST /paper/tick auto-active le compte et exécute un tick.
+
+        [v2.0.3-fix] L'endpoint auto-active le compte si inactif.
+        Sans données de prix, le résultat est 'no_price' (et non plus 'inactive').
+        """
         resp = client.post("/paper/tick")
         assert resp.status_code == 200
         data = resp.json()
         assert "action_taken" in data
-        # Inactif par défaut
-        assert data["action_taken"] == "inactive"
+        # Auto-activé → no_price (pas de candles en base)
+        assert data["action_taken"] == "no_price"
 
     def test_close_no_position(self, client, db_session):
         """POST /paper/close sans position ouverte → 404."""

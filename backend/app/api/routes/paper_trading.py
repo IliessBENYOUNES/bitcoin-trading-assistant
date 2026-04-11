@@ -168,6 +168,10 @@ def manual_tick(db: Session = Depends(get_db)):
 
     [v1.9.6] Protégé par un verrou : un seul tick à la fois.
     Cela empêche la race condition de double ouverture de slot.
+
+    [v2.0.3-fix] Auto-activation : si le compte existe mais est inactif,
+    le tick l'active automatiquement avant d'exécuter. L'utilisateur final
+    ne doit jamais avoir à faire de requête POST manuelle pour activer.
     """
     acquired = _tick_lock.acquire(blocking=False)
     if not acquired:
@@ -182,6 +186,14 @@ def manual_tick(db: Session = Depends(get_db)):
         )
     try:
         service = PaperTradingService(db)
+        # [v2.0.3-fix] Auto-activation du compte si inactif.
+        # Quand le frontend appelle /paper/tick, c'est que l'utilisateur
+        # veut trader — pas besoin de lui demander d'activer manuellement.
+        account = service.get_or_create_account()
+        if not account.is_active:
+            account.is_active = True
+            account.max_open_positions = max(account.max_open_positions or 1, 3)
+            db.commit()
         return service.tick()
     finally:
         _tick_lock.release()

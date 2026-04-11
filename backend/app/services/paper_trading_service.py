@@ -245,7 +245,7 @@ class PaperTradingService:
         if not account.is_active:
             return PaperTickResult(
                 action_taken="inactive",
-                detail="Paper trading désactivé. Activez-le via POST /paper/account.",
+                detail="Paper trading désactivé. Cliquez sur « Lancer le Robot » pour démarrer.",
                 current_price=0.0,
                 timestamp=now.isoformat(),
                 non_trade_reason="inactive",
