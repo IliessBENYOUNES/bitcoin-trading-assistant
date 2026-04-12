@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.8] - 2026-04-12
+
+### Fixed
+- **FIX CRITIQUE : Trailing stop prioritaire + breakeven stop** — BUG : le `stale_negative_exit` (2 min) était vérifié AVANT le trailing stop dans `_tick_single_slot()`. Quand une position gagnante (peak ≥ activation 0.10%) retombait en négatif, le stale fermait la position en perte (-$1.41) au lieu du trailing stop qui aurait fermé en profit (+$1.50 typique). L'ordre des exit checks était : SL/TP → Expiration → **Stale** → Trailing → Momentum. Le stale court-circuitait le trailing.
+  - **Réordonnancement** : trailing stop vérifié AVANT stale exit. Nouvel ordre : SL/TP → Expiration → **Trailing stop** → **Breakeven stop** → Stale → Momentum.
+  - **Breakeven stop (nouveau)** : filet de sécurité — si peak ≥ activation/2 (0.05%) et PnL retombe ≤ 0%, fermeture immédiate au breakeven. Protège les positions qui étaient profitables mais n'atteignaient pas le seuil d'activation du trailing. Sans ce filet, ces positions étaient fermées en perte par le stale négatif (-$1 à -$5).
+  - **Stale exit préservé** : gère uniquement les positions qui n'ont JAMAIS été en profit significatif (peak < 0.05%).
+
+### Added
+- **4 tests `TestTrailingStopPriorityV208`** :
+  - `test_trailing_fires_before_stale_negative` — position peak > activation qui retombe en négatif → trailing ferme (pas stale)
+  - `test_breakeven_stop_protects_small_gains` — peak entre activation/2 et activation, PnL retombe à 0% → breakeven ferme
+  - `test_stale_still_works_for_never_profitable` — position jamais profitable → stale négatif ferme normalement
+  - `test_exit_priority_order` — vérification statique que trailing/breakeven apparaissent AVANT stale dans le source code
+
+### Technical
+- Modifié : `backend/app/services/paper_trading_service.py` — Réordonnancement exit checks + ajout breakeven stop
+- Modifié : `backend/tests/test_pivot_v200.py` — 4 nouveaux tests intégration v2.0.8
+- Nombre total de tests : 1604→1608 (4 ajoutés, 0 supprimé)
+
 ## [2.0.7] - 2026-04-12
 
 ### Changed

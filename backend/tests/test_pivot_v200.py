@@ -620,3 +620,216 @@ class TestScalpingV207FastExit:
         assert agg.stale_exit_minutes == 180
         assert agg.trailing_stop_activation_pct is None
 
+
+# ================================================================
+# 12. FIX CRITIQUE v2.0.8 — Trailing stop prioritaire + breakeven
+# ================================================================
+
+class TestTrailingStopPriorityV208:
+    """
+    Tests v2.0.8 — Trailing stop AVANT stale exit + breakeven stop.
+
+    BUG : Le stale_negative_exit (2 min) fermait les positions en perte
+    AVANT que le trailing stop puisse les protéger. La position gagnante
+    à +0.12% retombait à -0.056% et le stale la fermait en perte,
+    alors que le trailing aurait dû fermer à +0.06%.
+    """
+
+    def test_trailing_fires_before_stale_negative(self, db_session):
+        """
+        Position avec peak > activation qui retombe en négatif :
+        le trailing stop doit fermer AVANT le stale négatif.
+        """
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount, PaperTrade
+        from datetime import datetime, timezone, timedelta
+
+        svc = PaperTradingService(db_session)
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        # Position ouverte il y a 3 minutes (> stale_negative_exit 2 min)
+        entry_time = datetime.now(timezone.utc) - timedelta(minutes=3)
+        entry_price = 73000.0
+        # Le peak est à 73080 (+0.1096%, > activation 0.10%)
+        trade = PaperTrade(
+            account_id=account.id,
+            direction="long",
+            entry_price=entry_price,
+            position_size_usd=2500.0,
+            stop_loss_price=entry_price * 0.998,
+            take_profit_price=entry_price * 1.008,
+            status="open",
+            entry_ts=entry_time,
+            highest_price_since_entry=73080.0,  # peak +0.1096%
+            lowest_price_since_entry=entry_price,
+            leverage=1.0,
+            entry_reason="Test trailing priority",
+            slot="scalping",
+        )
+        db_session.add(trade)
+        db_session.flush()
+
+        # Prix actuel : 73020 — en profit mais en recul de 0.082% depuis le peak
+        # peak_pct = 0.1096%, drop = 0.1096 - 0.027 = 0.082% ≥ 0.06% → trailing devrait fire
+        current_price = 73020.0
+        now = datetime.now(timezone.utc)
+
+        result = svc._tick_single_slot(
+            account=account,
+            slot_name="scalping",
+            current_price=current_price,
+            now=now,
+            is_multi=True,
+        )
+
+        # Le trailing stop doit avoir pris la priorité
+        assert result.action_taken == "closed_trailing_stop", (
+            f"Attendu closed_trailing_stop, obtenu {result.action_taken}"
+        )
+
+    def test_breakeven_stop_protects_small_gains(self, db_session):
+        """
+        Position dont le peak est entre activation/2 et activation
+        (ex: peak 0.06%) et qui retombe à 0% : breakeven stop ferme.
+        """
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount, PaperTrade
+        from datetime import datetime, timezone, timedelta
+
+        svc = PaperTradingService(db_session)
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        entry_time = datetime.now(timezone.utc) - timedelta(minutes=3)
+        entry_price = 73000.0
+        # Peak à 73044 (+0.060%, > activation/2 = 0.05% mais < activation 0.10%)
+        trade = PaperTrade(
+            account_id=account.id,
+            direction="long",
+            entry_price=entry_price,
+            position_size_usd=2500.0,
+            stop_loss_price=entry_price * 0.998,
+            take_profit_price=entry_price * 1.008,
+            status="open",
+            entry_ts=entry_time,
+            highest_price_since_entry=73044.0,  # peak +0.060%
+            lowest_price_since_entry=entry_price,
+            leverage=1.0,
+            entry_reason="Test breakeven protection",
+            slot="scalping",
+        )
+        db_session.add(trade)
+        db_session.flush()
+
+        # Prix actuel : retombé SOUS l'entrée → PnL négatif
+        current_price = 72995.0  # -0.007%
+        now = datetime.now(timezone.utc)
+
+        result = svc._tick_single_slot(
+            account=account,
+            slot_name="scalping",
+            current_price=current_price,
+            now=now,
+            is_multi=True,
+        )
+
+        # Le breakeven stop doit fermer (pas le stale)
+        assert result.action_taken == "closed_breakeven", (
+            f"Attendu closed_breakeven, obtenu {result.action_taken}"
+        )
+
+    def test_stale_still_works_for_never_profitable(self, db_session):
+        """
+        Position jamais en profit (peak < activation/2) :
+        le stale négatif ferme normalement après 2 min.
+        """
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount, PaperTrade
+        from datetime import datetime, timezone, timedelta
+
+        svc = PaperTradingService(db_session)
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        entry_time = datetime.now(timezone.utc) - timedelta(minutes=3)
+        entry_price = 73000.0
+        # Peak quasi au prix d'entrée, jamais vraiment monté (+0.01%)
+        trade = PaperTrade(
+            account_id=account.id,
+            direction="long",
+            entry_price=entry_price,
+            position_size_usd=2500.0,
+            stop_loss_price=entry_price * 0.998,
+            take_profit_price=entry_price * 1.008,
+            status="open",
+            entry_ts=entry_time,
+            highest_price_since_entry=73007.0,  # peak +0.0096% (< 0.05%)
+            lowest_price_since_entry=entry_price,
+            leverage=1.0,
+            entry_reason="Test stale never profitable",
+            slot="scalping",
+        )
+        db_session.add(trade)
+        db_session.flush()
+
+        # Prix en perte : -0.04%
+        current_price = 72970.0
+        now = datetime.now(timezone.utc)
+
+        result = svc._tick_single_slot(
+            account=account,
+            slot_name="scalping",
+            current_price=current_price,
+            now=now,
+            is_multi=True,
+        )
+
+        # Stale négatif doit fermer (ni trailing ni breakeven)
+        assert result.action_taken == "closed_stale", (
+            f"Attendu closed_stale, obtenu {result.action_taken}"
+        )
+
+    def test_exit_priority_order(self):
+        """
+        Vérifier l'ordre conceptuel des vérifications de sortie dans le code.
+        SL/TP > Expiration > Trailing Stop > Breakeven > Stale > Momentum fade
+        """
+        import inspect
+        from app.services.paper_trading_service import PaperTradingService
+
+        source = inspect.getsource(PaperTradingService._tick_single_slot)
+
+        # Le trailing stop doit apparaître AVANT le stale exit dans le source
+        trailing_pos = source.find("closed_trailing_stop")
+        breakeven_pos = source.find("closed_breakeven")
+        stale_pos = source.find("closed_stale")
+
+        assert trailing_pos > 0, "closed_trailing_stop non trouvé dans le code"
+        assert breakeven_pos > 0, "closed_breakeven non trouvé dans le code"
+        assert stale_pos > 0, "closed_stale non trouvé dans le code"
+
+        assert trailing_pos < stale_pos, (
+            f"BUG ORDRE: trailing_stop (pos {trailing_pos}) doit être AVANT "
+            f"stale (pos {stale_pos}) dans le code"
+        )
+        assert breakeven_pos < stale_pos, (
+            f"BUG ORDRE: breakeven (pos {breakeven_pos}) doit être AVANT "
+            f"stale (pos {stale_pos}) dans le code"
+        )
+

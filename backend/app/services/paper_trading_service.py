@@ -425,14 +425,86 @@ class PaperTradingService:
                     open_pos.lowest_price_since_entry = current_price
                     self.db.commit()
 
+            # [v2.0.8] TRAILING STOP — PRIORITÉ MAXIMALE (avant stale exit)
+            # BUG FIX CRITIQUE : Avant v2.0.8, le stale exit (lignes 428-500) était vérifié
+            # AVANT le trailing stop (lignes 502-540). Conséquence : quand une position
+            # gagnante (peak > activation) redescendait en négatif, le stale_negative_exit
+            # (2 min) se déclenchait EN PREMIER et fermait la position en perte, alors que
+            # le trailing stop aurait dû la fermer plus tôt, en profit.
+            # Exemple réel : peak +0.12%, trailing aurait dû fermer à +0.06% (drop 0.06%),
+            # mais le stale négatif fermait à -0.056% après 2 min.
+            # Fix : trailing stop vérifié EN PREMIER, il a la priorité sur le stale exit.
+            ts_pct = getattr(profile_params, "trailing_stop_pct", None) if profile_params else None
+            ts_activation = getattr(profile_params, "trailing_stop_activation_pct", None) if profile_params else None
+            if ts_pct and ts_activation:
+                unrealized_pnl_now = self._calc_unrealized_pnl(open_pos, current_price)
+                unrealized_pct_now = (unrealized_pnl_now / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
+
+                # Calculer le pic de PnL % via highest/lowest price
+                if open_pos.direction == "long" and open_pos.highest_price_since_entry:
+                    peak_pnl = self._calc_unrealized_pnl_at_price(open_pos, open_pos.highest_price_since_entry)
+                elif open_pos.direction == "short" and open_pos.lowest_price_since_entry:
+                    peak_pnl = self._calc_unrealized_pnl_at_price(open_pos, open_pos.lowest_price_since_entry)
+                else:
+                    peak_pnl = 0
+
+                peak_pct = (peak_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
+
+                # Condition 1 : Trailing stop classique
+                # Le pic a dépassé le seuil d'activation ET le PnL actuel
+                # a reculé de plus de trailing_stop_pct depuis le pic
+                if peak_pct >= ts_activation and (peak_pct - unrealized_pct_now) >= ts_pct:
+                    signal_reason = (
+                        f"Trailing stop : pic {peak_pct:.3f}%, actuel {unrealized_pct_now:.3f}%, "
+                        f"recul {(peak_pct - unrealized_pct_now):.3f}% ≥ seuil {ts_pct}%"
+                    )
+                    closed = self._close_position(open_pos, current_price, signal_reason, "closed_trailing_stop")
+                    _log_tick(action_taken="closed_trailing_stop", btc_price=current_price,
+                              had_open_position=True, trade_id=closed.id,
+                              leverage_final=getattr(closed, "leverage", 1.0))
+                    return PaperTickResult(
+                        action_taken="closed_trailing_stop",
+                        detail=f"Position fermée (trailing stop) : {signal_reason}",
+                        position_closed=PaperTradeResponse.model_validate(closed),
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        leverage_used=getattr(closed, "leverage", 1.0),
+                        profile_type=profile_name,
+                    )
+
+                # [v2.0.8] Condition 2 : Breakeven stop (filet de sécurité)
+                # Si la position a atteint un petit profit (peak >= activation/2 = 0.05%)
+                # mais PAS assez pour activer le trailing (peak < activation), et que
+                # le PnL retombe à 0% ou en négatif → fermer au breakeven.
+                # Cela évite qu'une position qui ÉTAIT gagnante se transforme en perte.
+                # Sans ce filet, la seule protection est le stale négatif (2 min) ou le SL (-0.20%).
+                breakeven_activation = ts_activation / 2  # 0.05% par défaut
+                if peak_pct >= breakeven_activation and unrealized_pct_now <= 0:
+                    signal_reason = (
+                        f"Breakeven stop : pic {peak_pct:.3f}% (≥ {breakeven_activation:.3f}%), "
+                        f"PnL retombé à {unrealized_pct_now:.3f}% → protection breakeven"
+                    )
+                    closed = self._close_position(open_pos, current_price, signal_reason, "closed_breakeven")
+                    _log_tick(action_taken="closed_breakeven", btc_price=current_price,
+                              had_open_position=True, trade_id=closed.id,
+                              leverage_final=getattr(closed, "leverage", 1.0))
+                    return PaperTickResult(
+                        action_taken="closed_breakeven",
+                        detail=f"Position fermée (breakeven) : {signal_reason}",
+                        position_closed=PaperTradeResponse.model_validate(closed),
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        leverage_used=getattr(closed, "leverage", 1.0),
+                        profile_type=profile_name,
+                    )
+
             # [v1.6] Sortie rapide — Stale position
             # Si la position stagne depuis trop longtemps (faible mouvement),
             # on libère la place pour d'autres opportunités.
             # [v1.9.5] Stale exit ASYMÉTRIQUE : les positions en perte sortent plus vite.
-            # Avant, une position à -0.23% après 15min sortait comme "stale flat".
-            # Maintenant, une position négative sort après stale_negative_exit_minutes (8 min)
-            # tandis qu'une position plate/positive continue avec stale_exit_minutes (15 min).
-            # Cela réduit les grosses pertes accumulées par stagnation.
+            # [v2.0.8] Le stale exit est maintenant APRÈS le trailing stop et le breakeven.
+            # Le trailing/breakeven ont priorité car ils protègent les gains.
+            # Le stale est un fallback pour les positions qui n'ont JAMAIS été en profit.
             stale_minutes = getattr(profile_params, "stale_exit_minutes", None) if profile_params else None
             stale_negative_minutes = getattr(profile_params, "stale_negative_exit_minutes", None) if profile_params else None
             if stale_minutes and stale_minutes > 0:
@@ -492,46 +564,6 @@ class PaperTradingService:
                     return PaperTickResult(
                         action_taken="closed_stale",
                         detail=f"Position fermée (stagnante) : {signal_reason}",
-                        position_closed=PaperTradeResponse.model_validate(closed),
-                        current_price=current_price,
-                        timestamp=now.isoformat(),
-                        leverage_used=getattr(closed, "leverage", 1.0),
-                        profile_type=profile_name,
-                    )
-
-            # [v1.7.2] Trailing stop sur profit
-            # Plus fin que le momentum fade : sort dès que le PnL recule d'un petit %
-            # depuis le pic. Active seulement si le profit a dépassé un seuil d'activation.
-            ts_pct = getattr(profile_params, "trailing_stop_pct", None) if profile_params else None
-            ts_activation = getattr(profile_params, "trailing_stop_activation_pct", None) if profile_params else None
-            if ts_pct and ts_activation:
-                unrealized_pnl_now = self._calc_unrealized_pnl(open_pos, current_price)
-                unrealized_pct_now = (unrealized_pnl_now / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
-
-                # Calculer le pic de PnL % via highest/lowest price
-                if open_pos.direction == "long" and open_pos.highest_price_since_entry:
-                    peak_pnl = self._calc_unrealized_pnl_at_price(open_pos, open_pos.highest_price_since_entry)
-                elif open_pos.direction == "short" and open_pos.lowest_price_since_entry:
-                    peak_pnl = self._calc_unrealized_pnl_at_price(open_pos, open_pos.lowest_price_since_entry)
-                else:
-                    peak_pnl = 0
-
-                peak_pct = (peak_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
-
-                # Condition : le pic a dépassé le seuil d'activation ET le PnL actuel
-                # a reculé de plus de trailing_stop_pct depuis le pic
-                if peak_pct >= ts_activation and (peak_pct - unrealized_pct_now) >= ts_pct:
-                    signal_reason = (
-                        f"Trailing stop : pic {peak_pct:.3f}%, actuel {unrealized_pct_now:.3f}%, "
-                        f"recul {(peak_pct - unrealized_pct_now):.3f}% ≥ seuil {ts_pct}%"
-                    )
-                    closed = self._close_position(open_pos, current_price, signal_reason, "closed_trailing_stop")
-                    _log_tick(action_taken="closed_trailing_stop", btc_price=current_price,
-                              had_open_position=True, trade_id=closed.id,
-                              leverage_final=getattr(closed, "leverage", 1.0))
-                    return PaperTickResult(
-                        action_taken="closed_trailing_stop",
-                        detail=f"Position fermée (trailing stop) : {signal_reason}",
                         position_closed=PaperTradeResponse.model_validate(closed),
                         current_price=current_price,
                         timestamp=now.isoformat(),

@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 12 avril 2026
-> **Version :** v2.0.7
+> **Version :** v2.0.8
 > **Branche :** `master`
-> **Dernier commit :** `2d46136` — feat(scalping): fast exit recalibration — stale 15→5min, trailing activation 0.15→0.10%, trail 0.10→0.06%
+> **Dernier commit :** (pending) — fix(scalping): trailing stop priority over stale exit + breakeven stop
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.7** |
+| Version courante | **v2.0.8** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1604 tests**, tous passing ✅ |
+| Tests backend | **1608 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.7 livré** — Sorties scalping recalibrées pour marchés en range |
+| Phase courante | **v2.0.8 livré** — Fix critique trailing stop prioritaire + breakeven stop |
 
 ### ⚠️ État de maturité honnête
 
@@ -41,6 +41,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.6] Certification profil UI** — Bandeau vert `🔒 Profil certifié par le serveur` affichant le profil réellement actif côté backend (synchronisé via `status.account.active_profile` à chaque poll). Alerte orange clignotante si désynchronisation détectée.
 - **[v2.0.6] Timer de position UI** — Chronomètre live `hh:mm:ss` sur chaque position ouverte, basé sur `entry_ts`, rafraîchi chaque seconde.
 - **[v2.0.7] Sorties scalping recalibrées pour marchés en range** — L'audit runtime du premier trade scalping débloqué révèle que le peak atteint 0.14% (juste sous l'activation trailing à 0.15%), le trailing ne s'active JAMAIS, et le stale exit à 15 min laisse fondre les gains. Corrections : stale 15→5 min (3× plus rapide), stale négatif 5→2 min, trailing activation 0.15→0.10% (protège les petits gains), trail 0.10→0.06% (moins de give-back). 6 tests dédiés.
+- **[v2.0.8] FIX CRITIQUE : Trailing stop prioritaire + breakeven stop** — BUG : le stale_negative_exit (2 min) était vérifié AVANT le trailing stop dans le code. Quand une position gagnante (peak > activation 0.10%) retombait en négatif, le stale fermait en perte au lieu du trailing qui aurait fermé en profit. Fix : (1) Réordonnancement — trailing stop vérifié AVANT stale exit (priorité maximale), (2) Breakeven stop — nouveau filet de sécurité : si peak ≥ activation/2 (0.05%) et PnL retombe ≤ 0%, fermeture immédiate au breakeven au lieu d'attendre le stale. Le stale ne gère plus que les positions jamais profitables. 4 tests dédiés.
 - **[v2.0.4] Export enrichi** — Service `EnrichedExportService` + endpoint `GET /audit/enriched-export`. Export tick-par-tick avec : prix BTC, variation %, décision moteur, score, raison de non-trade, position ouverte/fermée, PnL, market quality. Inclut ventilation des refus par gate + détection des tendances BTC ratées.
 - **[v2.0.4] Learning runtime** — Nouvelle méthode `LearningService.learn_from_runtime()` + endpoint `POST /learning/learn-runtime`. Analyse les TickActivityLog (pas les trades fermés) pour identifier les gates sur-bloquants et proposer des assouplissements en mode shadow. Suggestions 15 (micro-trend dominant) et 16 (gate unique > 70%).
 - **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.
