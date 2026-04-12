@@ -80,9 +80,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v2.0.14 livré — Candle direction override (la bougie décide la direction)
+### État actuel : v2.0.15 livré — Candle direction indicator + REST price fallback
 
-> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. La v2.0.14 ajoute le candle direction override : en scalping, la direction du trade est déterminée par la direction RÉELLE du prix sur les 30 dernières secondes (bougie verte → LONG, bougie rouge → SHORT), au lieu de suivre les indicateurs 15 min lagging. Corrige le biais 100% short en marché ranging. **1694 tests passing.**
+> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. La v2.0.15 ajoute l'indicateur visuel de couleur de bougie (🟢/🔴) à côté de chaque position dans le frontend pour vérifier la cohérence direction/bougie, et un fallback REST API pour le prix BTC quand le WebSocket est inaccessible. **1701 tests passing.**
 
 | Composant | Status |
 |-----------|--------|

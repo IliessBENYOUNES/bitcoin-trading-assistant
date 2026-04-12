@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.15] - 2026-04-12
+
+### Added
+- **CANDLE DIRECTION INDICATOR (UI)** — Nouveau champ `entry_candle_direction` ("green"/"red"/null) stocké sur chaque `PaperTrade` à l'ouverture de position. Affiche un dot coloré (🟢/🔴) avec tooltip de cohérence direction/bougie à côté de chaque position dans le PaperTradingPanel.
+- **REST PRICE FALLBACK** — Le hook `useLivePrice` ajoute un fallback REST API (`/market/price`) si le WebSocket Binance ne se connecte pas dans les 5 secondes. Polling toutes les 10s. Le PriceTicker affiche "REST" en orange au lieu de "LIVE".
+- Nouveau champ `source: 'websocket' | 'rest' | null` dans `useLivePrice` pour tracer l'origine du prix.
+- Composant `CandleDirectionDot` dans PaperTradingPanel : dot coloré + tooltip avec vérification cohérence direction/bougie.
+- Script de migration `migrate_v2015.py` pour la nouvelle colonne.
+- **7 nouveaux tests** : modèle, schema, service `_open_position`, endpoint status.
+
+### Changed
+- `PriceTicker` : nouveau badge "REST" orange quand le prix vient du fallback REST API (au lieu de "OFFLINE" gris).
+- Footer Dashboard : affiche "Mode REST (prix ~10s)" quand le fallback est actif.
+- Direction de la bougie déterminée par tick momentum override (scalping) ou micro_trend_score (autres profils).
+
+### Fixed
+- **Prix stale ~5 min de retard** quand le WebSocket Binance est inaccessible : le fallback REST appelle Binance REST API (même source) via le backend.
+
+### Technical
+- Modifié : `backend/app/models/paper_account.py` — Nouvelle colonne `entry_candle_direction VARCHAR(10)` nullable
+- Modifié : `backend/app/schemas/paper_trading.py` — Champ dans PaperTradeResponse + PaperTradeExportItem
+- Modifié : `backend/app/services/paper_trading_service.py` — Détermination et passage de la direction bougie
+- Nouveau : `backend/migrate_v2015.py` — Migration DB
+- Modifié : `backend/tests/test_paper_trading.py` — 7 nouveaux tests TestEntryCandleDirection
+- Modifié : `frontend/src/types/api.ts` — Champ dans PaperTradeItem + PaperTradeExportItem
+- Modifié : `frontend/src/components/PaperTradingPanel.tsx` — CandleDirectionDot composant + intégration
+- Modifié : `frontend/src/hooks/useLivePrice.ts` — Fallback REST, source tracking
+- Modifié : `frontend/src/components/PriceTicker.tsx` — Prop source, badge REST
+- Modifié : `frontend/src/pages/Dashboard.tsx` — Propagation source, footer REST status
+- **1701 tests** backend, tous passing
+
 ## [2.0.14] - 2026-04-12
 
 ### Added

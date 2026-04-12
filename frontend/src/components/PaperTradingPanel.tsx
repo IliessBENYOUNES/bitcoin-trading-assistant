@@ -127,6 +127,54 @@ function PositionPnL({ pos, currentPrice }: { pos: PaperTradeItem; currentPrice:
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// [v2.0.15] Indicateur de couleur de bougie — vérifie l'alignement direction/bougie
+// 🟢 = bougie verte (prix montait à l'entrée), 🔴 = bougie rouge (prix descendait)
+// ─────────────────────────────────────────────────────────────────────────────
+function CandleDirectionDot({ direction, candleDirection }: { direction: string; candleDirection?: string | null }) {
+  if (!candleDirection) return null;
+
+  const isGreen = candleDirection === 'green';
+  const color = isGreen ? '#4caf50' : '#f44336';
+  const emoji = isGreen ? '🟢' : '🔴';
+  const label = isGreen ? 'Bougie verte (prix montait)' : 'Bougie rouge (prix descendait)';
+
+  // Vérifier la cohérence direction/bougie
+  const isAligned = (direction === 'long' && isGreen) || (direction === 'short' && !isGreen);
+  const alignmentLabel = isAligned
+    ? '✅ Cohérent — entrée dans le sens du prix'
+    : '⚠️ Incohérent — entrée contre le sens du prix';
+
+  return (
+    <Tooltip
+      title={
+        <Box sx={{ p: 0.5 }}>
+          <Typography variant="caption" sx={{ display: 'block', fontWeight: 700 }}>
+            {emoji} {label}
+          </Typography>
+          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: isAligned ? '#4caf50' : '#ff9800' }}>
+            {alignmentLabel}
+          </Typography>
+        </Box>
+      }
+      arrow
+    >
+      <Box
+        sx={{
+          width: 14,
+          height: 14,
+          borderRadius: '50%',
+          bgcolor: color,
+          border: `2px solid ${color}88`,
+          boxShadow: `0 0 6px ${color}66`,
+          cursor: 'help',
+          flexShrink: 0,
+        }}
+      />
+    </Tooltip>
+  );
+}
+
 // Couleur selon PnL
 const pnlColor = (pnl: number | null): string => {
   if (pnl === null) return 'text.secondary';
@@ -1007,6 +1055,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
                   {pos.direction.toUpperCase()}
                   {pos.slot && <Chip size="small" label={pos.slot} sx={{ ml: 1, fontSize: 11, height: 20 }} />}
                 </Typography>
+                <CandleDirectionDot direction={pos.direction} candleDirection={pos.entry_candle_direction} />
                 {statusChip(pos.status)}
                 <PositionTimer entryTs={pos.entry_ts} />
                 <PositionPnL pos={pos} currentPrice={status?.current_btc_price ?? null} />
@@ -1045,6 +1094,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
             <Typography fontWeight={700}>
               Position {openPos.direction.toUpperCase()} ouverte
             </Typography>
+            <CandleDirectionDot direction={openPos.direction} candleDirection={openPos.entry_candle_direction} />
             {statusChip(openPos.status)}
             <PositionTimer entryTs={openPos.entry_ts} />
             <PositionPnL pos={openPos} currentPrice={status?.current_btc_price ?? null} />
@@ -1225,7 +1275,10 @@ function TradeRow({ trade }: { trade: PaperTradeItem }) {
     <TableRow hover>
       <TableCell>{statusChip(trade.status)}</TableCell>
       <TableCell>
-        {trade.direction === 'long' ? '📈 Long' : '📉 Short'}
+        <Stack direction="row" alignItems="center" spacing={0.5}>
+          <span>{trade.direction === 'long' ? '📈 Long' : '📉 Short'}</span>
+          <CandleDirectionDot direction={trade.direction} candleDirection={trade.entry_candle_direction} />
+        </Stack>
       </TableCell>
       <TableCell align="right">${trade.entry_price.toLocaleString()}</TableCell>
       <TableCell align="right">

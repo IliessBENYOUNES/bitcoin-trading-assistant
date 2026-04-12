@@ -1,7 +1,7 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v2.0.14
+## Version: v2.0.15
 ## Date: 2026-04-12
 
 ---
@@ -95,6 +95,8 @@
 | **FR-GES-001** | **Gain erosion stop** | **Sort quand gain érodé de 30% du pic (peak 0.01-0.04%)** | **✅ PASS** | **v2.0.12 — 18 tests (test_pivot_v200.py)** |
 | **FR-TMC-001** | **Tick momentum confirmation** | **Analyse ticks ~30s pour confirmer direction avant entrée** | **✅ PASS** | **v2.0.13 — 20 tests (test_pivot_v200.py)** |
 | **FR-CDO-001** | **Candle direction override** | **Direction trade = direction prix 30s (bougie verte→LONG, rouge→SHORT)** | **✅ PASS** | **v2.0.14 — 9 tests (test_pivot_v200.py)** |
+| **FR-CDI-001** | **Candle direction indicator** | **Champ `entry_candle_direction` stocké sur chaque trade, affiché en frontend** | **✅ PASS** | **v2.0.15 — 7 tests (test_paper_trading.py::TestEntryCandleDirection)** |
+| **FR-RPF-001** | **REST price fallback** | **Si WebSocket inaccessible, fallback REST /market/price toutes les 10s** | **✅ PASS** | **v2.0.15 — useLivePrice.ts fallback + PriceTicker REST badge** |
 
 ---
 
@@ -104,7 +106,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1694 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1701 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 

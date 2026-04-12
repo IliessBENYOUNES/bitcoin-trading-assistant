@@ -122,6 +122,11 @@ class PaperTrade(Base):
     # None = mono-position (rétrocompatible)
     slot: Mapped[str] = mapped_column(String(20), nullable=True)
 
+    # --- Direction de la bougie à l'entrée (v2.0.15) ---
+    # "green" = prix montait (bougie verte), "red" = prix descendait (bougie rouge)
+    # Permet de vérifier la cohérence entre direction du trade et direction du prix.
+    entry_candle_direction: Mapped[str] = mapped_column(String(10), nullable=True)
+
     # --- PnL ---
     pnl: Mapped[float] = mapped_column(Float, nullable=True)
     pnl_pct: Mapped[float] = mapped_column(Float, nullable=True)

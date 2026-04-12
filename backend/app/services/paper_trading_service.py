@@ -1434,6 +1434,20 @@ class PaperTradingService:
                     f"(loss_cut={profile_params.loss_cut_pct}%, profit_take={profile_params.profit_take_pct}%)"
                 )
 
+            # [v2.0.15] Déterminer la couleur de la bougie à l'entrée.
+            # Source 1 : tick momentum override (la plus fiable en scalping)
+            # Source 2 : micro_trend_score du market quality (proxy pour tous profils)
+            entry_candle_dir = None
+            if tm_override_active:
+                # Le tick momentum a déterminé la direction → la bougie est claire
+                entry_candle_dir = "green" if direction == "long" else "red"
+            elif mq_data:
+                mt = mq_data.get("micro_trend_score", 0) or 0
+                if mt > 0:
+                    entry_candle_dir = "green"
+                elif mt < 0:
+                    entry_candle_dir = "red"
+
             position = self._open_position(
                 account=account,
                 price=current_price,
@@ -1448,6 +1462,7 @@ class PaperTradingService:
                 leverage_reason=leverage_reasons,
                 profile_type=profile_name,
                 slot=slot_name if is_multi else None,
+                entry_candle_direction=entry_candle_dir,
             )
 
             # [v1.9.6] Si _open_position retourne None, le slot est déjà occupé
@@ -1511,6 +1526,7 @@ class PaperTradingService:
         leverage_reason: Optional[str] = None,
         profile_type: Optional[str] = None,
         slot: Optional[str] = None,
+        entry_candle_direction: Optional[str] = None,
     ) -> Optional[PaperTrade]:
         """
         Ouvre une position paper.
@@ -1568,6 +1584,7 @@ class PaperTradingService:
             leverage_reason=leverage_reason,
             profile_type=profile_type,
             slot=slot,
+            entry_candle_direction=entry_candle_direction,
             entry_reason=reason[:500],
             decision_score=score,
             entry_ts=now,

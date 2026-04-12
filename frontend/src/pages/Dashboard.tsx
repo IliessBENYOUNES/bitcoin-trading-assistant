@@ -440,6 +440,7 @@ const Dashboard: React.FC = () => {
               volume24h={livePrice.volume24h}
               connected={livePrice.connected}
               loading={!livePrice.connected && indicators.loading}
+              source={livePrice.source}
             />
           </Box>
 
@@ -779,6 +780,7 @@ const Dashboard: React.FC = () => {
               volume24h={livePrice.volume24h}
               connected={livePrice.connected}
               loading={!livePrice.connected && indicators.loading}
+              source={livePrice.source}
             />
           </Box>
 
@@ -1111,12 +1113,12 @@ const Dashboard: React.FC = () => {
                   width: 6,
                   height: 6,
                   borderRadius: '50%',
-                  backgroundColor: livePrice.connected ? '#00E676' : '#FF1744',
-                  animation: livePrice.connected ? 'pulse-dot 2s ease-in-out infinite' : 'none',
+                  backgroundColor: livePrice.connected ? '#00E676' : livePrice.source === 'rest' ? '#FF9800' : '#FF1744',
+                  animation: livePrice.connected ? 'pulse-dot 2s ease-in-out infinite' : livePrice.source === 'rest' ? 'pulse-dot 3s ease-in-out infinite' : 'none',
                 }}
               />
               <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.6rem' }}>
-                {livePrice.connected ? 'WebSocket connecté' : 'WebSocket déconnecté'}
+                {livePrice.connected ? 'WebSocket connecté' : livePrice.source === 'rest' ? 'Mode REST (prix ~10s)' : 'WebSocket déconnecté'}
               </Typography>
             </Box>
           </Box>

@@ -2182,3 +2182,152 @@ class TestProfilePreservation:
         # Cleanup : arrêter le mode autonome
         client.post("/paper/autonomous/stop")
 
+
+# ============================================================
+# TESTS v2.0.15 — entry_candle_direction
+# ============================================================
+
+class TestEntryCandleDirection:
+    """Tests pour le champ entry_candle_direction sur PaperTrade."""
+
+    def test_trade_default_candle_direction_is_none(self, db_session):
+        """Un trade sans entry_candle_direction a None par défaut (rétrocompat)."""
+        account = _create_active_account(db_session)
+        trade = _create_open_trade(db_session, account.id)
+        assert trade.entry_candle_direction is None
+
+    def test_trade_with_green_candle_direction(self, db_session):
+        """Un trade peut stocker entry_candle_direction='green'."""
+        account = _create_active_account(db_session)
+        trade = PaperTrade(
+            account_id=account.id,
+            status="open",
+            direction="long",
+            entry_price=85000.0,
+            stop_loss_price=80750.0,
+            take_profit_price=93500.0,
+            position_size_usd=2500.0,
+            entry_reason="Test green candle",
+            decision_score=35.0,
+            entry_ts=datetime.now(timezone.utc),
+            entry_candle_direction="green",
+        )
+        db_session.add(trade)
+        db_session.commit()
+        db_session.refresh(trade)
+        assert trade.entry_candle_direction == "green"
+
+    def test_trade_with_red_candle_direction(self, db_session):
+        """Un trade peut stocker entry_candle_direction='red'."""
+        account = _create_active_account(db_session)
+        trade = PaperTrade(
+            account_id=account.id,
+            status="open",
+            direction="short",
+            entry_price=85000.0,
+            stop_loss_price=89250.0,
+            take_profit_price=80750.0,
+            position_size_usd=2500.0,
+            entry_reason="Test red candle",
+            decision_score=-35.0,
+            entry_ts=datetime.now(timezone.utc),
+            entry_candle_direction="red",
+        )
+        db_session.add(trade)
+        db_session.commit()
+        db_session.refresh(trade)
+        assert trade.entry_candle_direction == "red"
+
+    def test_open_position_stores_candle_direction(self, db_session):
+        """_open_position stocke correctement entry_candle_direction."""
+        _insert_btc_candle(db_session, price=85000.0)
+        account = _create_active_account(db_session)
+        service = PaperTradingService(db_session)
+
+        trade = service._open_position(
+            account=account,
+            price=85000.0,
+            sl=80750.0,
+            tp=93500.0,
+            size_usd=2500.0,
+            reason="Test candle direction",
+            score=40.0,
+            direction="long",
+            entry_candle_direction="green",
+        )
+        assert trade is not None
+        assert trade.entry_candle_direction == "green"
+
+    def test_open_position_without_candle_direction(self, db_session):
+        """_open_position sans entry_candle_direction → None (rétrocompat)."""
+        _insert_btc_candle(db_session, price=85000.0)
+        account = _create_active_account(db_session)
+        service = PaperTradingService(db_session)
+
+        trade = service._open_position(
+            account=account,
+            price=85000.0,
+            sl=80750.0,
+            tp=93500.0,
+            size_usd=2500.0,
+            reason="Test no candle direction",
+            score=40.0,
+            direction="long",
+        )
+        assert trade is not None
+        assert trade.entry_candle_direction is None
+
+    def test_schema_includes_candle_direction(self, db_session):
+        """PaperTradeResponse inclut entry_candle_direction."""
+        account = _create_active_account(db_session)
+        trade = PaperTrade(
+            account_id=account.id,
+            status="open",
+            direction="long",
+            entry_price=85000.0,
+            stop_loss_price=80750.0,
+            take_profit_price=93500.0,
+            position_size_usd=2500.0,
+            entry_reason="Test schema",
+            decision_score=35.0,
+            entry_ts=datetime.now(timezone.utc),
+            entry_candle_direction="green",
+        )
+        db_session.add(trade)
+        db_session.commit()
+        db_session.refresh(trade)
+
+        resp = PaperTradeResponse.model_validate(trade)
+        assert resp.entry_candle_direction == "green"
+
+    def test_status_endpoint_includes_candle_direction(self, client, db_session):
+        """GET /paper/status inclut entry_candle_direction dans open_positions."""
+        _insert_btc_candle(db_session, price=85000.0)
+        account = _create_active_account(db_session)
+        trade = PaperTrade(
+            account_id=account.id,
+            status="open",
+            direction="long",
+            entry_price=85000.0,
+            stop_loss_price=80750.0,
+            take_profit_price=93500.0,
+            position_size_usd=2500.0,
+            entry_reason="Test endpoint",
+            decision_score=35.0,
+            entry_ts=datetime.now(timezone.utc),
+            entry_candle_direction="red",
+        )
+        db_session.add(trade)
+        db_session.commit()
+
+        resp = client.get("/paper/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Vérifier dans open_positions ou open_position
+        if data.get("open_positions"):
+            pos = data["open_positions"][0]
+            assert pos["entry_candle_direction"] == "red"
+        elif data.get("open_position"):
+            pos = data["open_position"]
+            assert pos["entry_candle_direction"] == "red"
+

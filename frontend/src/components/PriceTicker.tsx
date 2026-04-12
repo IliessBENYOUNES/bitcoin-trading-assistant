@@ -15,6 +15,7 @@ interface PriceTickerProps {
   volume24h?: number | null;
   connected?: boolean;
   loading?: boolean;
+  source?: 'websocket' | 'rest' | null; // v2.0.15 — source du prix
 }
 
 function formatPrice(value: number): string {
@@ -49,6 +50,7 @@ export const PriceTicker: React.FC<PriceTickerProps> = ({
   volume24h,
   connected,
   loading,
+  source,
 }) => {
   const [flash, setFlash] = useState<'up' | 'down' | null>(null);
   const prevRef = useRef<number | null>(previousPrice ?? null);
@@ -90,18 +92,18 @@ export const PriceTicker: React.FC<PriceTickerProps> = ({
         >
           {/* LIVE badge with connection indicator */}
           <Chip
-            label={connected ? 'LIVE' : 'OFFLINE'}
+            label={connected ? 'LIVE' : source === 'rest' ? 'REST' : 'OFFLINE'}
             size="small"
             sx={{
-              backgroundColor: connected ? '#FF174420' : '#FFFFFF10',
-              color: connected ? '#FF1744' : '#FFFFFF40',
+              backgroundColor: connected ? '#FF174420' : source === 'rest' ? '#FF980020' : '#FFFFFF10',
+              color: connected ? '#FF1744' : source === 'rest' ? '#FF9800' : '#FFFFFF40',
               fontWeight: 800,
               fontSize: '0.55rem',
               height: 20,
               letterSpacing: '0.1em',
               '& .MuiChip-label': { px: 0.8 },
               // Pulse animation only when connected
-              animation: connected ? 'pulse-glow 2s ease-in-out infinite' : 'none',
+              animation: connected ? 'pulse-glow 2s ease-in-out infinite' : source === 'rest' ? 'pulse-glow 3s ease-in-out infinite' : 'none',
               // Connection dot
               '&::before': {
                 content: '""',
@@ -109,9 +111,9 @@ export const PriceTicker: React.FC<PriceTickerProps> = ({
                 width: 6,
                 height: 6,
                 borderRadius: '50%',
-                backgroundColor: connected ? '#FF1744' : '#FFFFFF30',
+                backgroundColor: connected ? '#FF1744' : source === 'rest' ? '#FF9800' : '#FFFFFF30',
                 marginRight: 4,
-                animation: connected ? 'pulse-dot 1.5s ease-in-out infinite' : 'none',
+                animation: connected ? 'pulse-dot 1.5s ease-in-out infinite' : source === 'rest' ? 'pulse-dot 2s ease-in-out infinite' : 'none',
               },
             }}
           />

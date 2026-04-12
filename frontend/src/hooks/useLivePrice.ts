@@ -7,6 +7,11 @@
 //
 // Endpoint : wss://stream.binance.com:9443/ws/btcusdt@ticker
 //
+// [v2.0.15] Fallback REST API :
+// Si le WebSocket ne se connecte pas dans les 5 secondes,
+// un polling REST vers /market/price est activé (toutes les 10s).
+// Cela évite d'afficher un prix stale (dernière bougie en DB).
+//
 // Retourne :
 // - price        : prix actuel en USD
 // - previousPrice: prix précédent (pour animation flash)
@@ -15,6 +20,7 @@
 // - low24h       : plus bas 24h
 // - volume24h    : volume 24h en BTC
 // - connected    : état de la connexion WebSocket
+// - source       : 'websocket' | 'rest' | null — d'où vient le prix
 // =============================================================================
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -27,6 +33,7 @@ interface LivePriceData {
   low24h: number | null;
   volume24h: number | null;
   connected: boolean;
+  source: 'websocket' | 'rest' | null;
 }
 
 // Binance 24hr mini ticker : champs utiles
@@ -51,6 +58,23 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 // pour éviter de re-render le Dashboard trop souvent
 const THROTTLE_MS = 2000;
 
+// [v2.0.15] REST API fallback settings
+const REST_FALLBACK_DELAY_MS = 5000;  // Délai avant d'activer le fallback REST
+const REST_POLL_INTERVAL_MS = 10000;  // Polling REST toutes les 10s
+
+function getApiBaseUrl(): string {
+  try {
+    // Vite expose les variables d'env via import.meta.env
+    const envUrl = import.meta.env.VITE_API_BASE_URL;
+    if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+      return envUrl.trim().replace(/\/$/, '');
+    }
+  } catch {
+    // Fallback si import.meta.env n'est pas disponible
+  }
+  return 'http://localhost:8000';
+}
+
 export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
   const enabled = options?.enabled !== false; // activé par défaut
 
@@ -63,6 +87,7 @@ export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
     low24h: null,
     volume24h: null,
     connected: false,
+    source: null,
   });
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -72,6 +97,61 @@ export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
   // Throttle : stocker le dernier update et l'appliquer périodiquement
   const pendingUpdateRef = useRef<Partial<LivePriceData> | null>(null);
   const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // [v2.0.15] REST fallback refs
+  const restPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const restFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsConnectedRef = useRef(false);
+
+  // [v2.0.15] Fetch prix via REST API (/market/price)
+  const fetchRestPrice = useCallback(async () => {
+    // Ne pas fetcher en REST si le WebSocket est connecté
+    if (wsConnectedRef.current) return;
+    try {
+      const baseUrl = getApiBaseUrl();
+      const resp = await fetch(`${baseUrl}/market/price?symbol=BTC/USD`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const price = data?.price;
+      if (typeof price === 'number' && price > 0) {
+        const update: Partial<LivePriceData> = { source: 'rest' };
+        if (lastPriceRef.current !== null && lastPriceRef.current !== price) {
+          update.previousPrice = lastPriceRef.current;
+        }
+        lastPriceRef.current = price;
+        update.price = price;
+        // Récupérer les stats 24h si disponibles
+        if (data.change_24h_pct != null) update.change24h = data.change_24h_pct;
+        if (data.high_24h != null) update.high24h = data.high_24h;
+        if (data.low_24h != null) update.low24h = data.low_24h;
+        if (data.volume_24h != null) update.volume24h = data.volume_24h;
+        setState(prev => ({ ...prev, ...update }));
+      }
+    } catch {
+      // Silencieux — le REST est un fallback best-effort
+    }
+  }, []);
+
+  // [v2.0.15] Démarre le polling REST si le WS n'est pas connecté après le délai
+  const startRestFallback = useCallback(() => {
+    if (restPollRef.current) return; // déjà en cours
+    // Fetch immédiat + polling
+    fetchRestPrice();
+    restPollRef.current = setInterval(fetchRestPrice, REST_POLL_INTERVAL_MS);
+    console.log('[useLivePrice] REST fallback activated (WS not connected)');
+  }, [fetchRestPrice]);
+
+  const stopRestFallback = useCallback(() => {
+    if (restPollRef.current) {
+      clearInterval(restPollRef.current);
+      restPollRef.current = null;
+    }
+    if (restFallbackTimerRef.current) {
+      clearTimeout(restFallbackTimerRef.current);
+      restFallbackTimerRef.current = null;
+    }
+  }, []);
 
   const connect = useCallback(() => {
     // Éviter les connexions multiples
@@ -84,8 +164,11 @@ export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
       const ws = new WebSocket(BINANCE_WS_URL);
 
       ws.onopen = () => {
-        setState(prev => ({ ...prev, connected: true }));
+        wsConnectedRef.current = true;
+        setState(prev => ({ ...prev, connected: true, source: 'websocket' }));
         reconnectAttempts.current = 0;
+        // [v2.0.15] WS connecté → arrêter le fallback REST
+        stopRestFallback();
         console.log('[useLivePrice] WebSocket connected to Binance');
       };
 
@@ -100,7 +183,7 @@ export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
           const v = parseFloat(data.v);
 
           // Construire l'update en attente
-          const update: Partial<LivePriceData> = {};
+          const update: Partial<LivePriceData> = { source: 'websocket' };
 
           if (!isNaN(newPrice) && newPrice > 0) {
             if (lastPriceRef.current !== null && lastPriceRef.current !== newPrice) {
@@ -134,6 +217,7 @@ export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
       };
 
       ws.onclose = () => {
+        wsConnectedRef.current = false;
         setState(prev => ({ ...prev, connected: false }));
         wsRef.current = null;
 
@@ -143,6 +227,11 @@ export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
           reconnectAttempts.current += 1;
           console.log(`[useLivePrice] Reconnecting in ${Math.round(delay)}ms (attempt ${reconnectAttempts.current})`);
           reconnectTimer.current = setTimeout(connect, delay);
+        }
+
+        // [v2.0.15] Lancer le REST fallback immédiatement à la déconnexion
+        if (!restPollRef.current) {
+          startRestFallback();
         }
       };
 
@@ -155,7 +244,7 @@ export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
     } catch {
       console.error('[useLivePrice] Failed to create WebSocket');
     }
-  }, []);
+  }, [stopRestFallback, startRestFallback]);
 
   useEffect(() => {
     if (!enabled) {
@@ -164,11 +253,20 @@ export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
         wsRef.current.close();
         wsRef.current = null;
       }
-      setState(prev => ({ ...prev, connected: false }));
+      wsConnectedRef.current = false;
+      stopRestFallback();
+      setState(prev => ({ ...prev, connected: false, source: null }));
       return;
     }
 
     connect();
+
+    // [v2.0.15] Programmer le fallback REST si le WS n'est pas connecté après le délai
+    restFallbackTimerRef.current = setTimeout(() => {
+      if (!wsConnectedRef.current) {
+        startRestFallback();
+      }
+    }, REST_FALLBACK_DELAY_MS);
 
     return () => {
       // Cleanup à l'unmount
@@ -178,12 +276,13 @@ export function useLivePrice(options?: { enabled?: boolean }): LivePriceData {
       if (throttleTimerRef.current) {
         clearTimeout(throttleTimerRef.current);
       }
+      stopRestFallback();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [connect, enabled]);
+  }, [connect, enabled, startRestFallback, stopRestFallback]);
 
   return state;
 }

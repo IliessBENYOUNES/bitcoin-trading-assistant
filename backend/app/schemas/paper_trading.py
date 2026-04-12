@@ -84,6 +84,7 @@ class PaperTradeResponse(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     slot: Optional[str] = None  # v1.7 — slot multi-position
+    entry_candle_direction: Optional[str] = None  # v2.0.15 — "green"/"red"/null
 
     model_config = {"from_attributes": True}
 
@@ -115,6 +116,7 @@ class PaperTradeExportItem(BaseModel):
     leverage_reason: Optional[str] = None
     profile_type: Optional[str] = None
     slot: Optional[str] = None
+    entry_candle_direction: Optional[str] = None  # v2.0.15 — "green"/"red"/null
     pnl: Optional[float] = None
     pnl_pct: Optional[float] = None
     entry_reason: str

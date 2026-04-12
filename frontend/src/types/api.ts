@@ -676,6 +676,7 @@ export interface PaperTradeItem {
   created_at: string | null;
   updated_at: string | null;
   slot?: string | null; // v1.7 multi-slot
+  entry_candle_direction?: string | null; // v2.0.15 — "green"/"red"/null
 }
 
 export interface PaperAccountItem {
@@ -774,6 +775,7 @@ export interface PaperTradeExportItem {
   leverage_reason: string | null;
   profile_type: string | null;
   slot: string | null;
+  entry_candle_direction: string | null; // v2.0.15 — "green"/"red"/null
   pnl: number | null;
   pnl_pct: number | null;
   entry_reason: string;
