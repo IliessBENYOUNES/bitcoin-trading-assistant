@@ -302,10 +302,10 @@ class TestScalpingRecalibration:
         p = PROFILE_PRESETS["scalping"]
         assert p.min_score == 30
 
-    def test_cooldown_increased(self):
-        """Cooldown augmenté de 1 à 2 min."""
+    def test_cooldown_recalibrated(self):
+        """[v2.0.11] Cooldown réduit à 1 min (bearish_veto protège contre churn)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.cooldown_minutes == 2
+        assert p.cooldown_minutes == 1  # [v2.0.11] 2→1 : bearish_veto gère l'anti-churn
 
     def test_stale_exit_increased(self):
         """Stale exit augmenté de 10 à 15 min."""

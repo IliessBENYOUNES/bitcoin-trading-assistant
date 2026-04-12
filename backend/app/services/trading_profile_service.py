@@ -119,7 +119,10 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         min_confidence="low",
         min_scenario_dominance=0.35,
         max_trades_per_day=30,  # [v2.0.0] 50→30 : moins de trades, meilleurs trades
-        cooldown_minutes=2,
+        # [v2.0.11] Cooldown 2→1 min : le bearish_veto (v2.0.10) bloque les entrées
+        # anti-tendance en amont, rendant le cooldown long redondant pour l'anti-churn.
+        # 1 min permet de ne pas rater le prochain signal après un renversement de tendance.
+        cooldown_minutes=1,
         max_position_duration_hours=2,
         # [v2.0.0] TP élargi 0.6%→0.8% : le TP doit être atteignable et couvrir les frais.
         # Le trailing à 0.15%+0.10% capture en pratique 0.05-0.30%. Un TP à 0.8%
@@ -162,7 +165,9 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         trailing_stop_drop_ratio=0.15,  # [v2.0.9] 15% : garde 85% du gain, réaliste pour 5sec ticks
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
-        max_cooldown_minutes=10.0,
+        # [v2.0.11] max_cooldown 10→5 min : en scalping, 10 min = éternité.
+        # Le bearish_veto protège contre le rechurn, pas besoin de bloquer 10 min.
+        max_cooldown_minutes=5.0,
         min_hold_seconds=30,
         min_economic_pnl_pct=0.15,
         short_min_score=30,  # [v2.0.3] 25→30 : aligné avec min_score relevé

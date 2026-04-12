@@ -716,16 +716,37 @@ class PaperTradingService:
                 signal_reason = ""
 
                 if open_pos.direction == "long":
+                    # [v2.0.11] Protection reversal LONG : un mean_reversion_long est
+                    # ouvert PARCE QUE le score est négatif (survente). Le signal contraire
+                    # ne doit fermer que si le score bearish s'est INTENSIFIÉ au-delà du
+                    # score d'entrée, sinon la thèse de renversement n'est pas invalidée.
+                    is_reversal = (open_pos.entry_reason or "").startswith("mean_reversion_")
                     if action == "vendre" and not trade_too_young:
-                        close_signal = True
-                        signal_reason = f"Signal contraire : vendre (score={score})"
+                        if is_reversal and open_pos.decision_score is not None:
+                            # Reversal LONG : ne fermer que si le bearish est PIRE qu'à l'entrée
+                            entry_score_abs = abs(open_pos.decision_score)
+                            if abs(score) > entry_score_abs:
+                                close_signal = True
+                                signal_reason = (
+                                    f"Signal contraire (reversal invalidé) : vendre "
+                                    f"(score={score}, entrée={open_pos.decision_score})"
+                                )
+                            # Sinon : le même score bearish qu'à l'entrée → normal pour un reversal
+                        else:
+                            close_signal = True
+                            signal_reason = f"Signal contraire : vendre (score={score})"
                     elif action == "attendre" and score <= 0 and not trade_too_young:
                         # [v1.9.5] Relevé de -10 à -15 : ne ferme sur "signal nettement
                         # contraire" que si le score est vraiment fortement bearish.
                         # Un score de -10 peut être du bruit ; -15 indique une vraie pression.
                         if score <= -15:
-                            close_signal = True
-                            signal_reason = f"Signal nettement contraire : attendre (score={score})"
+                            if is_reversal and open_pos.decision_score is not None:
+                                if abs(score) > abs(open_pos.decision_score):
+                                    close_signal = True
+                                    signal_reason = f"Signal nettement contraire (reversal invalidé) : attendre (score={score})"
+                            else:
+                                close_signal = True
+                                signal_reason = f"Signal nettement contraire : attendre (score={score})"
 
                 elif open_pos.direction == "short":
                     # [v1.9.3] Seuil configurable pour fermer un short par signal contraire.
@@ -734,10 +755,29 @@ class PaperTradingService:
                     short_exit_th = 10  # défaut historique
                     if profile_params:
                         short_exit_th = getattr(profile_params, "short_exit_score_threshold", None) or 10
+
+                    # [v2.0.11] Protection reversal SHORT : un mean_reversion_short est
+                    # ouvert PARCE QUE le score est bullish (surachat). Fermer sur le MÊME
+                    # score bullish crée une boucle de churn : ouvrir → 50sec → fermer → repeat.
+                    # Fix : pour les reversals, le signal contraire ne ferme que si le score
+                    # a AUGMENTÉ au-delà du score d'entrée (la pression bullish s'intensifie,
+                    # invalidant la thèse de mean-reversion). Sinon, laisser le trailing stop,
+                    # le stale, ou le SL/TP gérer la sortie naturellement.
+                    is_reversal = (open_pos.entry_reason or "").startswith("mean_reversion_")
+                    if is_reversal and open_pos.decision_score is not None:
+                        # Le seuil est le score d'entrée : ne fermer que si le bullish s'intensifie
+                        short_exit_th = max(short_exit_th, abs(open_pos.decision_score) + 1)
+
                     if action == "acheter" and not trade_too_young:
                         if score >= short_exit_th:
                             close_signal = True
-                            signal_reason = f"Signal contraire : acheter (score={score}, seuil={short_exit_th})"
+                            if is_reversal:
+                                signal_reason = (
+                                    f"Signal contraire (reversal invalidé) : acheter "
+                                    f"(score={score} > entrée={open_pos.decision_score}, seuil={short_exit_th})"
+                                )
+                            else:
+                                signal_reason = f"Signal contraire : acheter (score={score}, seuil={short_exit_th})"
                         # Si le score est positif mais sous le seuil, le short respire encore
                     elif action == "attendre" and score >= 0 and not trade_too_young:
                         # [v1.9.1] Même logique adoucie pour les shorts

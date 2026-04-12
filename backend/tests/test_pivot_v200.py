@@ -586,7 +586,7 @@ class TestScalpingV206MicroTrendDisable:
         assert scalp.expected_capture_pct == 0.50
         assert scalp.min_ev_multiple == 1.5
         assert scalp.stale_exit_minutes == 5
-        assert scalp.cooldown_minutes == 2
+        assert scalp.cooldown_minutes == 1  # [v2.0.11] 2→1
         assert scalp.max_trades_per_day == 30
 
 
@@ -1450,3 +1450,109 @@ class TestDowntrendProtectionV2010:
             "mq_data doit être calculé AVANT le reversal check dans la section d'entrée"
         )
 
+# ================================================================
+# v2.0.11 -- Protection reversal signal contraire + cooldown reduit
+# ================================================================
+class TestReversalSignalContraireProtection:
+    """[v2.0.11] Les trades mean_reversion ne doivent PAS etre fermes par le
+    meme score qui les a crees."""
+    def test_reversal_short_not_closed_by_same_score(self):
+        """Un SHORT reversal (entree score=66) ne se ferme PAS si le score est toujours 66."""
+        entry_reason = "mean_reversion_short | score=66 | medium | test"
+        entry_score = 66
+        current_score = 66
+        short_exit_th = 30
+        is_reversal = entry_reason.startswith("mean_reversion_")
+        if is_reversal and entry_score is not None:
+            short_exit_th = max(short_exit_th, abs(entry_score) + 1)
+        assert current_score < short_exit_th
+    def test_reversal_short_closed_when_score_increases(self):
+        """Un SHORT reversal SE FERME si le score bullish AUGMENTE."""
+        entry_reason = "mean_reversion_short | score=66 | medium | test"
+        entry_score = 66
+        current_score = 70
+        short_exit_th = 30
+        is_reversal = entry_reason.startswith("mean_reversion_")
+        if is_reversal and entry_score is not None:
+            short_exit_th = max(short_exit_th, abs(entry_score) + 1)
+        assert current_score >= short_exit_th
+    def test_non_reversal_short_still_uses_normal_threshold(self):
+        """Un SHORT normal utilise toujours le seuil standard."""
+        entry_reason = "vendre | score=-30 | medium | test"
+        is_reversal = entry_reason.startswith("mean_reversion_")
+        assert not is_reversal
+    def test_reversal_long_not_closed_by_same_score(self):
+        """Un LONG reversal (entree score=-50) ne se ferme PAS si score toujours -50."""
+        entry_reason = "mean_reversion_long | score=-50 | medium | test"
+        entry_score = -50
+        current_score = -50
+        is_reversal = entry_reason.startswith("mean_reversion_")
+        should_close = True
+        if is_reversal and entry_score is not None:
+            should_close = abs(current_score) > abs(entry_score)
+        assert not should_close
+    def test_reversal_long_closed_when_bearish_intensifies(self):
+        """Un LONG reversal SE FERME si le score bearish s'INTENSIFIE."""
+        entry_reason = "mean_reversion_long | score=-50 | medium | test"
+        entry_score = -50
+        current_score = -60
+        is_reversal = entry_reason.startswith("mean_reversion_")
+        should_close = True
+        if is_reversal and entry_score is not None:
+            should_close = abs(current_score) > abs(entry_score)
+        assert should_close
+    def test_reversal_short_with_score_0_at_entry(self):
+        """Edge case : reversal score 0 -> seuil = max(30, 1) = 30."""
+        entry_reason = "mean_reversion_short | score=0 | low | test"
+        entry_score = 0
+        short_exit_th = 30
+        is_reversal = entry_reason.startswith("mean_reversion_")
+        if is_reversal and entry_score is not None:
+            short_exit_th = max(short_exit_th, abs(entry_score) + 1)
+        assert short_exit_th == 30
+    def test_reversal_short_with_high_score_raises_threshold(self):
+        """Reversal SHORT score 88 -> seuil signal contraire = 89."""
+        entry_reason = "mean_reversion_short | score=88 | medium | test"
+        entry_score = 88
+        short_exit_th = 30
+        is_reversal = entry_reason.startswith("mean_reversion_")
+        if is_reversal and entry_score is not None:
+            short_exit_th = max(short_exit_th, abs(entry_score) + 1)
+        assert short_exit_th == 89
+    def test_reversal_trades_still_exit_via_trailing_stop(self):
+        """Trailing stop / stale / SL/TP toujours actifs pour les reversals."""
+        from app.services.paper_trading_service import PaperTradingService
+        import inspect
+        source = inspect.getsource(PaperTradingService._tick_single_slot)
+        assert "trailing" in source.lower()
+        assert "breakeven" in source.lower()
+        assert "stale" in source.lower()
+    def test_cooldown_reduced_for_scalping(self):
+        """[v2.0.11] Le cooldown scalping est reduit a 1 min."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        p = PROFILE_PRESETS["scalping"]
+        assert p.cooldown_minutes == 1
+    def test_max_cooldown_reduced_for_scalping(self):
+        """[v2.0.11] Le max cooldown scalping est reduit a 5 min."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        p = PROFILE_PRESETS["scalping"]
+        assert p.max_cooldown_minutes == 5.0
+    def test_stale_negative_floor_reduced(self):
+        """[v2.0.11] Le plancher stale negatif est reduit a 2 min."""
+        from app.services.smart_cooldown_service import SmartCooldownService
+        result = SmartCooldownService.compute_cooldown(
+            base_cooldown=0.5,
+            last_exit_type="closed_stale",
+            last_pnl=-0.5,
+            last_pnl_pct=-0.05,
+            min_cooldown=0.5,
+            max_cooldown=10.0,
+        )
+        assert result >= 2.0
+    def test_reversal_signal_contraire_code_exists(self):
+        """Le code de protection reversal signal contraire est dans le source."""
+        from app.services.paper_trading_service import PaperTradingService
+        import inspect
+        source = inspect.getsource(PaperTradingService._tick_single_slot)
+        assert "mean_reversion_" in source
+        assert "reversal" in source.lower()

@@ -404,12 +404,12 @@ class TestAntiChurnStaleNegative:
             max_cooldown=30.0,
         )
         # 2.0 * 3.0 (stale négatif) * 1.2 (perte modérée) = 7.2, borné à max_cooldown
-        assert result >= 4.0, (
-            f"Cooldown {result} min après stale négatif — devrait être >= 4.0 min"
+        assert result >= 2.0, (
+            f"Cooldown {result} min après stale négatif — devrait être >= 2.0 min"
         )
 
-    def test_stale_negative_floor_at_4_minutes(self):
-        """Un stale négatif impose un plancher de 4 minutes quoi qu'il arrive."""
+    def test_stale_negative_floor_at_2_minutes(self):
+        """[v2.0.11] Un stale négatif impose un plancher de 2 minutes (réduit de 4→2, bearish_veto protège)."""
         result = SmartCooldownService.compute_cooldown(
             base_cooldown=0.5,       # Base très courte
             last_exit_type="closed_stale",
@@ -418,12 +418,12 @@ class TestAntiChurnStaleNegative:
             min_cooldown=0.5,
             max_cooldown=10.0,
         )
-        assert result >= 4.0, (
-            f"Cooldown {result} min < 4.0 min plancher après stale négatif"
+        assert result >= 2.0, (
+            f"Cooldown {result} min < 2.0 min plancher après stale négatif"
         )
 
     def test_stale_positive_no_floor(self):
-        """Un stale POSITIF n'a pas le plancher de 4 minutes."""
+        """Un stale POSITIF n'a pas le plancher de 2 minutes."""
         result = SmartCooldownService.compute_cooldown(
             base_cooldown=1.0,
             last_exit_type="closed_stale",
@@ -431,9 +431,9 @@ class TestAntiChurnStaleNegative:
             min_cooldown=0.5,
             max_cooldown=5.0,
         )
-        # Le stale positif a le multiplier 2.0 mais sans plancher de 4 min
+        # Le stale positif a le multiplier 2.0 mais sans plancher de 2 min
         # Donc 1.0 * 2.0 * 0.8 (gain) = 1.6 min, borné >= 0.5
-        assert result < 4.0 or result >= 0.5
+        assert result < 2.0 or result >= 0.5
 
     def test_tp_exit_still_reduces_cooldown(self):
         """Un TP réussi réduit toujours le cooldown (pas affecté par le fix stale)."""
@@ -459,7 +459,7 @@ class TestAntiChurnStaleNegative:
     def test_scalping_max_cooldown_raised(self):
         """Le max_cooldown scalping est relevé à 10 min (anti-churn)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 10.0
+        assert p.max_cooldown_minutes == 5.0  # [v2.0.11] 10→5
 
     def test_stale_negative_heavy_loss_extra_penalty(self):
         """Un stale négatif avec grosse perte cumule les pénalités."""

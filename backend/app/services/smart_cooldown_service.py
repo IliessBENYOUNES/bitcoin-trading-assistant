@@ -143,9 +143,11 @@ class SmartCooldownService:
 
         # [v1.9.9] Plancher anti-churn après stale négatif.
         # Quelle que soit la configuration, un stale négatif impose un minimum
-        # de 4 minutes avant de réentrer. C'est le garde-fou ultime contre
-        # la boucle ouvrir → perdre → stale → rouvrir immédiatement.
-        STALE_NEGATIVE_FLOOR = 4.0
+        # avant de réentrer.
+        # [v2.0.11] Réduit de 4.0→2.0 min : le bearish_veto (v2.0.10) bloque
+        # les LONG anti-tendance en amont, rendant le plancher long redondant.
+        # 2 min reste suffisant pour laisser le marché se stabiliser.
+        STALE_NEGATIVE_FLOOR = 2.0
         if stale_negative:
             computed = max(STALE_NEGATIVE_FLOOR, computed)
 
