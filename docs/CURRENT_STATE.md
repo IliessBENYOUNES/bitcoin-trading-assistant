@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 12 avril 2026
 > **Version :** v2.0.7
 > **Branche :** `master`
-> **Dernier commit :** (pending) — feat(scalping): fast exit recalibration — stale 15→5min, trailing activation 0.15→0.10%, trail 0.10→0.06%
+> **Dernier commit :** `2d46136` — feat(scalping): fast exit recalibration — stale 15→5min, trailing activation 0.15→0.10%, trail 0.10→0.06%
 
 ---
 
