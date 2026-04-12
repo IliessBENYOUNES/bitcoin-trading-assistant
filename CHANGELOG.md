@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.13] - 2026-04-12
+
+### Added
+- **TICK MOMENTUM CONFIRMATION** — Nouveau gate d'entrée qui analyse les ticks récents (~10 sec) pour confirmer que le prix va dans la direction du trade AVANT d'ouvrir. SHORT → le prix doit être en baisse. LONG → le prix doit être en hausse. Élimine les shorts qui entrent pendant que le prix monte et restent négatifs 2 min jusqu'au stale exit → perte systématique.
+- Nouveau service `TickMomentumService` : buffer en mémoire de prix tick-par-tick, analyse de direction avec fenêtre temporelle configurable, calcul du ratio ticks montants/descendants.
+- Nouveaux champs `tick_momentum_enabled`, `tick_momentum_window_seconds`, `tick_momentum_min_ticks` dans `TradingProfileParams`.
+- Nouveau status de non-trade `tick_momentum_mismatch` + label dans REASON_LABELS.
+- **20 tests `TestTickMomentumServiceV2013` + `TestTickMomentumIntegrationV2013`** :
+  - Config profils (scalping=enabled, aggressive/conservative=disabled)
+  - Service unitaire (record, buffer, direction up/down/flat, window filtering, up_ratio)
+  - 3 tests d'intégration avec vrais ticks dans paper_trading_service
+
+### Changed
+- Le cooldown fixe n'est plus le seul gate d'entrée : le tick momentum valide la direction du prix en temps réel, indépendamment du timer.
+- Le scalping n'entre plus dans un short quand le prix est en hausse sur les 10 dernières secondes.
+
+### Technical
+- Nouveau : `backend/app/services/tick_momentum_service.py` — Service complet avec buffer circulaire
+- Modifié : `backend/app/schemas/journal.py` — 3 nouveaux champs tick_momentum_*
+- Modifié : `backend/app/services/paper_trading_service.py` — Enregistrement tick + gate momentum
+- Modifié : `backend/app/services/trading_profile_service.py` — tick_momentum activé sur scalping
+- Modifié : `backend/app/services/journal_service.py` — Label tick_momentum_mismatch
+- Modifié : `backend/tests/test_pivot_v200.py` — 20 nouveaux tests
+- **1685 tests** backend, tous passing
+
 ## [2.0.12] - 2026-04-12
 
 ### Added

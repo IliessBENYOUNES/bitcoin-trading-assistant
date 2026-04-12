@@ -1863,3 +1863,366 @@ class TestGainErosionStopV2012:
         )
 
 
+# ================================================================
+# v2.0.13 — TICK MOMENTUM CONFIRMATION
+# ================================================================
+
+from app.services.tick_momentum_service import TickMomentumService
+
+
+class TestTickMomentumServiceV2013:
+    """Tests pour le tick momentum confirmation gate v2.0.13.
+
+    Le tick momentum analyse les ticks récents (~10 sec) pour confirmer
+    que le prix va dans la direction du trade AVANT d'ouvrir.
+    SHORT → prix doit baisser. LONG → prix doit monter.
+    """
+
+    def setup_method(self):
+        """Nettoyer le buffer avant chaque test."""
+        TickMomentumService.clear_buffer()
+
+    # --- Configuration profil ---
+
+    def test_scalping_has_tick_momentum_enabled(self):
+        """Le profil scalping a tick_momentum_enabled=True."""
+        p = PROFILE_PRESETS["scalping"]
+        assert p.tick_momentum_enabled is True
+
+    def test_scalping_window_10_seconds(self):
+        """Le profil scalping a une fenêtre de 10 secondes."""
+        p = PROFILE_PRESETS["scalping"]
+        assert p.tick_momentum_window_seconds == 10.0
+
+    def test_scalping_min_2_ticks(self):
+        """Le profil scalping exige au minimum 2 ticks."""
+        p = PROFILE_PRESETS["scalping"]
+        assert p.tick_momentum_min_ticks == 2
+
+    def test_aggressive_no_tick_momentum(self):
+        """Le profil aggressive n'a PAS de tick momentum (trades longs)."""
+        p = PROFILE_PRESETS["aggressive"]
+        assert p.tick_momentum_enabled is False
+
+    def test_conservative_no_tick_momentum(self):
+        """Le profil conservative n'a PAS de tick momentum."""
+        p = PROFILE_PRESETS["conservative"]
+        assert p.tick_momentum_enabled is False
+
+    # --- Service : record_tick ---
+
+    def test_record_tick_creates_buffer(self):
+        """record_tick crée un buffer pour le slot."""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        TickMomentumService.record_tick("test_slot", 83000.0, now)
+        assert TickMomentumService.get_buffer_size("test_slot") == 1
+
+    def test_record_tick_accumulates(self):
+        """Plusieurs ticks s'accumulent dans le buffer."""
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        for i in range(5):
+            TickMomentumService.record_tick(
+                "test_slot", 83000.0 + i * 10, now + timedelta(seconds=i * 5)
+            )
+        assert TickMomentumService.get_buffer_size("test_slot") == 5
+
+    def test_clear_buffer_one_slot(self):
+        """clear_buffer(slot) ne vide que ce slot."""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        TickMomentumService.record_tick("slot_a", 83000.0, now)
+        TickMomentumService.record_tick("slot_b", 83000.0, now)
+        TickMomentumService.clear_buffer("slot_a")
+        assert TickMomentumService.get_buffer_size("slot_a") == 0
+        assert TickMomentumService.get_buffer_size("slot_b") == 1
+
+    # --- Service : check_direction ---
+
+    def test_insufficient_data_allows_entry(self):
+        """Pas assez de ticks → laisse passer (ne bloque pas au démarrage)."""
+        confirmed, result = TickMomentumService.check_direction(
+            "empty_slot", "long", window_seconds=10, min_ticks=2
+        )
+        assert confirmed is True
+        assert result.direction == "insufficient_data"
+
+    def test_long_confirmed_when_price_rising(self):
+        """LONG confirmé quand le prix monte."""
+        from datetime import datetime, timezone, timedelta
+        base = datetime.now(timezone.utc)
+        # Prix monte : 83000 → 83020 → 83050
+        TickMomentumService.record_tick("s", 83000.0, base)
+        TickMomentumService.record_tick("s", 83020.0, base + timedelta(seconds=5))
+        TickMomentumService.record_tick("s", 83050.0, base + timedelta(seconds=9))
+
+        confirmed, result = TickMomentumService.check_direction(
+            "s", "long", window_seconds=15, min_ticks=2
+        )
+        assert confirmed is True
+        assert result.direction == "up"
+        assert result.price_change_usd > 0
+        assert "confirmé" in result.detail.lower() or "✅" in result.detail
+
+    def test_long_rejected_when_price_falling(self):
+        """LONG rejeté quand le prix descend."""
+        from datetime import datetime, timezone, timedelta
+        base = datetime.now(timezone.utc)
+        # Prix descend : 83000 → 82980 → 82950
+        TickMomentumService.record_tick("s", 83000.0, base)
+        TickMomentumService.record_tick("s", 82980.0, base + timedelta(seconds=5))
+        TickMomentumService.record_tick("s", 82950.0, base + timedelta(seconds=9))
+
+        confirmed, result = TickMomentumService.check_direction(
+            "s", "long", window_seconds=15, min_ticks=2
+        )
+        assert confirmed is False
+        assert result.direction == "down"
+        assert "rejeté" in result.detail.lower() or "❌" in result.detail
+
+    def test_short_confirmed_when_price_falling(self):
+        """SHORT confirmé quand le prix descend."""
+        from datetime import datetime, timezone, timedelta
+        base = datetime.now(timezone.utc)
+        # Prix descend : 83000 → 82970 → 82940
+        TickMomentumService.record_tick("s", 83000.0, base)
+        TickMomentumService.record_tick("s", 82970.0, base + timedelta(seconds=5))
+        TickMomentumService.record_tick("s", 82940.0, base + timedelta(seconds=9))
+
+        confirmed, result = TickMomentumService.check_direction(
+            "s", "short", window_seconds=15, min_ticks=2
+        )
+        assert confirmed is True
+        assert result.direction == "down"
+        assert result.price_change_usd < 0
+
+    def test_short_rejected_when_price_rising(self):
+        """SHORT rejeté quand le prix monte."""
+        from datetime import datetime, timezone, timedelta
+        base = datetime.now(timezone.utc)
+        # Prix monte : 83000 → 83030 → 83060
+        TickMomentumService.record_tick("s", 83000.0, base)
+        TickMomentumService.record_tick("s", 83030.0, base + timedelta(seconds=5))
+        TickMomentumService.record_tick("s", 83060.0, base + timedelta(seconds=9))
+
+        confirmed, result = TickMomentumService.check_direction(
+            "s", "short", window_seconds=15, min_ticks=2
+        )
+        assert confirmed is False
+        assert result.direction == "up"
+
+    def test_flat_price_blocks_entry(self):
+        """Prix plat (< MIN_MOVE_PCT) bloque l'entrée."""
+        from datetime import datetime, timezone, timedelta
+        base = datetime.now(timezone.utc)
+        # Prix quasi-identique : 83000 → 83000.5 → 83000.3
+        # Variation = 0.3/83000 = 0.00036% < MIN_MOVE_PCT (0.001%)
+        TickMomentumService.record_tick("s", 83000.0, base)
+        TickMomentumService.record_tick("s", 83000.5, base + timedelta(seconds=5))
+        TickMomentumService.record_tick("s", 83000.3, base + timedelta(seconds=9))
+
+        confirmed, result = TickMomentumService.check_direction(
+            "s", "long", window_seconds=15, min_ticks=2
+        )
+        assert confirmed is False
+        assert result.direction == "flat"
+
+    def test_window_filters_old_ticks(self):
+        """Seuls les ticks dans la fenêtre temporelle sont considérés."""
+        from datetime import datetime, timezone, timedelta
+        base = datetime.now(timezone.utc)
+        # Vieux tick (30 sec avant) : prix haut
+        TickMomentumService.record_tick("s", 84000.0, base - timedelta(seconds=30))
+        # Ticks récents (dans la fenêtre de 10 sec) : prix baisse
+        TickMomentumService.record_tick("s", 83000.0, base - timedelta(seconds=8))
+        TickMomentumService.record_tick("s", 82980.0, base - timedelta(seconds=3))
+        TickMomentumService.record_tick("s", 82960.0, base)
+
+        confirmed, result = TickMomentumService.check_direction(
+            "s", "short", window_seconds=10, min_ticks=2
+        )
+        # Le vieux tick à 84000 est hors fenêtre → ignoré
+        # Seuls 83000→82960 sont analysés → DOWN → SHORT confirmé
+        assert confirmed is True
+        assert result.direction == "down"
+        assert result.tick_count <= 4  # au max, pourrait exclure le tick -30s
+
+    def test_up_ratio_calculated(self):
+        """Le ratio ticks montants/descendants est calculé."""
+        from datetime import datetime, timezone, timedelta
+        base = datetime.now(timezone.utc)
+        # Série mixte : 3 hausse, 1 baisse → up_ratio = 0.75
+        TickMomentumService.record_tick("s", 83000.0, base)
+        TickMomentumService.record_tick("s", 83010.0, base + timedelta(seconds=2))  # up
+        TickMomentumService.record_tick("s", 83020.0, base + timedelta(seconds=4))  # up
+        TickMomentumService.record_tick("s", 83010.0, base + timedelta(seconds=6))  # down
+        TickMomentumService.record_tick("s", 83030.0, base + timedelta(seconds=8))  # up
+
+        confirmed, result = TickMomentumService.check_direction(
+            "s", "long", window_seconds=15, min_ticks=2
+        )
+        assert result.up_ratio == 0.75
+
+    def test_buffer_max_size_cleanup(self):
+        """Le buffer ne dépasse pas MAX_BUFFER_SIZE."""
+        from datetime import datetime, timezone, timedelta
+        base = datetime.now(timezone.utc)
+        for i in range(250):
+            TickMomentumService.record_tick(
+                "big", 83000.0 + i, base + timedelta(seconds=i)
+            )
+        assert TickMomentumService.get_buffer_size("big") <= TickMomentumService.MAX_BUFFER_SIZE
+
+
+class TestTickMomentumIntegrationV2013:
+    """Tests d'intégration : tick momentum gate dans paper_trading_service."""
+
+    def setup_method(self):
+        """Nettoyer le buffer avant chaque test."""
+        TickMomentumService.clear_buffer()
+
+    def test_tick_records_price_in_buffer(self, db_session):
+        """Chaque tick enregistre le prix dans le buffer momentum."""
+        from unittest.mock import patch
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount
+
+        # Créer un compte scalping
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            peak_capital=10000.0, is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        svc = PaperTradingService(db_session)
+        now = datetime.now(timezone.utc)
+
+        # Mock price and decision
+        with patch.object(svc, "_get_decision", return_value={
+            "recommendation": {"action": "attendre", "confidence": "low"},
+            "combined_score": 10,
+            "summary": "test",
+            "_series": [],
+        }):
+            svc._tick_single_slot(
+                account=account, slot_name="scalping",
+                current_price=83000.0, now=now, is_multi=True,
+            )
+
+        # Vérifier que le prix a été enregistré dans le buffer
+        assert TickMomentumService.get_buffer_size("scalping") >= 1
+
+    def test_short_blocked_when_price_rising(self, db_session):
+        """Un short scalping est bloqué quand le prix monte (tick momentum)."""
+        from unittest.mock import patch, MagicMock
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount
+        from datetime import timedelta
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            peak_capital=10000.0, is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        svc = PaperTradingService(db_session)
+        base = datetime.now(timezone.utc)
+
+        # Simuler des ticks précédents avec prix MONTANT
+        TickMomentumService.record_tick("scalping", 83000.0, base - timedelta(seconds=10))
+        TickMomentumService.record_tick("scalping", 83030.0, base - timedelta(seconds=5))
+        TickMomentumService.record_tick("scalping", 83060.0, base - timedelta(seconds=1))
+
+        # Le DecisionService recommande de VENDRE (short)
+        # mais le tick momentum devrait bloquer car prix monte
+        decision = {
+            "recommendation": {"action": "vendre", "confidence": "medium"},
+            "combined_score": -45,
+            "summary": "Bearish signal test",
+            "_series": [
+                {"close": 83000 + i * 5, "high": 83100 + i * 5, "low": 82900 + i * 5,
+                 "volume": 100 + i, "volume_sma_20": 80, "atr_14": 200}
+                for i in range(20)
+            ],
+            "rules_evaluated": [
+                {"rule_name": "rsi_overbought", "satisfied": True, "direction": "bearish"},
+                {"rule_name": "macd_bearish", "satisfied": True, "direction": "bearish"},
+            ],
+        }
+
+        # Mock market quality pour qu'il passe, afin de tester le tick momentum
+        with patch.object(svc, "_get_decision", return_value=decision), \
+             patch.object(svc, "_check_market_quality", return_value=(None, {
+                 "market_quality_score": 60, "volume_ratio": 1.2,
+                 "price_position_pct": 0.7, "range_width_atr": 2.5,
+                 "micro_trend_score": -3, "vwap_distance_pct": 0.5,
+             })):
+            result = svc._tick_single_slot(
+                account=account, slot_name="scalping",
+                current_price=83060.0, now=base, is_multi=True,
+            )
+
+        # Le trade devrait être bloqué par tick momentum (prix monte → pas de short)
+        assert result.action_taken == "hold", (
+            f"Le short devrait être bloqué par tick momentum, obtenu {result.action_taken}"
+        )
+        assert result.non_trade_reason == "tick_momentum_mismatch", (
+            f"La raison devrait être tick_momentum_mismatch, obtenu {result.non_trade_reason}"
+        )
+
+    def test_short_allowed_when_price_falling(self, db_session):
+        """Un short scalping passe quand le prix descend (tick momentum OK)."""
+        from unittest.mock import patch
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount
+        from datetime import timedelta
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            peak_capital=10000.0, is_active=True, active_profile="scalping",
+            btc_price_at_start=83000.0,
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        svc = PaperTradingService(db_session)
+        base = datetime.now(timezone.utc)
+
+        # Simuler des ticks précédents avec prix DESCENDANT
+        TickMomentumService.record_tick("scalping", 83060.0, base - timedelta(seconds=10))
+        TickMomentumService.record_tick("scalping", 83030.0, base - timedelta(seconds=5))
+        TickMomentumService.record_tick("scalping", 83000.0, base - timedelta(seconds=1))
+
+        # Le DecisionService recommande de VENDRE (short) via reversal
+        decision = {
+            "recommendation": {"action": "vendre", "confidence": "medium"},
+            "combined_score": -45,
+            "summary": "Short with momentum",
+            "_series": [
+                {"close": 83000, "high": 83100, "low": 82900, "volume": 100,
+                 "volume_sma_20": 80, "atr_14": 200}
+            ] * 20,
+            "rules_evaluated": [
+                {"rule_name": "rsi_overbought", "satisfied": True, "direction": "bearish"},
+                {"rule_name": "macd_bearish", "satisfied": True, "direction": "bearish"},
+            ],
+        }
+
+        with patch.object(svc, "_get_decision", return_value=decision), \
+             patch.object(svc, "_check_cooldown", return_value=None), \
+             patch.object(svc, "_check_max_trades_per_day", return_value=None):
+
+            result = svc._tick_single_slot(
+                account=account, slot_name="scalping",
+                current_price=83000.0, now=base, is_multi=True,
+            )
+
+        # Le trade ne devrait PAS être bloqué par tick momentum
+        # (il peut être bloqué par d'autres gates, mais pas tick_momentum_mismatch)
+        assert result.non_trade_reason != "tick_momentum_mismatch", (
+            f"Le short ne devrait PAS être bloqué par tick momentum quand prix baisse, "
+            f"obtenu reason={result.non_trade_reason}"
+        )

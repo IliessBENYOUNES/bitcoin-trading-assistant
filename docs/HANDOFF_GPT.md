@@ -1,110 +1,105 @@
-# HANDOFF GPT — Gain Erosion Stop v2.0.12
+# HANDOFF GPT — Tick Momentum Confirmation v2.0.13
 
 **Date :** 12 avril 2026  
-**Version :** v2.0.12  
-**Commit :** `18186b3`
+**Version :** v2.0.13  
+**Commit :** `pending`
 
 ---
 
 ## Problème
 
-Les petits gains (entre $0.25 et $1.00) fondaient sans protection. Le trailing stop ne s'active qu'à 0.04% (~$1). En dessous de ce seuil, le seul mécanisme de protection était le breakeven stop (qui attend PnL ≤ 0%) ou le stale négatif (2 min d'attente, fermeture souvent en perte). Résultat : un trade qui atteignait +$0.60 retombait à -$1.20 sans qu'aucun mécanisme ne le ferme à temps.
+Les shorts scalping entraient pendant que le prix montait réellement. Le moteur se basait sur des indicateurs 15 min (lagging) et un cooldown fixe de 1 min entre les trades. Résultat : les shorts étaient immédiatement en négatif dès l'ouverture, restaient négatifs pendant 2 min, puis sortaient via `stale_negative_exit` avec une perte systématique. Le bot ne vérifiait pas la **direction réelle du prix** au moment de l'entrée.
 
 ## Diagnostic
 
-| Scénario | Peak | Trailing activé ? | Breakeven activé ? | Issue |
-|----------|------|-------------------|---------------------|-------|
-| Gain +$0.60 (0.025%) | 0.025% | Non (< 0.04%) | Non (PnL > 0) | Aucune protection → fond jusqu'au stale négatif → perte |
-| Gain +$1.50 (0.06%) | 0.06% | Oui (≥ 0.04%) | N/A | Trailing protège → OK |
-| Gain +$0.10 (0.004%) | 0.004% | Non | Non | Bruit, pas de gain significatif → OK |
+| Scénario | Direction signal | Direction prix réelle | Résultat |
+|----------|-----------------|----------------------|----------|
+| Score -45 (bearish) | SHORT | Prix monte (+$60/10s) | Perte → stale -2 min |
+| Score -45 (bearish) | SHORT | Prix descend (-$60/10s) | ✅ Entrée correcte |
+| Score +65 (bullish) | LONG | Prix descend (-$30/10s) | Perte → stale -2 min |
+| Score +65 (bullish) | LONG | Prix monte (+$30/10s) | ✅ Entrée correcte |
 
-Le trou se situe entre 0.01% (~$0.25) et 0.04% (~$1) : le gain existe mais n'est pas protégé.
+Le problème : le score technique est en **retard** (basé sur des candles 15 min) et peut rester bearish/bullish pendant que le prix va dans l'autre sens. Le cooldown fixe de 1 min ne résout rien car il bloque par le TEMPS, pas par la DIRECTION.
 
 ## Cause racine
 
-Absence de mécanisme de sortie entre le trailing stop (activation ≥ 0.04%) et le breakeven stop (attend PnL ≤ 0%). Les gains dans la zone 0.01%-0.04% fondent sans déclencheur de sortie.
+Absence de vérification de la direction **temps réel** du prix avant l'ouverture de position. Le moteur de décision produit des signaux lagging (15 min) qui ne reflètent pas le mouvement instantané du prix.
 
 ## Correction appliquée
 
-### Gain Erosion Stop
+### Tick Momentum Confirmation Gate
 
-Nouveau mécanisme inséré entre le trailing stop et le breakeven stop :
+Nouveau service `TickMomentumService` qui :
+1. **Enregistre** le prix à chaque tick dans un buffer circulaire en mémoire
+2. **Analyse** les ticks des dernières ~10 secondes avant d'ouvrir
+3. **Confirme** ou **rejette** l'entrée selon la direction du prix :
+   - SHORT → le prix doit être en **baisse** sur la fenêtre
+   - LONG → le prix doit être en **hausse** sur la fenêtre
+   - FLAT (< 0.001% de variation) → entrée **rejetée** (bruit)
 
-```python
-ge_ratio = getattr(profile_params, "gain_erosion_ratio", None)
-if ge_ratio is not None and peak_pct >= 0.01 and peak_pct < ts_activation:
-    ge_retention = 1.0 - ge_ratio  # 0.70 pour ratio=0.30
-    ge_min_pct = peak_pct * ge_retention
-    if unrealized_pct_now <= ge_min_pct:
-        # Sort : le gain s'est érodé de plus de 30% du pic
-        closed = self._close_position(open_pos, current_price, ge_reason, "closed_gain_erosion")
-```
-
-**Logique :** Si le gain a atteint un pic ≥ 0.01% mais < 0.04% (zone sous le trailing), et que le gain actuel est tombé sous 70% du pic (érosion > 30%), sortie immédiate.
-
-**Exemples :**
-- Peak +$0.60 (0.025%) → exit si gain < $0.42 → **sauve $0.42 au lieu de -$1.20**
-- Peak +$0.30 (0.012%) → exit si gain < $0.21 → **sauve $0.21 au lieu de -$1.20**
+**Logique :** On prend le premier et le dernier tick dans la fenêtre de 10 sec. Si price_end > price_start → "up". Si price_end < price_start → "down". Si variation < 0.001% → "flat". On calcule aussi le ratio ticks montants/descendants pour le diagnostic.
 
 ### Fichiers modifiés
 
 | Fichier | Changement |
 |---------|-----------|
-| `schemas/journal.py` | Nouveau champ `gain_erosion_ratio: Optional[float]` dans `TradingProfileParams` |
-| `services/paper_trading_service.py` | Gain erosion stop inséré entre trailing et breakeven (31 lignes) |
-| `services/trading_profile_service.py` | `gain_erosion_ratio=0.30` sur profil scalping |
-| `services/journal_service.py` | Label `closed_gain_erosion` dans `REASON_LABELS` |
-| `tests/test_pivot_v200.py` | 18 nouveaux tests `TestGainErosionStopV2012` + adaptation breakeven existant |
+| `services/tick_momentum_service.py` | **NOUVEAU** — Service complet (buffer, record, check_direction) |
+| `schemas/journal.py` | 3 nouveaux champs : `tick_momentum_enabled`, `window_seconds`, `min_ticks` |
+| `services/paper_trading_service.py` | Import TickMomentumService + record_tick à chaque tick + gate avant entrée |
+| `services/trading_profile_service.py` | tick_momentum activé sur profil scalping (window=10s, min_ticks=2) |
+| `services/journal_service.py` | Label `tick_momentum_mismatch` dans REASON_LABELS |
+| `tests/test_pivot_v200.py` | 20 nouveaux tests (service + intégration) |
 
 ## Ce qui n'a PAS été touché
 
-- ❌ Trailing stop relatif (v2.0.9 — inchangé, prend le relais au-dessus de 0.04%)
-- ❌ Breakeven stop (toujours actif pour peak < 0.01% ou gain_erosion désactivé)
-- ❌ Anti-churn reversal (v2.0.11 — inchangé)
-- ❌ Veto bearish (v2.0.10 — inchangé)
-- ❌ Profils aggressive/conservative (gain_erosion_ratio=None → désactivé)
+- ❌ Cooldown (toujours présent, vérifié APRÈS le tick momentum)
+- ❌ Trailing stop, breakeven, gain erosion (inchangés)
+- ❌ Bearish veto (inchangé, complémentaire au tick momentum)
+- ❌ Market quality gate (inchangé)
+- ❌ Profils aggressive/conservative/balanced (tick_momentum_enabled=False)
 - ❌ Frontend
 - ❌ SL/TP, stale exit, signal contraire
 
 ## Validations
 
-- ✅ **1665 tests** backend passent (18 ajoutés)
-- ✅ Zéro régression sur les 1647 tests existants
+- ✅ **1685 tests** backend passent (20 ajoutés)
+- ✅ Zéro régression sur les 1665 tests existants
 - ✅ `tsc --noEmit` sans erreur frontend
 
 ## Documentation mise à jour
 
 | Document | Mis à jour |
 |----------|-----------|
-| `docs/CURRENT_STATE.md` | ✅ v2.0.12, 1665 tests, feature gain erosion stop |
-| `CHANGELOG.md` | ✅ Section v2.0.12 (Added + Changed + Technical) |
-| `docs/ROADMAP.md` | ✅ État actuel v2.0.12 |
-| `docs/requirements_traceability.md` | ✅ FR-GES-001, total 1665 tests |
+| `docs/CURRENT_STATE.md` | ✅ v2.0.13, 1685 tests, feature tick momentum |
+| `CHANGELOG.md` | ✅ Section v2.0.13 (Added + Changed + Technical) |
+| `docs/ROADMAP.md` | ✅ État actuel v2.0.13 |
+| `docs/requirements_traceability.md` | ✅ FR-TMC-001, total 1685 tests |
 | `docs/HANDOFF_GPT.md` | ✅ Ce fichier |
 
 ## Commit
 
 ```
-18186b3 — feat(scalping): gain erosion stop v2.0.12
+pending — feat(scalping): tick momentum confirmation v2.0.13
 ```
 
 ## État actuel
 
 | Élément | Valeur |
 |---------|--------|
-| Version | v2.0.12 |
-| Tests | 1665 passing |
-| Phase | Gain erosion stop livré |
+| Version | v2.0.13 |
+| Tests | 1685 passing |
+| Phase | Tick momentum confirmation livré |
 
 ## Prochaine action recommandée
 
 1. **Full reset + nouveau run** : faire tourner le robot en scalping pendant 1-2h
 2. **Vérifier que** :
-   - Les trades avec peak entre $0.25 et $1 se ferment via `closed_gain_erosion` au lieu de `stale_negative`
-   - Le trailing prend toujours le relais au-dessus de $1 (0.04%)
-   - Le breakeven fonctionne toujours pour les cas < $0.25
-   - Le PnL moyen par trade s'améliore (moins de pertes sur petits gains)
-3. **Audit runtime** : `GET /audit/enriched-export` pour vérifier la distribution des exit_reason
+   - Les shorts ne s'ouvrent QUE quand le prix descend réellement (log "✅ Momentum SHORT confirmé")
+   - Les entrées bloquées par tick momentum apparaissent dans les logs ("tick_momentum_mismatch")
+   - Le nombre de shorts stagnants/négatifs diminue significativement
+   - Le PnL moyen par trade s'améliore
+3. **Audit runtime** : `GET /audit/enriched-export` pour vérifier la distribution des non_trade_reason
+4. **Si trop de blocages** : ajuster `tick_momentum_window_seconds` (réduire de 10→5 sec) ou `MIN_MOVE_PCT` (réduire de 0.001→0.0005%)
 
 ## Commandes de relance
 
@@ -112,5 +107,6 @@ if ge_ratio is not None and peak_pct >= 0.01 and peak_pct < ts_activation:
 cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 8000
 cd frontend && npm run dev
 cd backend && python -m pytest tests/ -v
-cd backend && python -m pytest tests/test_pivot_v200.py::TestGainErosionStopV2012 -v
+cd backend && python -m pytest tests/test_pivot_v200.py::TestTickMomentumServiceV2013 -v
+cd backend && python -m pytest tests/test_pivot_v200.py::TestTickMomentumIntegrationV2013 -v
 ```

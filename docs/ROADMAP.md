@@ -80,9 +80,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v2.0.12 livré — Gain erosion stop (protection petits gains)
+### État actuel : v2.0.13 livré — Tick momentum confirmation (entrée par direction prix)
 
-> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. La v2.0.12 ajoute le gain erosion stop : protection des petits gains ($0.25-$1) qui fondaient sans mécanisme entre le trailing (activation 0.04%) et le breakeven (attend PnL ≤ 0%). Le gain erosion sort dès que 30% du pic est perdu (ratio=0.30, garde 70%). **1665 tests passing.**
+> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. La v2.0.13 ajoute le tick momentum confirmation : analyse des ticks récents (~10 sec) pour confirmer que le prix va dans la direction du trade AVANT d'ouvrir. SHORT → prix doit baisser. LONG → prix doit monter. Élimine les shorts stagnants qui entraient à contre-courant du prix réel. **1685 tests passing.**
 
 | Composant | Status |
 |-----------|--------|

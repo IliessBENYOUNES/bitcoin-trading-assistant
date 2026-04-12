@@ -56,6 +56,7 @@ REASON_LABELS = {
     "micro_trend_insufficient": "Micro-tendance insuffisante pour long",
     "bearish_veto": "Veto bearish : marché en baisse → LONG bloqué",
     "closed_gain_erosion": "Gain erosion : gain érodé au-delà du seuil",
+    "tick_momentum_mismatch": "Tick momentum : direction du prix ne confirme pas l'entrée",
     "other": "Autre",
 }
 

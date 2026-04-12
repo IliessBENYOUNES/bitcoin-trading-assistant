@@ -35,6 +35,7 @@ from app.services.risk_service import RiskService
 from app.services.trading_profile_service import TradingProfileService, PROFILE_PRESETS
 from app.services.leverage_service import LeverageService
 from app.services.journal_service import JournalService
+from app.services.tick_momentum_service import TickMomentumService
 from app.schemas.paper_trading import (
     PaperAccountResponse,
     PaperTradeResponse,
@@ -364,6 +365,11 @@ class PaperTradingService:
         profile_params = PROFILE_PRESETS.get(slot_name, PROFILE_PRESETS["conservative"])
         profile_name = slot_name
         is_auto_mode = False  # en multi-slot, chaque slot a un profil fixe
+
+        # [v2.0.13] Enregistrer le prix dans le buffer tick momentum.
+        # On enregistre à CHAQUE tick, même si on ne trade pas, pour construire
+        # l'historique de prix nécessaire à la confirmation de direction.
+        TickMomentumService.record_tick(slot_name, current_price, now)
 
         # [v1.6] Paramètres de décision pilotés par le profil
         _analysis_tf = getattr(profile_params, "analysis_timeframe", None) or "4h"
@@ -1178,6 +1184,50 @@ class PaperTradingService:
                         decision_action=action,
                         profile_type=profile_name,
                         non_trade_reason="bearish_veto",
+                    )
+
+            # [v2.0.13] TICK MOMENTUM CONFIRMATION — Gate d'entrée par micro price-action.
+            # Analyse les derniers ~10 sec de ticks pour confirmer que le prix va
+            # dans la direction du trade AVANT d'ouvrir.
+            # SHORT → le prix doit être en baisse. LONG → le prix doit être en hausse.
+            # Élimine les shorts qui entrent pendant que le prix monte et restent
+            # négatifs 2 min jusqu'au stale exit → perte systématique.
+            # Ce gate remplace conceptuellement le cooldown aveugle : on ne bloque pas
+            # par le TEMPS mais par la DIRECTION du prix.
+            tm_enabled = getattr(profile_params, "tick_momentum_enabled", False) if profile_params else False
+            if tm_enabled:
+                tm_window = getattr(profile_params, "tick_momentum_window_seconds", 10.0)
+                tm_min_ticks = getattr(profile_params, "tick_momentum_min_ticks", 2)
+                trade_direction = "long" if action == "acheter" else "short"
+
+                tm_confirmed, tm_result = TickMomentumService.check_direction(
+                    slot=slot_name,
+                    direction=trade_direction,
+                    window_seconds=tm_window,
+                    min_ticks=tm_min_ticks,
+                )
+
+                if not tm_confirmed:
+                    detail = (
+                        f"Tick momentum non confirmé ({trade_direction}) : {tm_result.detail}"
+                    )
+                    _log_tick(action_taken="hold", btc_price=current_price,
+                              decision_score=score, decision_action=action,
+                              decision_confidence=confidence,
+                              reason_no_trade="tick_momentum_mismatch",
+                              reason_detail=detail[:500],
+                              quality_gate_passed=True,
+                              rejection_category="momentum",
+                              **_qg_log, **_econ_log)
+                    return PaperTickResult(
+                        action_taken="hold",
+                        detail=detail,
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        decision_score=score,
+                        decision_action=action,
+                        profile_type=profile_name,
+                        non_trade_reason="tick_momentum_mismatch",
                     )
 
             # [v1.5] Vérification profil — score minimum

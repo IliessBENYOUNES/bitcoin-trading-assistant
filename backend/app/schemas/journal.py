@@ -141,6 +141,15 @@ class TradingProfileParams(BaseModel):
     # Peak +$1.00 → exit si gain < $0.70 (érosion > 30%).
     # None = désactivé (profils classiques).
     gain_erosion_ratio: Optional[float] = Field(default=None, description="Ratio d'érosion max du gain avant sortie (0.30 = sort si gain < 70% du pic). None=désactivé.")
+    # [v2.0.13] TICK MOMENTUM CONFIRMATION — Gate d'entrée par micro price-action.
+    # Au lieu d'un cooldown fixe aveugle, on analyse les derniers ticks (~10 sec)
+    # pour confirmer que le prix va dans la direction du trade AVANT d'ouvrir.
+    # SHORT → prix doit être en baisse. LONG → prix doit être en hausse.
+    # Si le momentum ne confirme pas → pas d'entrée (on attend le prochain tick).
+    # Élimine les shorts qui entrent à contre-courant et restent négatifs 2 min.
+    tick_momentum_enabled: bool = Field(default=False, description="Activer la confirmation de direction par tick momentum avant entrée")
+    tick_momentum_window_seconds: float = Field(default=10.0, description="Fenêtre d'analyse des ticks en secondes (défaut: 10)")
+    tick_momentum_min_ticks: int = Field(default=2, description="Nombre minimum de ticks requis dans la fenêtre pour décider")
 
 
 class TradingProfileResponse(BaseModel):
