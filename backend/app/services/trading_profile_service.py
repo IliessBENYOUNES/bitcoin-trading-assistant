@@ -95,6 +95,25 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         buy_threshold=20,
         sell_threshold=15,
         stale_exit_minutes=180,
+        # [v2.0.19] Stale négatif raccourci : 180→60 min pour le slot aggressive.
+        # L'analyse du run montre que le trade #597 a dérivé 3h en perte (-$10.32)
+        # sans aucune sortie anticipée. 60 min suffisent pour confirmer qu'un swing
+        # intraday ne fonctionne pas. Le stale normal (180 min) reste pour les
+        # positions flat (stagnantes mais pas perdantes).
+        stale_negative_exit_minutes=60,
+        # [v2.0.19] TRAILING STOP pour aggressive — protection des gains intraday.
+        # Avant, le slot aggressive n'avait AUCUN trailing stop. Les gains fondaient
+        # pendant 3h jusqu'au stale exit. Maintenant :
+        # - Activation à 0.15% ($3.75 sur $2500) → assez haut pour ne pas couper trop tôt
+        # - Drop ratio 30% → garde 70% du gain au pic
+        # Plus tolérant que le scalping (15%) car les swings sont plus longs.
+        trailing_stop_activation_pct=0.15,
+        trailing_stop_drop_ratio=0.30,
+        # [v2.0.19] GAIN EROSION pour aggressive — protection des petits gains.
+        # Comble le trou entre trailing (0.15%) et breakeven (PnL ≤ 0).
+        # Ratio 50% : coupe si le gain perd la moitié de son pic.
+        # Plus permissif que le scalping (30%) car les swings oscillent davantage.
+        gain_erosion_ratio=0.50,
         # [v1.9.9] Quality gate minimum pour le slot aggressive.
         min_market_quality=25,
         min_volume_ratio=0.5,
@@ -189,7 +208,10 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # de confirmation pour éviter le bruit).
         candle_reversal_exit_enabled=True,
         candle_reversal_min_seconds=3.0,   # Attendre 3 sec de reversal confirmé
-        candle_reversal_window_seconds=15.0,  # Fenêtre d'analyse de 15 sec
+        # [v2.0.19] Fenêtre 15→30 sec : la fenêtre de 15s avec des ticks à 5s
+        # ne contient que ~3 ticks, insuffisant pour détecter un retournement.
+        # 30s = ~6 ticks = même fenêtre que la détection d'entrée.
+        candle_reversal_window_seconds=30.0,
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
         # [v2.0.11] max_cooldown 10→5 min : en scalping, 10 min = éternité.

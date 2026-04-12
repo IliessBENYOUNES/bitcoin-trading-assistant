@@ -263,6 +263,7 @@ class TickMomentumService:
         slot: str,
         window_seconds: float = 30.0,
         min_ticks: int = 3,
+        min_move_pct: float = None,
     ) -> tuple[str | None, TickMomentumResult]:
         """
         Détecte la direction dominante du prix sans attendre de direction souhaitée.
@@ -271,16 +272,22 @@ class TickMomentumService:
         qui DÉTERMINE si on entre long ou short, au lieu de confirmer la direction
         du score technique.
 
+        [v2.0.19] min_move_pct : seuil de mouvement personnalisable. Si None,
+        utilise cls.MIN_MOVE_PCT (0.002%). Le check_candle_reversal utilise un
+        seuil plus bas (0.001%) pour être plus sensible aux retournements.
+
         Args:
             slot: Nom du slot (ex: "scalping")
             window_seconds: Fenêtre d'analyse en secondes (défaut: 30)
             min_ticks: Nombre minimum de ticks requis dans la fenêtre
+            min_move_pct: Seuil de mouvement minimum en % (None=cls.MIN_MOVE_PCT)
 
         Returns:
             (direction, result) :
             - direction: "long" si prix monte, "short" si prix descend, None si flat/insufficient
             - result: TickMomentumResult avec les détails
         """
+        effective_min_move = min_move_pct if min_move_pct is not None else cls.MIN_MOVE_PCT
         buffer = cls._buffers.get(slot, [])
 
         if len(buffer) < min_ticks:
@@ -328,7 +335,10 @@ class TickMomentumService:
         up_ratio = up_ticks / total_moves if total_moves > 0 else 0.5
 
         # Déterminer la direction du momentum
-        if abs(price_change_pct) < cls.MIN_MOVE_PCT:
+        # [v2.0.19] Utilise effective_min_move au lieu du seuil de classe fixe.
+        # Permet au candle reversal d'utiliser un seuil plus sensible (0.001%)
+        # tandis que l'override d'entrée garde le seuil normal (0.002%).
+        if abs(price_change_pct) < effective_min_move:
             tick_direction = "flat"
         elif price_change > 0:
             tick_direction = "up"
@@ -430,8 +440,12 @@ class TickMomentumService:
         now = datetime.now(timezone.utc)
 
         # Détecter la direction actuelle
+        # [v2.0.19] Seuil abaissé à 0.001% (vs 0.002% pour l'entrée) pour être
+        # plus sensible aux retournements. Sur BTC ~$71K, 0.001% = $0.71.
+        # Cela permet de détecter les reversals en scalping où le prix bouge peu.
         current_dir, tm_result = cls.detect_direction(
-            slot=slot, window_seconds=window_seconds, min_ticks=min_ticks
+            slot=slot, window_seconds=window_seconds, min_ticks=min_ticks,
+            min_move_pct=0.001,
         )
 
         # Pas assez de données → pas de reversal

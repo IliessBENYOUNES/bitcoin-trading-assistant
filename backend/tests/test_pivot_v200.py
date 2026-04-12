@@ -626,10 +626,16 @@ class TestScalpingV207FastExit:
         assert min_capture_relative > 0, f"Capture min relative doit être > 0: {min_capture_relative}%"
 
     def test_aggressive_not_affected(self):
-        """L'aggressive est sanctuarisé — aucun changement."""
+        """[v2.0.19] L'aggressive a désormais trailing + stale négatif pour éviter les dérives."""
         agg = PROFILE_PRESETS["aggressive"]
         assert agg.stale_exit_minutes == 180
-        assert agg.trailing_stop_activation_pct is None
+        # [v2.0.19] Trailing stop ajouté pour protéger les gains intraday
+        assert agg.trailing_stop_activation_pct == 0.15
+        assert agg.trailing_stop_drop_ratio == 0.30
+        # [v2.0.19] Stale négatif raccourci : 180→60 min
+        assert agg.stale_negative_exit_minutes == 60
+        # [v2.0.19] Gain erosion pour les petits gains
+        assert agg.gain_erosion_ratio == 0.50
 
 
 # ================================================================
@@ -1578,10 +1584,10 @@ class TestGainErosionStopV2012:
         p = PROFILE_PRESETS["scalping"]
         assert p.gain_erosion_ratio == 0.30
 
-    def test_aggressive_has_no_gain_erosion(self):
-        """Le profil aggressive n'a PAS de gain erosion (trades longs)."""
+    def test_aggressive_has_gain_erosion(self):
+        """[v2.0.19] Le profil aggressive a gain_erosion_ratio=0.50 (plus permissif que scalping)."""
         p = PROFILE_PRESETS["aggressive"]
-        assert p.gain_erosion_ratio is None
+        assert p.gain_erosion_ratio == 0.50
 
     def test_conservative_has_no_gain_erosion(self):
         """Le profil conservative n'a PAS de gain erosion."""

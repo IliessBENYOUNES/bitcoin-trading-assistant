@@ -802,7 +802,9 @@ class PaperTradingService:
                     # ouvert PARCE QUE le score est négatif (survente). Le signal contraire
                     # ne doit fermer que si le score bearish s'est INTENSIFIÉ au-delà du
                     # score d'entrée, sinon la thèse de renversement n'est pas invalidée.
-                    is_reversal = (open_pos.entry_reason or "").startswith("mean_reversion_")
+                    # [v2.0.19] Étendu aux tick_override_long : même protection car le trade
+                    # est basé sur la direction du prix, pas sur le score technique.
+                    is_reversal = (open_pos.entry_reason or "").startswith(("mean_reversion_", "tick_override_"))
                     if action == "vendre" and not trade_too_young:
                         if is_reversal and open_pos.decision_score is not None:
                             # Reversal LONG : ne fermer que si le bearish est PIRE qu'à l'entrée
@@ -845,7 +847,10 @@ class PaperTradingService:
                     # a AUGMENTÉ au-delà du score d'entrée (la pression bullish s'intensifie,
                     # invalidant la thèse de mean-reversion). Sinon, laisser le trailing stop,
                     # le stale, ou le SL/TP gérer la sortie naturellement.
-                    is_reversal = (open_pos.entry_reason or "").startswith("mean_reversion_")
+                    # [v2.0.19] Étendu aux tick_override_short : même protection car le trade
+                    # est basé sur la direction du prix. Le score bullish n'invalide pas un
+                    # short basé sur un momentum tick descendant.
+                    is_reversal = (open_pos.entry_reason or "").startswith(("mean_reversion_", "tick_override_"))
                     if is_reversal and open_pos.decision_score is not None:
                         # Le seuil est le score d'entrée : ne fermer que si le bullish s'intensifie
                         short_exit_th = max(short_exit_th, abs(open_pos.decision_score) + 1)
@@ -1444,6 +1449,13 @@ class PaperTradingService:
             direction = "long" if action == "acheter" else "short"
             if scalping_reversal:
                 reason = f"mean_reversion_{direction} | score={score} | {confidence} | {summary[:100]}"
+            elif tm_override_active:
+                # [v2.0.19] Les trades ouverts via tick momentum override utilisent un
+                # préfixe spécifique pour bénéficier de la protection anti-churn dans
+                # la logique de signal contraire (même protection que mean_reversion).
+                # Sans cela, un override SHORT à score=66 est immédiatement fermé par
+                # le signal contraire car score=66 > short_exit_th=30.
+                reason = f"tick_override_{direction} | score={score} | {confidence} | {summary[:100]}"
             else:
                 reason = f"{action} | score={score} | {confidence} | {summary[:100]}"
 

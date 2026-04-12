@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.19] - 2026-04-12
+
+### Fixed
+- **AGGRESSIVE SLOT PROTECTION** — Le slot aggressive (trade #597) a perdu -$10.32 en dérivant 3h sans trailing stop ni stale négatif. Ajout de `stale_negative_exit_minutes=60`, `trailing_stop_activation_pct=0.15`, `trailing_stop_drop_ratio=0.30`, `gain_erosion_ratio=0.50`. Impact estimé : transforme les pertes de -$10 (3h dérive) en -$2 à -$3 (60 min max).
+- **CANDLE REVERSAL FIX** — La feature v2.0.18 n'a JAMAIS déclenché en production (0/32 trades). `detect_direction()` utilisait un seuil fixe `MIN_MOVE_PCT=0.002%` trop élevé avec une fenêtre de 15s (~3 ticks à 5s/tick). Fix : `detect_direction()` accepte un `min_move_pct` personnalisable, `check_candle_reversal` utilise 0.001% (plus sensible), fenêtre 15→30s (plus de ticks).
+- **OVERRIDE ANTI-CHURN** — Les trades tick_override étaient immédiatement fermés par signal contraire (<1 min) car le score bullish (+66) dépassait le seuil de sortie (30). Fix : entry_reason préfixé `tick_override_` + logique `is_reversal` étendue pour protéger les overrides comme les mean_reversion (seuil relevé à `abs(score_entrée)+1`).
+
+### Changed
+- `TickMomentumService.detect_direction()` : nouveau paramètre optionnel `min_move_pct` (None=cls.MIN_MOVE_PCT).
+- `TickMomentumService.check_candle_reversal()` : passe `min_move_pct=0.001` à detect_direction pour sensibilité accrue.
+- Profil `aggressive` : +4 nouveaux paramètres de protection (trailing, gain_erosion, stale_negative).
+- Profil `scalping` : `candle_reversal_window_seconds` 15→30.
+- `_tick_single_slot` : entry_reason des override trades préfixé `tick_override_{direction}`.
+- `_tick_single_slot` : `is_reversal` check étendu pour inclure `tick_override_` (long et short).
+- 2 tests mis à jour (`test_aggressive_not_affected`, `test_aggressive_has_no_gain_erosion`).
+
+### Technical
+- Modifié : `backend/app/services/tick_momentum_service.py` — `detect_direction` accept `min_move_pct`, `check_candle_reversal` uses 0.001%
+- Modifié : `backend/app/services/trading_profile_service.py` — Aggressive profile +4 params, scalping reversal window 30s
+- Modifié : `backend/app/services/paper_trading_service.py` — `tick_override_` prefix + `is_reversal` extended
+- Modifié : `backend/tests/test_pivot_v200.py` — 2 tests updated for aggressive profile changes
+- Tests : 1730 (inchangé)
+
 ## [2.0.18] - 2026-04-12
 
 ### Added
