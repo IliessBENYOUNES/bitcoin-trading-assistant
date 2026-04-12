@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.9] - 2026-04-12
+
+### Fixed
+- **TRAILING STOP RELATIF — Les gains étaient rongés par le trailing absolu** — L'ancien trailing (recul fixe de 0.06%) perdait 50-60% du gain sur les petits peaks (0.10%-0.12%) typiques du scalping. Exemple : peak +0.12%, exit à +0.06% = 50% du gain perdu. Le nouveau système est **proportionnel au gain** : on sort quand le gain a reculé de 30% par rapport à son pic. Peak +0.12% → exit à +0.084% (30% perdu max). Peak +0.50% → exit à +0.35% (toujours 30% max). Le paramètre `trailing_stop_drop_ratio=0.30` remplace `trailing_stop_pct=0.06` pour le scalping.
+
+### Added
+- **Paramètre `trailing_stop_drop_ratio`** dans `TradingProfileParams` — ratio de recul relatif au pic (0.30 = sortie quand gain < 70% du pic). Remplace `trailing_stop_pct` si défini, sinon fallback vers le mode absolu.
+- **5 tests `TestTrailingStopRelativeV209`** :
+  - `test_relative_trailing_keeps_70pct_of_small_gain` — peak modeste → garde ~70%
+  - `test_relative_trailing_no_fire_when_gain_above_retention` — gain au-dessus du seuil → pas de trailing
+  - `test_relative_trailing_big_gain_more_room` — gros gain → tolère plus de recul absolu qu'avant
+  - `test_relative_trailing_short_symmetric` — trailing relatif fonctionne pour les shorts
+  - `test_relative_trailing_preserves_more_than_absolute` — preuve mathématique : le relatif garde toujours plus que l'absolu pour les peaks < 0.20%
+
+### Technical
+- Modifié : `backend/app/schemas/journal.py` — Nouveau champ `trailing_stop_drop_ratio` dans `TradingProfileParams`
+- Modifié : `backend/app/services/trading_profile_service.py` — `trailing_stop_drop_ratio=0.30` dans le preset scalping
+- Modifié : `backend/app/services/paper_trading_service.py` — Logique trailing refondue : mode relatif (prioritaire) avec fallback absolu
+- Modifié : `backend/tests/test_pivot_v200.py` — 5 nouveaux tests trailing relatif
+
 ## [2.0.8] - 2026-04-12
 
 ### Fixed

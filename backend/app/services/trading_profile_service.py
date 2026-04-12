@@ -152,9 +152,13 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # L'audit montre que le peak atteint 0.14% — juste sous l'ancien seuil de 0.15%.
         # Le trailing ne s'activait JAMAIS, la position dérivait jusqu'au stale à 15 min.
         # Activation 0.15%→0.10% : le trailing s'active dès +0.10%, protège les petits gains.
-        # Trail 0.10%→0.06% : recul max depuis le peak avant fermeture. Min capture = 0.04%.
+        # [v2.0.9] TRAILING RELATIF — On ne perd plus une proportion fixe mais un % du gain.
+        # Ancien système (absolu) : trail 0.06% → peak 0.12% → exit à 0.06% (50% du gain perdu !)
+        # Nouveau système (relatif) : drop_ratio 0.30 → peak 0.12% → exit à 0.084% (30% perdu max)
+        # trailing_stop_pct conservé comme fallback mais trailing_stop_drop_ratio a priorité.
         trailing_stop_activation_pct=0.10,
-        trailing_stop_pct=0.06,
+        trailing_stop_pct=0.06,  # fallback absolu (utilisé si drop_ratio est None)
+        trailing_stop_drop_ratio=0.30,  # [v2.0.9] Relatif : max 30% de recul, garde 70% du pic
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
         max_cooldown_minutes=10.0,

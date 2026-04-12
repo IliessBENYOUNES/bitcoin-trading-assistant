@@ -436,7 +436,9 @@ class PaperTradingService:
             # Fix : trailing stop vérifié EN PREMIER, il a la priorité sur le stale exit.
             ts_pct = getattr(profile_params, "trailing_stop_pct", None) if profile_params else None
             ts_activation = getattr(profile_params, "trailing_stop_activation_pct", None) if profile_params else None
-            if ts_pct and ts_activation:
+            # [v2.0.9] Trailing relatif : drop_ratio a priorité sur ts_pct absolu
+            ts_drop_ratio = getattr(profile_params, "trailing_stop_drop_ratio", None) if profile_params else None
+            if (ts_pct or ts_drop_ratio) and ts_activation:
                 unrealized_pnl_now = self._calc_unrealized_pnl(open_pos, current_price)
                 unrealized_pct_now = (unrealized_pnl_now / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
 
@@ -450,27 +452,50 @@ class PaperTradingService:
 
                 peak_pct = (peak_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
 
-                # Condition 1 : Trailing stop classique
-                # Le pic a dépassé le seuil d'activation ET le PnL actuel
-                # a reculé de plus de trailing_stop_pct depuis le pic
-                if peak_pct >= ts_activation and (peak_pct - unrealized_pct_now) >= ts_pct:
-                    signal_reason = (
-                        f"Trailing stop : pic {peak_pct:.3f}%, actuel {unrealized_pct_now:.3f}%, "
-                        f"recul {(peak_pct - unrealized_pct_now):.3f}% ≥ seuil {ts_pct}%"
-                    )
-                    closed = self._close_position(open_pos, current_price, signal_reason, "closed_trailing_stop")
-                    _log_tick(action_taken="closed_trailing_stop", btc_price=current_price,
-                              had_open_position=True, trade_id=closed.id,
-                              leverage_final=getattr(closed, "leverage", 1.0))
-                    return PaperTickResult(
-                        action_taken="closed_trailing_stop",
-                        detail=f"Position fermée (trailing stop) : {signal_reason}",
-                        position_closed=PaperTradeResponse.model_validate(closed),
-                        current_price=current_price,
-                        timestamp=now.isoformat(),
-                        leverage_used=getattr(closed, "leverage", 1.0),
-                        profile_type=profile_name,
-                    )
+                # Condition 1 : Trailing stop
+                # [v2.0.9] TRAILING RELATIF — Protège les gains proportionnellement.
+                # Ancien système (absolu) : on sortait quand le recul >= 0.06% fixe.
+                #   → Peak 0.12% - 0.06% = exit à 0.06% → 50% du gain perdu !
+                # Nouveau système (relatif) : on sort quand le gain < peak * (1 - drop_ratio).
+                #   → Peak 0.12% × 70% = exit à 0.084% → seulement 30% perdu.
+                # Le trailing relatif s'adapte à la taille du gain : plus le gain est gros,
+                # plus il tolère de recul en absolu (mais garde toujours ~70% du gain).
+                if peak_pct >= ts_activation:
+                    trailing_triggered = False
+                    if ts_drop_ratio is not None and peak_pct > 0:
+                        # Mode RELATIF : sortir quand le gain actuel < peak * (1 - drop_ratio)
+                        # Ex: drop_ratio=0.30, peak=0.20% → exit sous 0.14% (garde 70%)
+                        retention = 1.0 - ts_drop_ratio
+                        min_gain_pct = peak_pct * retention
+                        if unrealized_pct_now <= min_gain_pct:
+                            trailing_triggered = True
+                            signal_reason = (
+                                f"Trailing stop relatif : pic {peak_pct:.3f}%, actuel {unrealized_pct_now:.3f}%, "
+                                f"seuil {min_gain_pct:.3f}% ({retention:.0%} du pic), "
+                                f"recul {((peak_pct - unrealized_pct_now) / peak_pct * 100):.1f}% ≥ {ts_drop_ratio * 100:.0f}%"
+                            )
+                    elif ts_pct and (peak_pct - unrealized_pct_now) >= ts_pct:
+                        # Mode ABSOLU (fallback) : recul fixe en points de %
+                        trailing_triggered = True
+                        signal_reason = (
+                            f"Trailing stop absolu : pic {peak_pct:.3f}%, actuel {unrealized_pct_now:.3f}%, "
+                            f"recul {(peak_pct - unrealized_pct_now):.3f}% ≥ seuil {ts_pct}%"
+                        )
+
+                    if trailing_triggered:
+                        closed = self._close_position(open_pos, current_price, signal_reason, "closed_trailing_stop")
+                        _log_tick(action_taken="closed_trailing_stop", btc_price=current_price,
+                                  had_open_position=True, trade_id=closed.id,
+                                  leverage_final=getattr(closed, "leverage", 1.0))
+                        return PaperTickResult(
+                            action_taken="closed_trailing_stop",
+                            detail=f"Position fermée (trailing stop) : {signal_reason}",
+                            position_closed=PaperTradeResponse.model_validate(closed),
+                            current_price=current_price,
+                            timestamp=now.isoformat(),
+                            leverage_used=getattr(closed, "leverage", 1.0),
+                            profile_type=profile_name,
+                        )
 
                 # [v2.0.8] Condition 2 : Breakeven stop (filet de sécurité)
                 # Si la position a atteint un petit profit (peak >= activation/2 = 0.05%)

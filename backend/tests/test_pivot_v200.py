@@ -835,7 +835,267 @@ class TestTrailingStopPriorityV208:
 
 
 # ================================================================
-# 10. [v2.0.8] SHORTS BIDIRECTIONNELS — Reversal + Trailing symétrique
+# 10. [v2.0.9] TRAILING STOP RELATIF — Protection proportionnelle des gains
+# ================================================================
+
+
+class TestTrailingStopRelativeV209:
+    """
+    Tests v2.0.9 — Trailing stop relatif au gain (pas au prix BTC).
+
+    Ancien système (absolu, 0.06%) : peak 0.12% → exit à 0.06% → 50% du gain perdu.
+    Nouveau système (relatif, 30%) : peak 0.12% → exit à 0.084% → seulement 30% perdu.
+    """
+
+    def test_relative_trailing_keeps_70pct_of_small_gain(self, db_session):
+        """
+        Peak modeste (0.12%) : le trailing relatif garde ~70% du gain.
+        Ancien système aurait gardé seulement 50%.
+        """
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount, PaperTrade
+        from datetime import datetime, timezone, timedelta
+
+        svc = PaperTradingService(db_session)
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        entry_time = datetime.now(timezone.utc) - timedelta(minutes=1)
+        entry_price = 83000.0
+        # Peak à 83100 → peak_pct = 100/83000 = 0.1205%
+        # Seuil relatif (30% drop) = 0.1205 * 0.70 = 0.0843%
+        trade = PaperTrade(
+            account_id=account.id,
+            direction="long",
+            entry_price=entry_price,
+            position_size_usd=2500.0,
+            stop_loss_price=entry_price * 0.998,
+            take_profit_price=entry_price * 1.008,
+            status="open",
+            entry_ts=entry_time,
+            highest_price_since_entry=83100.0,  # peak +0.1205%
+            lowest_price_since_entry=entry_price,
+            leverage=1.0,
+            entry_reason="Test relative trailing small gain",
+            slot="scalping",
+        )
+        db_session.add(trade)
+        db_session.flush()
+
+        # Prix à 83060 → current_pct = 60/83000 = 0.0723%
+        # 0.0723% < 0.0843% (seuil relatif) → trailing fire
+        current_price = 83060.0
+        now = datetime.now(timezone.utc)
+
+        result = svc._tick_single_slot(
+            account=account, slot_name="scalping",
+            current_price=current_price, now=now, is_multi=True,
+        )
+
+        assert result.action_taken == "closed_trailing_stop", (
+            f"Attendu closed_trailing_stop, obtenu {result.action_taken}"
+        )
+        # Le gain préservé (0.0723%) représente ~60% du peak, ce qui montre
+        # que le trailing relatif a fermé AVANT que le gain tombe à 50%
+        assert "relatif" in result.detail.lower(), "Le trailing doit être en mode relatif"
+
+    def test_relative_trailing_no_fire_when_gain_above_retention(self, db_session):
+        """
+        Peak à 0.12%, gain actuel à 0.10% (83% du peak) → pas de trailing (seuil 70%).
+        Ancien système absolu aurait laissé passer aussi (drop 0.02% < 0.06%).
+        """
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount, PaperTrade
+        from datetime import datetime, timezone, timedelta
+
+        svc = PaperTradingService(db_session)
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        entry_time = datetime.now(timezone.utc) - timedelta(seconds=30)
+        entry_price = 83000.0
+        # Peak à 83100 → 0.1205%
+        trade = PaperTrade(
+            account_id=account.id,
+            direction="long",
+            entry_price=entry_price,
+            position_size_usd=2500.0,
+            stop_loss_price=entry_price * 0.998,
+            take_profit_price=entry_price * 1.008,
+            status="open",
+            entry_ts=entry_time,
+            highest_price_since_entry=83100.0,
+            lowest_price_since_entry=entry_price,
+            leverage=1.0,
+            entry_reason="Test no fire above retention",
+            slot="scalping",
+        )
+        db_session.add(trade)
+        db_session.flush()
+
+        # Prix à 83085 → current_pct = 85/83000 = 0.1024%
+        # 0.1024% > 0.0843% (70% du peak) → PAS de trailing
+        current_price = 83085.0
+        now = datetime.now(timezone.utc)
+
+        result = svc._tick_single_slot(
+            account=account, slot_name="scalping",
+            current_price=current_price, now=now, is_multi=True,
+        )
+
+        assert result.action_taken != "closed_trailing_stop", (
+            f"Le trailing ne devrait pas fire : gain {0.1024:.3f}% > seuil {0.0843:.3f}%"
+        )
+
+    def test_relative_trailing_big_gain_more_room(self, db_session):
+        """
+        Peak important (0.40%) : le trailing relatif tolère un recul plus large
+        (0.12% absolu) que l'ancien système (0.06% fixe).
+        Cela permet aux gros gains de respirer sans être coupés trop tôt.
+        """
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount, PaperTrade
+        from datetime import datetime, timezone, timedelta
+
+        svc = PaperTradingService(db_session)
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        entry_time = datetime.now(timezone.utc) - timedelta(minutes=2)
+        entry_price = 83000.0
+        # Peak à 83332 → peak_pct = 332/83000 = 0.40%
+        # Seuil relatif = 0.40% * 0.70 = 0.28%
+        trade = PaperTrade(
+            account_id=account.id,
+            direction="long",
+            entry_price=entry_price,
+            position_size_usd=2500.0,
+            stop_loss_price=entry_price * 0.998,
+            take_profit_price=entry_price * 1.008,
+            status="open",
+            entry_ts=entry_time,
+            highest_price_since_entry=83332.0,  # peak +0.40%
+            lowest_price_since_entry=entry_price,
+            leverage=1.0,
+            entry_reason="Test big gain more room",
+            slot="scalping",
+        )
+        db_session.add(trade)
+        db_session.flush()
+
+        # Prix à 83260 → current_pct = 260/83000 = 0.313%
+        # 0.313% > 0.28% (seuil) → PAS de trailing
+        # Ancien système : drop = 0.40 - 0.313 = 0.087% > 0.06% → aurait fermé !
+        current_price = 83260.0
+        now = datetime.now(timezone.utc)
+
+        result = svc._tick_single_slot(
+            account=account, slot_name="scalping",
+            current_price=current_price, now=now, is_multi=True,
+        )
+
+        assert result.action_taken != "closed_trailing_stop", (
+            f"Gros gain : le trailing relatif ne devrait PAS fire (gain 0.313% > seuil 0.28%)"
+        )
+
+    def test_relative_trailing_short_symmetric(self, db_session):
+        """
+        Trailing relatif fonctionne aussi sur les shorts (symétrie).
+        """
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount, PaperTrade
+        from datetime import datetime, timezone, timedelta
+
+        svc = PaperTradingService(db_session)
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        entry_time = datetime.now(timezone.utc) - timedelta(minutes=1)
+        entry_price = 83000.0
+        # Short : on gagne quand le prix descend
+        # Peak = lowest at 82900 → peak_pct = (83000-82900)/83000 = 0.1205%
+        # Seuil relatif = 0.1205 * 0.70 = 0.0843%
+        trade = PaperTrade(
+            account_id=account.id,
+            direction="short",
+            entry_price=entry_price,
+            position_size_usd=2500.0,
+            stop_loss_price=entry_price * 1.002,
+            take_profit_price=entry_price * 0.992,
+            status="open",
+            entry_ts=entry_time,
+            highest_price_since_entry=entry_price,
+            lowest_price_since_entry=82900.0,  # peak pour short
+            leverage=1.0,
+            entry_reason="Test relative trailing short",
+            slot="scalping",
+        )
+        db_session.add(trade)
+        db_session.flush()
+
+        # Prix remonte à 82940 → current_pct = (83000-82940)/83000 = 0.0723%
+        # 0.0723% < 0.0843% → trailing fire
+        current_price = 82940.0
+        now = datetime.now(timezone.utc)
+
+        result = svc._tick_single_slot(
+            account=account, slot_name="scalping",
+            current_price=current_price, now=now, is_multi=True,
+        )
+
+        assert result.action_taken == "closed_trailing_stop", (
+            f"Short : trailing relatif devrait fire, obtenu {result.action_taken}"
+        )
+
+    def test_relative_trailing_preserves_more_than_absolute(self):
+        """
+        Test mathématique : le trailing relatif (30% drop) préserve toujours
+        un pourcentage plus élevé du gain que le trailing absolu (0.06%).
+        Pour des peaks entre 0.10% et 0.20% (cas le plus fréquent en scalping).
+        """
+        drop_ratio = 0.30
+        ts_pct_absolute = 0.06  # ancien seuil
+
+        # Pour des peaks entre 0.10% et 0.19%, le relatif garde strictement plus.
+        # À 0.20% exactement, ils convergent (70% = 70%). Au-delà, l'absolu garde plus
+        # (ce qui est normal : le relatif donne plus d'espace aux gros gains).
+        for peak_pct in [0.10, 0.12, 0.14, 0.16, 0.18]:
+            # Relatif : garde (1 - drop_ratio) * peak
+            relative_exit = peak_pct * (1 - drop_ratio)
+            relative_kept_pct = relative_exit / peak_pct * 100
+
+            # Absolu : garde peak - ts_pct
+            absolute_exit = peak_pct - ts_pct_absolute
+            absolute_kept_pct = absolute_exit / peak_pct * 100
+
+            assert relative_kept_pct > absolute_kept_pct, (
+                f"Peak {peak_pct}%: relatif garde {relative_kept_pct:.1f}% "
+                f"vs absolu {absolute_kept_pct:.1f}% — le relatif devrait garder plus"
+            )
+
+
+# ================================================================
+# 11. [v2.0.8] SHORTS BIDIRECTIONNELS — Reversal + Trailing symétrique
 # ================================================================
 
 

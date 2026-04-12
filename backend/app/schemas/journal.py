@@ -59,6 +59,16 @@ class TradingProfileParams(BaseModel):
         default=None,
         description="% minimum de profit avant activation du trailing stop (ex: 0.03 = 0.03%)"
     )
+    # [v2.0.9] Trailing stop RELATIF — protège les gains proportionnellement au pic.
+    # Au lieu de couper sur un recul ABSOLU (0.06% = identique que le pic soit 0.10% ou 0.50%),
+    # on coupe quand le gain a reculé de X% PAR RAPPORT À SA VALEUR AU PIC.
+    # Ex: trailing_stop_drop_ratio=0.30 → on sort quand le gain descend sous 70% du pic.
+    # Peak=0.12% → exit sous 0.084%. Peak=0.50% → exit sous 0.35%.
+    # Si activé (not None), REMPLACE le trailing_stop_pct absolu.
+    trailing_stop_drop_ratio: Optional[float] = Field(
+        default=None,
+        description="Ratio de recul relatif au pic (0.30 = sortie quand gain < 70% du pic). Remplace trailing_stop_pct si défini."
+    )
     # [v1.9] Smart cooldown — cooldown contextuel au lieu d'un cooldown fixe
     smart_cooldown_enabled: bool = Field(default=False, description="Active le cooldown intelligent contextuel")
     min_cooldown_minutes: Optional[float] = Field(default=None, description="Borne min du cooldown intelligent (minutes)")
