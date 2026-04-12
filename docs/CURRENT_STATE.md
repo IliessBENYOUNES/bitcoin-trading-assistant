@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 12 avril 2026
 > **Version :** v2.0.16
 > **Branche :** `master`
-> **Dernier commit :** `pending` — feat(ml): exit candle direction + precise timestamps + run duration v2.0.16
+> **Dernier commit :** `31bf77c` — feat(ml): exit candle direction + precise timestamps + run duration v2.0.16
 
 ---
 
