@@ -280,7 +280,7 @@ class TestScalpingRecalibration:
     def test_trailing_stop_activation_increased(self):
         """[v2.0.9] Trailing stop activation abaissé à 0.02% — protège dès ~$0.50."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.02
+        assert p.trailing_stop_activation_pct == 0.04
 
     def test_trailing_stop_trail_increased(self):
         """[v1.9.5] Trailing stop trail resserré de 0.12% à 0.10%."""

@@ -151,11 +151,15 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # [v2.0.9] TRAILING RELATIF basé sur le GAIN (pas sur le prix BTC).
         # Le trailing surveille le gain ($) seconde par seconde.
         # Dès que le gain baisse de X% par rapport à son pic, on sort.
-        # Ex: drop_ratio=0.03, peak gain=$1.00 → exit dès que gain < $0.97.
-        # Activation très basse (0.02%) : protège dès ~$0.50 de gain au lieu d'attendre $2.50.
-        trailing_stop_activation_pct=0.02,  # [v2.0.9] 0.10→0.02 : protéger dès ~$0.50 de gain
+        # [v2.0.9-fix2] Ratio 3%→15% : avec des ticks toutes les 5 sec, le BTC bouge
+        # de $5-20 par tick. Sur un gain de $1.25 (peak 0.05%), 3% = $0.04 de tolérance
+        # = MOINS qu'un seul tick. Le trailing détecte le dépassement mais le prix est
+        # déjà 80% plus bas. 15% = $0.19 de tolérance = ~1-2 ticks de marge réaliste.
+        # Activation 0.02→0.04% : les peaks à 0.01% (=$0.25) ne sont pas protégeables,
+        # le breakeven sort en négatif. 0.04% = ~$1 minimum avant protection.
+        trailing_stop_activation_pct=0.04,  # [v2.0.9] 0.02→0.04 : ~$1 de gain min
         trailing_stop_pct=0.06,  # fallback absolu (utilisé si drop_ratio est None)
-        trailing_stop_drop_ratio=0.03,  # [v2.0.9] 3% : gain $1.00 → exit sous $0.97
+        trailing_stop_drop_ratio=0.15,  # [v2.0.9] 15% : garde 85% du gain, réaliste pour 5sec ticks
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
         max_cooldown_minutes=10.0,

@@ -262,9 +262,9 @@ class TestScalpingProfileV200:
     def test_trailing_activation_raised(self):
         """[v2.0.9] Trailing activation abaissé à 0.02% — protège les gains dès ~$0.50."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct == 0.02
+        assert scalp.trailing_stop_activation_pct == 0.04
         # [v2.0.9] drop_ratio doit être configuré
-        assert scalp.trailing_stop_drop_ratio == 0.03, "drop_ratio 3% pour protéger les gains"
+        assert scalp.trailing_stop_drop_ratio == 0.15, "drop_ratio 3% pour protéger les gains"
 
     def test_max_trades_reduced(self):
         """Moins de trades par jour (≤ 30)."""
@@ -429,7 +429,7 @@ class TestScalpingV203MiniLot:
     def test_trailing_activation_lowered_to_010(self):
         """[v2.0.9] trailing_stop_activation_pct abaissé de 0.10 à 0.02 — protège dès ~$0.50."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct == 0.02, (
+        assert scalp.trailing_stop_activation_pct == 0.04, (
             f"Attendu 0.02, obtenu {scalp.trailing_stop_activation_pct}"
         )
 
@@ -441,7 +441,7 @@ class TestScalpingV203MiniLot:
     def test_trailing_drop_ratio_configured(self):
         """[v2.0.9] trailing_stop_drop_ratio = 0.03 — exit dès que gain baisse de 3% du pic."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_drop_ratio == 0.03
+        assert scalp.trailing_stop_drop_ratio == 0.15
 
     def test_min_micro_trend_long_is_0(self):
         """[v2.0.6] Gate micro-tendance désactivé : min_micro_trend_long = 0 (le code skip si <= 0)."""
@@ -574,9 +574,9 @@ class TestScalpingV206MicroTrendDisable:
         """Aucun autre paramètre scalping n'a bougé (correction chirurgicale)."""
         scalp = PROFILE_PRESETS["scalping"]
         # [v2.0.9] Trailing recalibré : activation basse + drop ratio 3%
-        assert scalp.trailing_stop_activation_pct == 0.02
+        assert scalp.trailing_stop_activation_pct == 0.04
         assert scalp.trailing_stop_pct == 0.06
-        assert scalp.trailing_stop_drop_ratio == 0.03
+        assert scalp.trailing_stop_drop_ratio == 0.15
         assert scalp.profit_take_pct == 0.8
         assert scalp.loss_cut_pct == 0.20
         assert scalp.min_market_quality == 50
@@ -611,7 +611,7 @@ class TestScalpingV207FastExit:
     def test_trailing_activation_lowered_to_010(self):
         """[v2.0.9] Trailing activation abaissé à 0.02% : protège dès ~$0.50."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct == 0.02
+        assert scalp.trailing_stop_activation_pct == 0.04
 
     def test_trailing_trail_tightened_to_006(self):
         """Trail resserré de 0.10→0.06% : moins de give-back depuis le peak."""
@@ -706,9 +706,9 @@ class TestTrailingStopPriorityV208:
 
     def test_breakeven_stop_protects_small_gains(self, db_session):
         """
-        Position dont le peak est entre activation/2 (0.01%) et activation (0.02%)
+        Position dont le peak est entre activation/2 (0.02%) et activation (0.04%)
         et qui retombe à 0% : breakeven stop ferme.
-        [v2.0.9] Activation abaissée à 0.02%, le breakeven protège les gains 0.01-0.02%.
+        [v2.0.9] Activation à 0.04%, breakeven protège les gains 0.02-0.04%.
         """
         from app.services.paper_trading_service import PaperTradingService
         from app.models.paper_account import PaperAccount, PaperTrade
@@ -725,7 +725,7 @@ class TestTrailingStopPriorityV208:
 
         entry_time = datetime.now(timezone.utc) - timedelta(minutes=3)
         entry_price = 73000.0
-        # Peak à 73011 (+0.015%, > activation/2=0.01% mais < activation 0.02%)
+        # Peak à 73020 (+0.027%, > activation/2=0.02% mais < activation 0.04%)
         trade = PaperTrade(
             account_id=account.id,
             direction="long",
@@ -735,7 +735,7 @@ class TestTrailingStopPriorityV208:
             take_profit_price=entry_price * 1.008,
             status="open",
             entry_ts=entry_time,
-            highest_price_since_entry=73011.0,  # peak +0.015%
+            highest_price_since_entry=73020.0,  # peak +0.027%
             lowest_price_since_entry=entry_price,
             leverage=1.0,
             entry_reason="Test breakeven protection",
