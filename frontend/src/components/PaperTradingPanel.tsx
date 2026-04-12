@@ -144,14 +144,18 @@ const EXIT_TYPE_LABELS: Record<string, string> = {
   closed_stale: '💤 Stagnation (stale)',
   closed_momentum_fade: '📉 Momentum fade',
   closed_trailing_stop: '🎯 Trailing stop',
+  closed_breakeven: '🛡️ Breakeven stop',
+  closed_gain_erosion: '📉 Érosion du gain',
+  closed_candle_reversal: '🔄 Reversal bougie',
 };
 
-function CandleDirectionDot({ direction, candleDirection, type = 'entry', exitType, pnl }: {
+function CandleDirectionDot({ direction, candleDirection, type = 'entry', exitType, pnl, reversalDelay }: {
   direction: string;
   candleDirection?: string | null;
   type?: 'entry' | 'exit';
   exitType?: string | null;
   pnl?: number | null;
+  reversalDelay?: number | null;
 }) {
   if (!candleDirection) return null;
 
@@ -177,6 +181,9 @@ function CandleDirectionDot({ direction, candleDirection, type = 'entry', exitTy
   const pnlInfo = type === 'exit' && pnl != null
     ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} $`
     : null;
+  const reversalInfo = type === 'exit' && reversalDelay != null && reversalDelay > 0
+    ? `⏱️ Reversal détecté après ${reversalDelay.toFixed(1)}s`
+    : null;
 
   return (
     <Tooltip
@@ -196,6 +203,11 @@ function CandleDirectionDot({ direction, candleDirection, type = 'entry', exitTy
           {pnlInfo && (
             <Typography variant="caption" sx={{ display: 'block', mt: 0.3, fontWeight: 700, color: pnl != null && pnl >= 0 ? '#4caf50' : '#f44336' }}>
               💰 Résultat : {pnlInfo}
+            </Typography>
+          )}
+          {reversalInfo && (
+            <Typography variant="caption" sx={{ display: 'block', mt: 0.3, color: '#ffab40' }}>
+              {reversalInfo}
             </Typography>
           )}
         </Box>
@@ -1411,7 +1423,7 @@ function TradeRow({ trade }: { trade: PaperTradeItem }) {
           {exitCandle && (
             <>
               <Typography sx={{ fontSize: '0.65rem', color: 'text.secondary', mx: '1px' }}>→</Typography>
-              <CandleDirectionDot direction={trade.direction} candleDirection={exitCandle} type="exit" exitType={trade.status} pnl={trade.pnl} />
+              <CandleDirectionDot direction={trade.direction} candleDirection={exitCandle} type="exit" exitType={trade.status} pnl={trade.pnl} reversalDelay={trade.reversal_delay_seconds} />
             </>
           )}
         </Stack>

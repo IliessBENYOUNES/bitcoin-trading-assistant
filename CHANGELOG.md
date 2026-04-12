@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.18] - 2026-04-12
+
+### Added
+- **CANDLE REVERSAL EXIT** — Nouveau type de sortie active `closed_candle_reversal`. Quand la couleur de la bougie s'inverse par rapport à l'entrée et persiste ≥3 secondes, la position est fermée immédiatement. Basé sur l'observation que les trades profitables gardent la même couleur de pastille (E=S), tandis que les perdants changent de couleur.
+- **REVERSAL DELAY TRACKING** — Nouveau champ `reversal_delay_seconds` sur `PaperTrade` et `LearningSignal`. Mesure le temps entre le changement de couleur et la fermeture effective. Permet au ML d'apprendre la vitesse de réaction optimale.
+- **PATTERN 9 — REVERSAL DELAY ANALYSIS** — Le learning analyse les trades par délai de reversal : fast (<5s) vs slow (≥5s), et compare les trades avec reversal vs sans reversal pour quantifier l'impact de la sortie active.
+- **UI LAYOUT PLEINE LARGEUR** — TAB 2 restructuré : Risk Panel en bandeau compact pleine largeur (replié par défaut), Paper Trading/Journal/Diagnostic en pleine largeur. Fini le layout 42%/58% côte à côte.
+- **3 nouveaux params profil** : `candle_reversal_exit_enabled`, `candle_reversal_min_seconds`, `candle_reversal_window_seconds`.
+- **12 nouveaux tests** : détection reversal (8 tests TickMomentumService), learning avec reversal_delay (2 tests), patterns reversal delay (2 tests).
+- Script de migration `migrate_v2018.py`.
+
+### Changed
+- `TickMomentumService` : nouveau buffer `_reversal_start` pour tracker le début du reversal, méthodes `check_candle_reversal()` et `reset_reversal()`.
+- `_tick_single_slot` : vérification candle reversal APRÈS trailing/breakeven/gain_erosion et AVANT stale exit.
+- `_open_position` : reset du tracker reversal à chaque nouvelle position.
+- `EXIT_TYPE_LABELS` frontend enrichi : +3 types (breakeven, gain_erosion, candle_reversal).
+- `CandleDirectionDot` : nouveau prop `reversalDelay` pour afficher le délai dans le tooltip de sortie.
+- Dashboard TAB 2 : layout de side-by-side (Risk lg=5 + Paper lg=7) vers stacked full-width.
+
+### Technical
+- Modifié : `backend/app/models/paper_account.py` — Nouveau champ `reversal_delay_seconds REAL nullable`
+- Modifié : `backend/app/models/learning.py` — Nouveau champ `reversal_delay_seconds REAL nullable`
+- Modifié : `backend/app/schemas/journal.py` — 3 nouveaux params TradingProfileParams (candle_reversal_*)
+- Modifié : `backend/app/schemas/paper_trading.py` — `reversal_delay_seconds` sur Response + ExportItem
+- Modifié : `backend/app/services/tick_momentum_service.py` — `_reversal_start`, `check_candle_reversal()`, `reset_reversal()`
+- Modifié : `backend/app/services/paper_trading_service.py` — Sortie candle reversal dans le tick loop
+- Modifié : `backend/app/services/trading_profile_service.py` — Profil scalping avec candle_reversal_exit_enabled=True
+- Modifié : `backend/app/services/learning_service.py` — Pattern 9 (reversal delay) + record_sample enrichi
+- Modifié : `frontend/src/pages/Dashboard.tsx` — Layout TAB 2 restructuré
+- Modifié : `frontend/src/components/PaperTradingPanel.tsx` — EXIT_TYPE_LABELS enrichi, reversalDelay prop
+- Modifié : `frontend/src/types/api.ts` — reversal_delay_seconds sur PaperTradeItem + ExportItem
+- Nouveau : `backend/tests/test_candle_reversal.py` — 12 tests
+- Nouveau : `backend/migrate_v2018.py` — Migration SQLite
+- Tests : 1718 → 1730 (+12)
+
 ## [2.0.17] - 2026-04-12
 
 ### Added

@@ -560,6 +560,51 @@ class PaperTradingService:
                         profile_type=profile_name,
                     )
 
+            # [v2.0.18] CANDLE REVERSAL EXIT — Sortie active quand la couleur de bougie change.
+            # L'observation empirique montre que les trades profitables gardent la même couleur
+            # de pastille (E=S), tandis que les perdants changent de couleur.
+            # Ce check détecte quand le momentum s'inverse par rapport à l'entrée et sort
+            # IMMÉDIATEMENT (après un délai de confirmation de ~3 sec pour éviter le bruit).
+            # Priorité APRÈS le trailing stop (qui protège les gains) et AVANT le stale exit.
+            cr_enabled = getattr(profile_params, "candle_reversal_exit_enabled", False) if profile_params else False
+            if cr_enabled and getattr(open_pos, "entry_candle_direction", None):
+                cr_window = getattr(profile_params, "candle_reversal_window_seconds", 15.0)
+                cr_min_sec = getattr(profile_params, "candle_reversal_min_seconds", 3.0)
+                cr_min_ticks = getattr(profile_params, "tick_momentum_min_ticks", 2) if profile_params else 2
+
+                should_exit, reversal_delay, cr_reason = TickMomentumService.check_candle_reversal(
+                    slot=slot_name,
+                    entry_candle_direction=open_pos.entry_candle_direction,
+                    trade_direction=open_pos.direction,
+                    window_seconds=cr_window,
+                    min_ticks=cr_min_ticks,
+                    min_reversal_seconds=cr_min_sec,
+                )
+
+                if should_exit:
+                    # Stocker le délai de reversal sur le trade avant fermeture
+                    open_pos.reversal_delay_seconds = round(reversal_delay, 2)
+                    self.db.commit()
+
+                    closed = self._close_position(
+                        open_pos, current_price, cr_reason, "closed_candle_reversal"
+                    )
+                    # Reset le tracker de reversal après fermeture
+                    TickMomentumService.reset_reversal(slot_name)
+
+                    _log_tick(action_taken="closed_candle_reversal", btc_price=current_price,
+                              had_open_position=True, trade_id=closed.id,
+                              leverage_final=getattr(closed, "leverage", 1.0))
+                    return PaperTickResult(
+                        action_taken="closed_candle_reversal",
+                        detail=f"Position fermée (candle reversal) : {cr_reason}",
+                        position_closed=PaperTradeResponse.model_validate(closed),
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        leverage_used=getattr(closed, "leverage", 1.0),
+                        profile_type=profile_name,
+                    )
+
             # [v1.6] Sortie rapide — Stale position
             # Si la position stagne depuis trop longtemps (faible mouvement),
             # on libère la place pour d'autres opportunités.
@@ -1601,6 +1646,10 @@ class PaperTradingService:
         self.db.add(trade)
         self.db.commit()
         self.db.refresh(trade)
+
+        # [v2.0.18] Reset le tracker de reversal pour ce slot (fresh start)
+        TickMomentumService.reset_reversal(slot or "default")
+
         logger.info(
             f"📈 Position {direction} ouverte @ {price:.2f} | "
             f"SL={sl:.2f} | TP={tp:.2f} | Size={trade.position_size_usd:.2f} USD | "

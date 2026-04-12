@@ -87,6 +87,7 @@ class PaperTradeResponse(BaseModel):
     entry_candle_direction: Optional[str] = None  # v2.0.15 — "green"/"red"/null
     exit_candle_direction: Optional[str] = None  # v2.0.16 — "green"/"red"/null (à la fermeture)
     duration_seconds: Optional[float] = None  # v2.0.16 — durée exacte en secondes
+    reversal_delay_seconds: Optional[float] = None  # v2.0.18 — délai reversal en secondes
 
     model_config = {"from_attributes": True}
 
@@ -134,6 +135,7 @@ class PaperTradeExportItem(BaseModel):
     exit_ts: Optional[datetime] = None
     duration_hours: Optional[float] = None
     duration_seconds: Optional[float] = None  # v2.0.16
+    reversal_delay_seconds: Optional[float] = None  # v2.0.18
 
     model_config = {"from_attributes": True}
 

@@ -163,6 +163,18 @@ class TradingProfileParams(BaseModel):
     # filtre de qualité (le marché est-il actif ?). Un seuil plus bas permet de ne pas
     # rater les opportunités quand le score est modéré mais le prix bouge clairement.
     tick_momentum_min_score: int = Field(default=10, description="Score minimum quand tick momentum override est actif (remplace min_score)")
+    # [v2.0.18] CANDLE REVERSAL EXIT — Sortie active quand la couleur de bougie change.
+    # Si le prix changeait de direction (ex: bougie verte → rouge) pendant une position,
+    # on sort immédiatement au lieu d'attendre le SL/trailing/stale.
+    # Basé sur l'observation que les trades profitables gardent la même couleur de pastille
+    # à l'entrée et à la sortie (même momentum), tandis que les perdants changent de couleur.
+    candle_reversal_exit_enabled: bool = Field(default=False, description="Sortie active quand la couleur de bougie s'inverse par rapport à l'entrée")
+    # Nombre minimum de secondes de reversal avant de déclencher la sortie.
+    # Évite les sorties sur bruit : le prix doit avoir changé de direction depuis
+    # au moins N secondes avant qu'on coupe.
+    candle_reversal_min_seconds: float = Field(default=3.0, description="Durée min (sec) de reversal avant exit (évite le bruit)")
+    # Fenêtre d'analyse pour détecter le reversal (en secondes).
+    candle_reversal_window_seconds: float = Field(default=15.0, description="Fenêtre d'analyse tick momentum pour détecter le reversal")
 
 
 class TradingProfileResponse(BaseModel):

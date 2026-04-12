@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 12 avril 2026
-> **Version :** v2.0.17
+> **Version :** v2.0.18
 > **Branche :** `master`
-> **Dernier commit :** feat(learning): candle direction patterns + suggestions + pastilles enrichies v2.0.17
+> **Dernier commit :** feat(trading): candle reversal exit + reversal_delay_seconds + UI layout v2.0.18
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.17** |
+| Version courante | **v2.0.18** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1718 tests**, tous passing ✅ |
+| Tests backend | **1730 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.17 livré** — Candle direction patterns intégrés au learning + pastilles enrichies |
+| Phase courante | **v2.0.18 livré** — Candle reversal exit actif + reversal_delay_seconds tracking + UI layout pleine largeur |
 
 ### ⚠️ État de maturité honnête
 
@@ -51,6 +51,10 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.14] CANDLE DIRECTION OVERRIDE** — En mode scalping, la direction du trade est déterminée par la direction RÉELLE du prix sur les 30 dernières secondes (bougie verte → LONG, bougie rouge → SHORT), au lieu de suivre le score technique lagging 15 min. Élimine le biais 100% short quand les indicateurs restent bearish en marché ranging. Le score technique est gardé comme filtre de qualité (|score| >= 10 quand override actif). Le bearish_veto et le scalping_reversal sont SKIPPÉS car la bougie EST la confirmation de direction. Le check "attendre" est BYPASSÉ : même si les indicateurs 15 min sont indécis, le prix bouge et on entre dans sa direction. 9 tests dédiés.
 - **[v2.0.15] CANDLE DIRECTION INDICATOR (UI)** — Nouveau champ `entry_candle_direction` ("green"/"red"/null) stocké sur chaque trade à l'ouverture de position. Le frontend affiche un dot coloré (🟢/🔴) avec tooltip à côté de chaque position ouverte ET dans le journal des trades. Le tooltip indique la cohérence direction/bougie (✅ cohérent ou ⚠️ incohérent). En scalping override, la couleur vient du tick momentum. Pour les autres profils, le `micro_trend_score` du market quality est utilisé comme proxy. 7 tests dédiés.
 - **[v2.0.15] REST PRICE FALLBACK** — Le hook `useLivePrice` ajoute un fallback REST API (`/market/price`) quand le WebSocket Binance ne se connecte pas dans les 5 secondes. Polling toutes les 10s via Binance REST (même source que le backend). Le PriceTicker affiche "REST" en orange au lieu de "LIVE" en rouge quand le fallback est actif. Le footer affiche "Mode REST (prix ~10s)". Corrige le problème de prix stale (~5 min de retard) quand le WebSocket est inaccessible.
+- **[v2.0.17] CANDLE DIRECTION LEARNING PATTERNS** — Le LearningService analyse la cohérence entrée→sortie des bougies (4 catégories : same_aligned, same_counter, reversed_favor, reversed_against). Méta-pattern même couleur vs changement. Croisement durée × cohérence. Suggestions automatiques (réduire stale_negative si reversed_against dominent, relever min_micro_trend_long si entrée contre-tendance est pire). 9 tests dédiés.
+- **[v2.0.18] CANDLE REVERSAL EXIT** — Nouveau type de sortie active `closed_candle_reversal`. Quand la couleur de la bougie s'inverse par rapport à l'entrée (green→red pour un long, red→green pour un short) et persiste pendant ≥3 secondes, la position est fermée immédiatement. Basé sur l'observation empirique que les trades profitables gardent la même couleur de pastille, tandis que les perdants changent de couleur. Vérifié APRÈS le trailing/breakeven/gain erosion et AVANT le stale exit. 12 tests dédiés.
+- **[v2.0.18] REVERSAL DELAY TRACKING** — Nouveau champ `reversal_delay_seconds` sur `PaperTrade` et `LearningSignal`. Mesure le temps entre le changement de couleur de bougie et la fermeture effective. Permet au modèle ML d'apprendre la vitesse de réaction optimale (fast <5s vs slow ≥5s). Pattern 9 dans le learning : analyse statistique des délais de reversal et comparaison sortie reversal vs sortie normale.
+- **[v2.0.18] UI LAYOUT RESTRUCTURÉ** — TAB 2 (Trading) restructuré : Risk Panel en bandeau compact pleine largeur en haut (replié par défaut, toujours accessible), Paper Trading en pleine largeur en dessous, Journal et Diagnostic pleine largeur. Plus de layout 42%/58% côte à côte.
 - **[v2.0.4] Export enrichi** — Service `EnrichedExportService` + endpoint `GET /audit/enriched-export`. Export tick-par-tick avec : prix BTC, variation %, décision moteur, score, raison de non-trade, position ouverte/fermée, PnL, market quality. Inclut ventilation des refus par gate + détection des tendances BTC ratées.
 - **[v2.0.4] Learning runtime** — Nouvelle méthode `LearningService.learn_from_runtime()` + endpoint `POST /learning/learn-runtime`. Analyse les TickActivityLog (pas les trades fermés) pour identifier les gates sur-bloquants et proposer des assouplissements en mode shadow. Suggestions 15 (micro-trend dominant) et 16 (gate unique > 70%).
 - **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.

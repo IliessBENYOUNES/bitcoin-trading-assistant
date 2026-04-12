@@ -936,26 +936,27 @@ const Dashboard: React.FC = () => {
           </TabPanel>
 
           {/* ============================================================= */}
-          {/* TAB 2 — TRADING (Risk + Paper Trading + Journal)               */}
+          {/* TAB 2 — TRADING (Risk compact + Paper Trading pleine largeur)  */}
           {/* ============================================================= */}
           <TabPanel value={activeTab} index={2}>
-            <Grid container spacing={2.5}>
-              <Grid item xs={12} lg={5}>
+            <Grid container spacing={2}>
+              {/* Risk Panel — Bandeau compact pleine largeur */}
+              <Grid item xs={12}>
                 <Box sx={{
                   bgcolor: 'rgba(255,255,255,0.03)',
                   borderRadius: 2,
-                  p: 2,
+                  p: { xs: 1.5, sm: 2 },
                   border: '1px solid rgba(255,255,255,0.06)',
-                  height: '100%',
                 }}>
                   <RiskPanel refreshTrigger={tradeVersion} />
                 </Box>
               </Grid>
-              <Grid item xs={12} lg={7}>
+              {/* Paper Trading — Pleine largeur */}
+              <Grid item xs={12}>
                 <Box sx={{
                   bgcolor: 'rgba(255,255,255,0.03)',
                   borderRadius: 2,
-                  p: 2,
+                  p: { xs: 1.5, sm: 2 },
                   border: '1px solid rgba(255,255,255,0.06)',
                 }}>
                   <PaperTradingPanel onTradeExecuted={handleTradeExecuted} onResetComplete={handleResetComplete} />

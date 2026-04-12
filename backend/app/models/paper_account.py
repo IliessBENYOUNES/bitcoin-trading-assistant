@@ -132,6 +132,13 @@ class PaperTrade(Base):
     # Permet au modèle ML d'apprendre le contexte de sortie (ex: sorti sur bougie verte = bon timing short)
     exit_candle_direction: Mapped[str] = mapped_column(String(10), nullable=True)
 
+    # --- Délai de reversal (v2.0.18) ---
+    # Nombre de secondes entre le moment où la couleur de la bougie a changé
+    # (par rapport à l'entrée) et la fermeture effective de la position.
+    # Permet au modèle ML d'apprendre la vitesse de réaction optimale.
+    # None = pas de reversal détecté ou anciens trades.
+    reversal_delay_seconds: Mapped[float] = mapped_column(Float, nullable=True)
+
     # --- PnL ---
     pnl: Mapped[float] = mapped_column(Float, nullable=True)
     pnl_pct: Mapped[float] = mapped_column(Float, nullable=True)

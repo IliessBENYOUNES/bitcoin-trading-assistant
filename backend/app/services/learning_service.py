@@ -151,6 +151,8 @@ class LearningService:
             # [v2.0.16] Candle directions pour apprentissage ML
             entry_candle_direction=getattr(trade, "entry_candle_direction", None),
             exit_candle_direction=getattr(trade, "exit_candle_direction", None),
+            # [v2.0.18] Délai de reversal (secondes entre changement de couleur et sortie)
+            reversal_delay_seconds=getattr(trade, "reversal_delay_seconds", None),
         )
         self.db.add(sample)
         try:
@@ -687,6 +689,63 @@ class LearningService:
                     sample_count=len(group),
                     win_rate=round(wr, 1),
                     avg_pnl=round(avg_pnl, 2),
+                    impact=impact,
+                ))
+
+        # Pattern 9 : [v2.0.18] Analyse du délai de reversal
+        # Corrèle le temps entre le changement de couleur et la sortie effective
+        # avec la performance du trade. Un délai court = bonne réactivité.
+        reversal_trades = [
+            s for s in samples
+            if s.reversal_delay_seconds is not None and s.reversal_delay_seconds > 0
+        ]
+        if len(reversal_trades) >= 2:
+            # Découper en fast (< 5s) et slow (≥ 5s) reversals
+            fast_reversal = [s for s in reversal_trades if s.reversal_delay_seconds < 5]
+            slow_reversal = [s for s in reversal_trades if s.reversal_delay_seconds >= 5]
+            for label, group, desc in [
+                ("fast_reversal", fast_reversal, "⚡ Reversal rapide (<5s)"),
+                ("slow_reversal", slow_reversal, "🐌 Reversal lent (≥5s)"),
+            ]:
+                if len(group) < 2:
+                    continue
+                wins = sum(1 for s in group if s.was_profitable)
+                wr = wins / len(group) * 100
+                avg_pnl = sum(s.pnl_brut for s in group if s.pnl_brut) / len(group)
+                avg_delay = sum(s.reversal_delay_seconds for s in group) / len(group)
+                impact = "positif" if avg_pnl > 0 else ("négatif" if avg_pnl < -0.1 else "neutre")
+                patterns.append(PatternInsight(
+                    pattern_name=f"reversal_delay_{label}",
+                    description=(
+                        f"⏱️ {desc} : {len(group)} trades, WR {wr:.0f}%, "
+                        f"PnL moy {avg_pnl:.2f}, délai moy {avg_delay:.1f}s"
+                    ),
+                    sample_count=len(group),
+                    win_rate=round(wr, 1),
+                    avg_pnl=round(avg_pnl, 2),
+                    impact=impact,
+                ))
+
+            # Méta-pattern : comparer les trades avec reversal vs sans reversal
+            non_reversal_trades = [
+                s for s in samples
+                if s.reversal_delay_seconds is None or s.reversal_delay_seconds == 0
+            ]
+            if len(non_reversal_trades) >= 2:
+                rev_wr = sum(1 for s in reversal_trades if s.was_profitable) / len(reversal_trades) * 100
+                rev_pnl = sum(s.pnl_brut for s in reversal_trades if s.pnl_brut) / len(reversal_trades)
+                no_rev_wr = sum(1 for s in non_reversal_trades if s.was_profitable) / len(non_reversal_trades) * 100
+                no_rev_pnl = sum(s.pnl_brut for s in non_reversal_trades if s.pnl_brut) / len(non_reversal_trades)
+                impact = "positif" if rev_pnl > no_rev_pnl else ("négatif" if rev_pnl < no_rev_pnl - 0.2 else "neutre")
+                patterns.append(PatternInsight(
+                    pattern_name="reversal_exit_vs_normal",
+                    description=(
+                        f"🔄 Sortie reversal ({len(reversal_trades)} trades, WR {rev_wr:.0f}%, PnL {rev_pnl:.2f}) "
+                        f"vs sortie normale ({len(non_reversal_trades)} trades, WR {no_rev_wr:.0f}%, PnL {no_rev_pnl:.2f})"
+                    ),
+                    sample_count=len(reversal_trades) + len(non_reversal_trades),
+                    win_rate=round(rev_wr, 1),
+                    avg_pnl=round(rev_pnl - no_rev_pnl, 2),
                     impact=impact,
                 ))
 

@@ -1,7 +1,7 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v2.0.15
+## Version: v2.0.18
 ## Date: 2026-04-12
 
 ---
@@ -200,4 +200,5 @@
 | **test_pivot_v200.py** | **41** | **✅** |
 | **test_autonomous.py** | **—** | **✅** |
 | **test_runtime_correlation.py** | **17** | **✅** |
-| **Total** | **1647** | ✅ |
+| **test_candle_reversal.py** | **12** | **✅** |
+| **Total** | **1730** | ✅ |

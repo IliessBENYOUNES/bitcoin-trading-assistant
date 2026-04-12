@@ -182,6 +182,14 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         tick_momentum_min_ticks=3,  # [v2.0.14] 2→3 : au moins 3 ticks (15 sec de données minimum)
         tick_momentum_override_direction=True,  # [v2.0.14] La bougie décide la direction
         tick_momentum_min_score=10,  # [v2.0.14] Score réduit quand override actif
+        # [v2.0.18] CANDLE REVERSAL EXIT — Sortie active quand la couleur de bougie change.
+        # L'observation empirique montre que les trades profitables gardent la même couleur
+        # de pastille (entry=exit), tandis que les perdants changent de couleur.
+        # En activant cette sortie, on coupe dès que le momentum s'inverse (après 3 sec
+        # de confirmation pour éviter le bruit).
+        candle_reversal_exit_enabled=True,
+        candle_reversal_min_seconds=3.0,   # Attendre 3 sec de reversal confirmé
+        candle_reversal_window_seconds=15.0,  # Fenêtre d'analyse de 15 sec
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
         # [v2.0.11] max_cooldown 10→5 min : en scalping, 10 min = éternité.

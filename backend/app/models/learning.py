@@ -83,6 +83,11 @@ class LearningSignal(Base):
     entry_candle_direction: Mapped[str] = mapped_column(String(10), nullable=True)
     exit_candle_direction: Mapped[str] = mapped_column(String(10), nullable=True)
 
+    # [v2.0.18] Délai de reversal en secondes — temps entre le changement de couleur
+    # de bougie et la fermeture. Permet d'apprendre la vitesse de réaction optimale.
+    # Un délai court (< 5s) = bonne réactivité. Long (> 15s) = trop lent, perte plus grande.
+    reversal_delay_seconds: Mapped[float] = mapped_column(Float, nullable=True)
+
     # Timestamp
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False

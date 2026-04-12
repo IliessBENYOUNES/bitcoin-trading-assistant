@@ -75,6 +75,11 @@ class TickMomentumService:
     # Buffer en mémoire : { slot_name: [(timestamp, price), ...] }
     _buffers: dict[str, list[tuple[datetime, float]]] = {}
 
+    # [v2.0.18] Tracking de reversal : quand la couleur de bougie a changé par rapport
+    # à la direction d'entrée. Stocke le premier timestamp du reversal par slot.
+    # { slot_name: datetime } — None si pas de reversal en cours.
+    _reversal_start: dict[str, Optional[datetime]] = {}
+
     # Taille max du buffer par slot (éviter fuite mémoire)
     # [v2.0.14] 200→500 : fenêtre élargie à 30s+ nécessite plus de ticks
     MAX_BUFFER_SIZE = 500
@@ -377,11 +382,116 @@ class TickMomentumService:
         """
         if slot is None:
             cls._buffers.clear()
+            cls._reversal_start.clear()
         elif slot in cls._buffers:
             del cls._buffers[slot]
+            cls._reversal_start.pop(slot, None)
 
     @classmethod
     def get_buffer_size(cls, slot: str) -> int:
         """Retourne la taille du buffer pour un slot."""
         return len(cls._buffers.get(slot, []))
+
+    # ================================================================
+    # [v2.0.18] CANDLE REVERSAL DETECTION
+    # ================================================================
+
+    @classmethod
+    def check_candle_reversal(
+        cls,
+        slot: str,
+        entry_candle_direction: str,
+        trade_direction: str,
+        window_seconds: float = 15.0,
+        min_ticks: int = 2,
+        min_reversal_seconds: float = 3.0,
+    ) -> tuple[bool, float, str]:
+        """
+        Détecte si la couleur de la bougie a changé par rapport à l'entrée.
+
+        Le reversal est confirmé quand :
+        1. La direction actuelle du prix est OPPOSÉE à la direction d'entrée
+        2. Ce changement persiste depuis au moins min_reversal_seconds
+
+        Args:
+            slot: Nom du slot
+            entry_candle_direction: "green" ou "red" (couleur à l'entrée)
+            trade_direction: "long" ou "short"
+            window_seconds: Fenêtre d'analyse tick momentum
+            min_ticks: Ticks minimum dans la fenêtre
+            min_reversal_seconds: Durée minimum du reversal pour confirmer
+
+        Returns:
+            (should_exit, reversal_delay_seconds, reason)
+            - should_exit: True si le reversal est confirmé et doit déclencher la sortie
+            - reversal_delay_seconds: secondes depuis le début du reversal
+            - reason: explication textuelle
+        """
+        now = datetime.now(timezone.utc)
+
+        # Détecter la direction actuelle
+        current_dir, tm_result = cls.detect_direction(
+            slot=slot, window_seconds=window_seconds, min_ticks=min_ticks
+        )
+
+        # Pas assez de données → pas de reversal
+        if current_dir is None:
+            cls._reversal_start.pop(slot, None)
+            return False, 0.0, "Direction actuelle indéterminée (flat/insufficient_data)"
+
+        # Mapper la direction de trade en couleur attendue
+        # Long → on s'attend à green, Short → on s'attend à red
+        expected_color = "green" if trade_direction == "long" else "red"
+        current_color = "green" if current_dir == "long" else "red"
+
+        # Vérifier si la couleur a changé
+        color_changed = current_color != entry_candle_direction
+
+        # Double vérification : la nouvelle couleur est-elle défavorable ?
+        # Pour un long, rouge est défavorable. Pour un short, vert est défavorable.
+        unfavorable = (
+            (trade_direction == "long" and current_color == "red") or
+            (trade_direction == "short" and current_color == "green")
+        )
+
+        if color_changed and unfavorable:
+            # La couleur a changé et c'est défavorable → tracker le reversal
+            if slot not in cls._reversal_start or cls._reversal_start.get(slot) is None:
+                # Premier tick de reversal → enregistrer le timestamp
+                cls._reversal_start[slot] = now
+                return False, 0.0, (
+                    f"🔄 Reversal détecté : {entry_candle_direction}→{current_color} "
+                    f"(vient de commencer, attente {min_reversal_seconds}s de confirmation)"
+                )
+
+            # Reversal en cours → calculer la durée
+            reversal_start = cls._reversal_start[slot]
+            reversal_duration = (now - reversal_start).total_seconds()
+
+            if reversal_duration >= min_reversal_seconds:
+                # Reversal confirmé → déclencher la sortie
+                reason = (
+                    f"🔄 Candle reversal confirmé : {entry_candle_direction}→{current_color} "
+                    f"depuis {reversal_duration:.1f}s (seuil {min_reversal_seconds}s), "
+                    f"prix {tm_result.price_change_pct:+.4f}% sur {tm_result.tick_count} ticks"
+                )
+                return True, reversal_duration, reason
+            else:
+                # Reversal en cours mais pas assez long
+                remaining = min_reversal_seconds - reversal_duration
+                return False, reversal_duration, (
+                    f"🔄 Reversal en cours : {entry_candle_direction}→{current_color} "
+                    f"depuis {reversal_duration:.1f}s ({remaining:.1f}s restantes)"
+                )
+        else:
+            # Pas de reversal (même couleur ou couleur favorable) → reset le tracker
+            if cls._reversal_start.get(slot) is not None:
+                logger.debug(f"🔄 Reversal annulé [{slot}] : couleur revenue à {current_color}")
+            cls._reversal_start[slot] = None
+            return False, 0.0, f"Pas de reversal : direction actuelle {current_color} (entrée {entry_candle_direction})"
+
+    @classmethod
+    def reset_reversal(cls, slot: str):
+        """Remet à zéro le tracking de reversal pour un slot (après fermeture de position)."""
+        cls._reversal_start.pop(slot, None)
 

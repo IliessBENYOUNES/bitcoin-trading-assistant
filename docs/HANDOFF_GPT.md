@@ -1,81 +1,86 @@
-# HANDOFF GPT — Candle Direction Learning Patterns v2.0.17
+# HANDOFF_GPT — v2.0.18
 
-**Date :** 12 avril 2026  
-**Version :** v2.0.17 (feature)  
+## Date : 12 avril 2026
 
 ---
 
 ## Problème
-
-Le modèle d'apprentissage ne prenait pas en compte la **cohérence de couleur de bougie** entre l'entrée et la sortie d'un trade. L'utilisateur observait que les trades gagnants étaient ceux où la pastille restait de la même couleur (momentum conservé), tandis que les perdants avaient un changement de couleur (momentum retourné). Ce pattern n'était pas exploité par le learning.
-
-De plus, dans le journal UI, la pastille de sortie n'apparaissait pas pour les anciens trades (champ null), et les deux pastilles étaient visuellement indistinguables.
+L'utilisateur a observé que les trades profitables gardent la même couleur de pastille (entrée=sortie), tandis que les perdants changent de couleur. Il demande :
+1. Que le changement de couleur de bougie devienne un **déclencheur de sortie ACTIF** (pas juste du learning)
+2. Que le **délai entre le changement de couleur et la sortie** soit tracké pour le ML
+3. Que le **layout UI** du TAB Trading soit restructuré (Risk compact, Paper pleine largeur)
 
 ## Diagnostic
-
-1. `analyze_patterns()` analysait par exit_type, score, direction, durée, utilité économique — mais **pas par cohérence candle direction**
-2. `suggest_adjustments()` ne générait aucune suggestion basée sur les patterns entrée/sortie de bougie
-3. L'UI n'avait pas de fallback pour les anciens trades sans `exit_candle_direction`
-4. Les pastilles E et S étaient identiques visuellement (même taille, pas de label)
+- Pattern empirique confirmé : le seul trade profitable (+7.47$) avait la même couleur de pastille à l'entrée et à la sortie
+- Tous les trades perdants avaient un changement de couleur → le momentum s'est inversé et le robot est resté trop longtemps
+- Le TickMomentumService existant (v2.0.14) détecte déjà la direction du prix en temps réel → réutilisable pour la détection de reversal
 
 ## Cause racine
-
-Feature manquante — le v2.0.16 avait posé les données (entry/exit candle dans LearningSignal) mais le moteur d'apprentissage ne les exploitait pas encore.
+- Le robot n'avait aucun mécanisme pour détecter et réagir au changement de direction de la bougie PENDANT une position ouverte
+- Les mécanismes de sortie existants (trailing stop, breakeven, stale) sont tous basés sur le PnL ou le temps, pas sur la direction du prix
+- Le layout côte-à-côte Risk/Paper gaspillait de l'espace (Risk à 42% de largeur)
 
 ## Correction appliquée
 
-### Backend — Learning Service
+### A. Candle Reversal Exit (backend)
+- **`tick_momentum_service.py`** : Ajout de `_reversal_start` dict, `check_candle_reversal()` et `reset_reversal()`. La méthode compare la direction actuelle du prix (via `detect_direction()`) avec la couleur de bougie à l'entrée du trade. Si la couleur s'est inversée de manière défavorable et persiste ≥3 secondes, déclenche la sortie.
+- **`paper_trading_service.py`** : Dans `_tick_single_slot`, nouveau check entre gain_erosion/breakeven et stale exit. Si `candle_reversal_exit_enabled=True` et que `check_candle_reversal()` retourne `should_exit=True`, ferme la position avec status `closed_candle_reversal`. Reset le tracker de reversal à l'ouverture et à la fermeture.
+- **`trading_profile_service.py`** : Profil scalping activé avec `candle_reversal_exit_enabled=True`, `candle_reversal_min_seconds=3.0`, `candle_reversal_window_seconds=15.0`.
 
-| Ajout | Détail |
-|-------|--------|
-| Pattern 7 : Candle consistency | 4 catégories : `same_aligned`, `same_counter`, `reversed_favor`, `reversed_against` |
-| Méta-pattern | Comparaison globale "même couleur" vs "changement" avec delta WR/PnL |
-| Pattern 8 : Durée × candle | Croisement scalps rapides (<2min) × cohérence couleur |
-| Suggestion 15 | Si reversed_against WR < 35% → réduire `stale_negative_exit_minutes` |
-| Suggestion 16 | Si entrée contre-tendance nettement pire → relever `min_micro_trend_long` |
+### B. Reversal Delay Tracking (backend + ML)
+- **`paper_account.py`** : Nouveau champ `reversal_delay_seconds` (Float, nullable) sur `PaperTrade`
+- **`learning.py`** : Nouveau champ `reversal_delay_seconds` (Float, nullable) sur `LearningSignal`
+- **`learning_service.py`** : `record_sample()` copie le `reversal_delay_seconds` du trade. Pattern 9 : analyse fast (<5s) vs slow (≥5s), méta-pattern reversal vs normal exit.
+- **`journal.py`** : 3 nouveaux params `TradingProfileParams` : `candle_reversal_exit_enabled`, `candle_reversal_min_seconds`, `candle_reversal_window_seconds`
 
-### Frontend — Pastilles enrichies
-
-| Changement | Détail |
-|-----------|--------|
-| Fallback sortie | Pastille S calculée client-side via `exit_price vs entry_price` si champ null |
-| Mini-labels | "E" / "S" en blanc dans chaque pastille (20px) |
-| Séparateur | `→` entre les deux pastilles |
-| Tooltip enrichi | Type de sortie (✅ TP, ❌ SL, ⚠️ Signal...) + PnL sur la pastille S |
+### C. UI Layout (frontend)
+- **`Dashboard.tsx`** : TAB 2 restructuré de `Grid lg={5}+lg={7}` côte-à-côte vers 4 `Grid xs={12}` empilés (Risk → Paper → Journal → Diagnostic)
+- **`PaperTradingPanel.tsx`** : EXIT_TYPE_LABELS enrichi (+breakeven, +gain_erosion, +candle_reversal). `CandleDirectionDot` accepte `reversalDelay` prop. Tooltip de sortie affiche le délai de reversal.
+- **`api.ts`** : `reversal_delay_seconds` ajouté à `PaperTradeItem` et `PaperTradeExportItem`
 
 ## Ce qui n'a PAS été touché
-
-- Logique d'ouverture/fermeture de position inchangée
-- `record_sample()` inchangé (v2.0.16 le faisait déjà)
-- Aucun changement de modèle DB (pas de migration)
-- Aucun changement d'endpoint API
+- Les profils conservative, balanced, aggressive (candle_reversal_exit_enabled=False par défaut)
+- Le trailing stop, breakeven, gain erosion, stale exit (inchangés)
+- Le scoring, les indicateurs, les signaux
+- Le risk engine, le kill switch
+- Les endpoints API (aucun nouveau endpoint)
 
 ## Validations
-
-- ✅ **1718 tests** backend passent (0 régression, +9 nouveaux)
-- ✅ `tsc --noEmit` sans erreur frontend
-- ✅ Import `LearningService` OK
+- ✅ **1730 tests** backend passent (1718 + 12 nouveaux)
+- ✅ `tsc --noEmit` sans erreur (exit code 0)
+- ✅ Migration `migrate_v2018.py` exécutée sur test.db
+- ✅ 12 tests dédiés couvrent : détection reversal, annulation, timing, learning record, patterns
 
 ## Documentation mise à jour
+| Document | Changement |
+|----------|------------|
+| `docs/CURRENT_STATE.md` | Version 2.0.18, 1730 tests, features v2.0.17-18 ajoutées |
+| `CHANGELOG.md` | Entrée complète v2.0.18 (Added/Changed/Technical) |
+| `docs/ROADMAP.md` | Pas de changement de phase |
+| `docs/requirements_traceability.md` | Version 2.0.18, test_candle_reversal.py (12 tests), total 1730 |
+| `docs/HANDOFF_GPT.md` | Ce fichier |
 
-| Document | Mis à jour |
-|----------|-----------|
-| `docs/CURRENT_STATE.md` | ✅ Version 2.0.17, tests 1718, dernier commit |
-| `CHANGELOG.md` | ✅ Nouvelle section v2.0.17 complète |
-| `docs/HANDOFF_GPT.md` | ✅ Ce fichier |
+## Commit
+- Message : `feat(trading): candle reversal exit + reversal_delay_seconds + UI layout v2.0.18`
 
 ## État actuel
-
-| Élément | Valeur |
-|---------|--------|
-| Version | v2.0.17 |
-| Tests | 1718 passing |
-| Frontend | tsc clean |
+- Version : v2.0.18
+- Tests : 1730 passing
+- TypeScript : 0 erreur
+- Backend : doit être relancé pour charger les nouvelles colonnes et la logique de reversal exit
+- Frontend : doit être relancé pour le nouveau layout
 
 ## Commandes de relance
-
 ```bash
-cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 8000
+# Backend
+cd backend && .\venv\Scripts\activate && python migrate_v2018.py test.db && uvicorn app.main:app --reload --port 8000
+
+# Frontend
 cd frontend && npm run dev
-cd backend && python -m pytest tests/ -v
 ```
+
+## Prochaine action recommandée
+- Observer les trades en temps réel pour valider que le `closed_candle_reversal` se déclenche correctement
+- Analyser si le délai de 3 secondes est optimal (trop court = faux positifs sur bruit, trop long = pertes inutiles)
+- Si les sorties reversal sont trop fréquentes, augmenter `candle_reversal_min_seconds` à 5s
+- Si elles ne se déclenchent pas assez, réduire à 2s

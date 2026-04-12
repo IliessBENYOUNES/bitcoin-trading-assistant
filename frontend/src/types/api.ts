@@ -679,6 +679,7 @@ export interface PaperTradeItem {
   entry_candle_direction?: string | null; // v2.0.15 — "green"/"red"/null
   exit_candle_direction?: string | null; // v2.0.16 — "green"/"red"/null (à la sortie)
   duration_seconds?: number | null; // v2.0.16 — durée exacte en secondes
+  reversal_delay_seconds?: number | null; // v2.0.18 — délai reversal (sec entre color flip et exit)
 }
 
 export interface PaperAccountItem {
@@ -788,6 +789,7 @@ export interface PaperTradeExportItem {
   exit_ts: string | null;
   duration_hours: number | null;
   duration_seconds: number | null; // v2.0.16
+  reversal_delay_seconds: number | null; // v2.0.18
 }
 
 export interface PaperExportAccountSummary {

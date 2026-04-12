@@ -138,160 +138,172 @@ export default function RiskPanel({ refreshTrigger }: { refreshTrigger?: number 
 
   return (
     <Box>
-      {/* Header with risk level */}
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <ShieldIcon sx={{ color: riskColor, fontSize: 20 }} />
-          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-            Gestion du Risque
+      {/* ── Bandeau compact : Kill Switch + Risk + Perte jour + Stats inline ── */}
+      <Stack
+        direction={{ xs: 'column', md: 'row' }}
+        alignItems={{ xs: 'stretch', md: 'center' }}
+        spacing={{ xs: 1, md: 2 }}
+        sx={{ flexWrap: 'wrap' }}
+      >
+        {/* Kill Switch */}
+        <Button
+          variant={status.kill_switch_active ? 'contained' : 'outlined'}
+          color={status.kill_switch_active ? 'error' : 'warning'}
+          startIcon={<PowerIcon />}
+          onClick={handleKillSwitch}
+          size="small"
+          sx={{
+            fontWeight: 700,
+            textTransform: 'none',
+            whiteSpace: 'nowrap',
+            minWidth: 'auto',
+            px: 2,
+            ...(status.kill_switch_active && {
+              animation: 'pulse 2s infinite',
+              '@keyframes pulse': {
+                '0%': { boxShadow: '0 0 0 0 rgba(244, 67, 54, 0.4)' },
+                '70%': { boxShadow: '0 0 0 10px rgba(244, 67, 54, 0)' },
+                '100%': { boxShadow: '0 0 0 0 rgba(244, 67, 54, 0)' },
+              },
+            }),
+          }}
+        >
+          {status.kill_switch_active ? '⛔ KILL SWITCH ACTIF' : '🛡️ Kill Switch (arrêt d\'urgence)'}
+        </Button>
+
+        {/* Risk level chip */}
+        <Chip
+          icon={<ShieldIcon sx={{ fontSize: 16 }} />}
+          label={riskLabel}
+          size="small"
+          sx={{
+            bgcolor: `${riskColor}22`,
+            color: riskColor,
+            fontWeight: 700,
+            fontSize: '0.75rem',
+            '& .MuiChip-icon': { color: riskColor },
+          }}
+        />
+
+        {/* Daily Loss — compact inline */}
+        <Stack direction="row" alignItems="center" spacing={1} sx={{ flex: { md: 1 }, minWidth: 200 }}>
+          <Typography variant="caption" sx={{ opacity: 0.6, whiteSpace: 'nowrap', fontSize: '0.7rem' }}>
+            Perte journalière
           </Typography>
-          <Chip
-            label={riskLabel}
-            size="small"
-            sx={{
-              bgcolor: `${riskColor}22`,
-              color: riskColor,
-              fontWeight: 700,
-              fontSize: '0.75rem',
-            }}
-          />
+          <Box sx={{ flex: 1, minWidth: 80 }}>
+            <LinearProgress
+              variant="determinate"
+              value={Math.min(dailyLossPct, 100)}
+              sx={{
+                height: 6,
+                borderRadius: 3,
+                bgcolor: 'rgba(255,255,255,0.08)',
+                '& .MuiLinearProgress-bar': {
+                  bgcolor: dailyLossPct > 80 ? '#f44336' : dailyLossPct > 50 ? '#ff9800' : '#4caf50',
+                  borderRadius: 3,
+                },
+              }}
+            />
+          </Box>
+          <Typography variant="caption" sx={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: '0.7rem' }}>
+            {status.daily_loss_current.toFixed(1)} / {status.daily_loss_limit_usd.toFixed(0)} USD
+          </Typography>
+          {status.daily_loss_current > 0 && (
+            <Tooltip title="Remettre le compteur de perte à zéro">
+              <IconButton
+                size="small"
+                onClick={resetDailyLoss}
+                sx={{
+                  p: 0.3,
+                  color: dailyLossPct > 80 ? '#f44336' : '#ff9800',
+                  '&:hover': { color: '#4caf50', bgcolor: 'rgba(76,175,80,0.1)' },
+                }}
+              >
+                <ResetIcon sx={{ fontSize: 14 }} />
+              </IconButton>
+            </Tooltip>
+          )}
         </Stack>
-        <Stack direction="row" spacing={0.5}>
+
+        {/* Quick Stats inline */}
+        <Stack direction="row" spacing={1} sx={{ display: { xs: 'none', lg: 'flex' } }}>
+          <Chip label={`SL: ${config.stop_loss_pct}% (${config.stop_loss_type})`} size="small" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+          <Chip label={`TP: ${config.take_profit_pct}%`} size="small" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+          <Chip label={`Max: ${status.max_position_size_usd.toLocaleString()} $`} size="small" variant="outlined" sx={{ fontSize: '0.7rem' }} />
+        </Stack>
+
+        {/* Actions */}
+        <Stack direction="row" spacing={0.5} alignItems="center">
           {!editing ? (
             <Tooltip title="Configurer">
               <IconButton size="small" onClick={startEditing}>
-                <EditIcon fontSize="small" />
+                <EditIcon sx={{ fontSize: 16 }} />
               </IconButton>
             </Tooltip>
           ) : (
             <>
               <Tooltip title="Sauvegarder">
                 <IconButton size="small" onClick={saveConfig} disabled={saving} color="primary">
-                  <SaveIcon fontSize="small" />
+                  <SaveIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Tooltip>
               <Tooltip title="Annuler">
                 <IconButton size="small" onClick={cancelEditing}>
-                  <CancelIcon fontSize="small" />
+                  <CancelIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </Tooltip>
             </>
           )}
-          <IconButton size="small" onClick={() => setExpanded(!expanded)}>
-            {expanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-          </IconButton>
+          <Tooltip title={expanded ? 'Réduire' : 'Voir les détails'}>
+            <IconButton size="small" onClick={() => setExpanded(!expanded)}>
+              {expanded ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
+            </IconButton>
+          </Tooltip>
         </Stack>
       </Stack>
 
-      {/* Kill Switch Button */}
-      <Button
-        variant={status.kill_switch_active ? 'contained' : 'outlined'}
-        color={status.kill_switch_active ? 'error' : 'warning'}
-        startIcon={<PowerIcon />}
-        onClick={handleKillSwitch}
-        fullWidth
-        size="small"
-        sx={{
-          mb: 1.5,
-          fontWeight: 700,
-          textTransform: 'none',
-          ...(status.kill_switch_active && {
-            animation: 'pulse 2s infinite',
-            '@keyframes pulse': {
-              '0%': { boxShadow: '0 0 0 0 rgba(244, 67, 54, 0.4)' },
-              '70%': { boxShadow: '0 0 0 10px rgba(244, 67, 54, 0)' },
-              '100%': { boxShadow: '0 0 0 0 rgba(244, 67, 54, 0)' },
-            },
-          }),
-        }}
-      >
-        {status.kill_switch_active ? '⛔ KILL SWITCH ACTIF — Cliquer pour désactiver' : '🛡️ Kill Switch (arrêt d\'urgence)'}
-      </Button>
-
+      {/* Kill switch reason alert */}
       {status.kill_switch_active && status.config.kill_switch_reason && (
-        <Alert severity="error" sx={{ mb: 1.5, py: 0 }} icon={<WarningIcon />}>
+        <Alert severity="error" sx={{ mt: 1, py: 0 }} icon={<WarningIcon />}>
           <Typography variant="caption">
             {status.config.kill_switch_reason}
           </Typography>
         </Alert>
       )}
 
-      {/* Daily Loss Progress */}
-      <Box sx={{ mb: 1.5 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
-          <Typography variant="caption" sx={{ opacity: 0.7 }}>
-            Perte journalière
-          </Typography>
-          <Stack direction="row" alignItems="center" spacing={0.5}>
-            <Typography variant="caption" sx={{ fontWeight: 600 }}>
-              {status.daily_loss_current.toFixed(2)} / {status.daily_loss_limit_usd.toFixed(2)} USD
-            </Typography>
-            {status.daily_loss_current > 0 && (
-              <Tooltip title="Remettre le compteur de perte à zéro">
-                <IconButton
-                  size="small"
-                  onClick={resetDailyLoss}
-                  sx={{
-                    p: 0.3,
-                    color: dailyLossPct > 80 ? '#f44336' : '#ff9800',
-                    '&:hover': { color: '#4caf50', bgcolor: 'rgba(76,175,80,0.1)' },
-                  }}
-                >
-                  <ResetIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </Tooltip>
-            )}
-          </Stack>
-        </Stack>
-        <LinearProgress
-          variant="determinate"
-          value={Math.min(dailyLossPct, 100)}
-          sx={{
-            height: 8,
-            borderRadius: 4,
-            bgcolor: 'rgba(255,255,255,0.08)',
-            '& .MuiLinearProgress-bar': {
-              bgcolor: dailyLossPct > 80 ? '#f44336' : dailyLossPct > 50 ? '#ff9800' : '#4caf50',
-              borderRadius: 4,
-            },
-          }}
-        />
-        <Typography variant="caption" sx={{ opacity: 0.5, fontSize: '0.65rem' }}>
-          Reste : {status.daily_loss_remaining_usd.toFixed(2)} USD ({(100 - dailyLossPct).toFixed(0)}%)
-        </Typography>
-      </Box>
-
-      {/* Quick Stats */}
-      <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-        <Box sx={{ flex: 1, p: 1, bgcolor: 'rgba(255,255,255,0.04)', borderRadius: 1 }}>
-          <Typography variant="caption" sx={{ opacity: 0.5, display: 'block', fontSize: '0.65rem' }}>
-            Stop-Loss
-          </Typography>
-          <Typography variant="body2" sx={{ fontWeight: 700 }}>
-            {config.stop_loss_pct}% ({config.stop_loss_type})
-          </Typography>
-        </Box>
-        <Box sx={{ flex: 1, p: 1, bgcolor: 'rgba(255,255,255,0.04)', borderRadius: 1 }}>
-          <Typography variant="caption" sx={{ opacity: 0.5, display: 'block', fontSize: '0.65rem' }}>
-            Take-Profit
-          </Typography>
-          <Typography variant="body2" sx={{ fontWeight: 700 }}>
-            {config.take_profit_pct}%
-          </Typography>
-        </Box>
-        <Box sx={{ flex: 1, p: 1, bgcolor: 'rgba(255,255,255,0.04)', borderRadius: 1 }}>
-          <Typography variant="caption" sx={{ opacity: 0.5, display: 'block', fontSize: '0.65rem' }}>
-            Position Max
-          </Typography>
-          <Typography variant="body2" sx={{ fontWeight: 700 }}>
-            {status.max_position_size_usd.toLocaleString()} $
-          </Typography>
-        </Box>
-      </Stack>
-
-      {/* Expandable Config Form */}
+      {/* ── Expandable details ── */}
       <Collapse in={expanded || editing}>
-        <Divider sx={{ my: 1.5, borderColor: 'rgba(255,255,255,0.08)' }} />
+        <Divider sx={{ my: 1.5, borderColor: 'rgba(255,255,255,0.08)' }}/>
+
+        {/* Quick Stats pour mobile (caché en lg+) */}
+        {!editing && (
+          <Stack direction="row" spacing={1} sx={{ mb: 1.5, display: { xs: 'flex', lg: 'none' } }}>
+            <Box sx={{ flex: 1, p: 1, bgcolor: 'rgba(255,255,255,0.04)', borderRadius: 1 }}>
+              <Typography variant="caption" sx={{ opacity: 0.5, display: 'block', fontSize: '0.65rem' }}>
+                Stop-Loss
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {config.stop_loss_pct}% ({config.stop_loss_type})
+              </Typography>
+            </Box>
+            <Box sx={{ flex: 1, p: 1, bgcolor: 'rgba(255,255,255,0.04)', borderRadius: 1 }}>
+              <Typography variant="caption" sx={{ opacity: 0.5, display: 'block', fontSize: '0.65rem' }}>
+                Take-Profit
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {config.take_profit_pct}%
+              </Typography>
+            </Box>
+            <Box sx={{ flex: 1, p: 1, bgcolor: 'rgba(255,255,255,0.04)', borderRadius: 1 }}>
+              <Typography variant="caption" sx={{ opacity: 0.5, display: 'block', fontSize: '0.65rem' }}>
+                Position Max
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {status.max_position_size_usd.toLocaleString()} $
+              </Typography>
+            </Box>
+          </Stack>
+        )}
 
         {editing ? (
           <Stack spacing={1.5}>
