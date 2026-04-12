@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 12 avril 2026
 > **Version :** v2.0.15
 > **Branche :** `master`
-> **Dernier commit :** `pending` — feat(ui): candle direction indicator + REST price fallback v2.0.15
+> **Dernier commit :** `5589421` — feat(ui): candle direction indicator + REST price fallback v2.0.15
 
 ---
 
