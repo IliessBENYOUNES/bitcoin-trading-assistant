@@ -2,7 +2,7 @@
 
 **Date :** 12 avril 2026  
 **Version :** v2.0.14  
-**Commit :** `pending`
+**Commit :** `399da2a`
 
 ---
 
@@ -104,7 +104,7 @@ Le score technique n'est plus qu'un **filtre de qualité** (|score| >= 10 quand 
 ## Commit
 
 ```
-pending — feat(scalping): candle direction override v2.0.14
+399da2a — feat(scalping): candle direction override v2.0.14
 ```
 
 ## État actuel

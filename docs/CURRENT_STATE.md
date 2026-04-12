@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 12 avril 2026
 > **Version :** v2.0.14
 > **Branche :** `master`
-> **Dernier commit :** `pending` — feat(scalping): candle direction override v2.0.14
+> **Dernier commit :** `399da2a` — feat(scalping): candle direction override v2.0.14
 
 ---
 
