@@ -1168,8 +1168,15 @@ class PaperTradingService:
             # [v2.0.0] Structural proofs gate — le scalping exige des preuves structurelles.
             # Les preuves : price_position favorable (haut de range pour long), volume > 1.2x,
             # micro-trend ≥ 3. Sans assez de preuves, pas d'entrée scalping.
+            # [v2.0.20] BYPASS quand tick momentum override est actif.
+            # L'override confirme la direction par le prix RÉEL (30 sec), pas par les
+            # indicateurs 15 min. Les structural proofs utilisent micro_trend_score (15 min
+            # lagging) → en marché bearish, elles bloquent 100% des LONGs de l'override,
+            # recréant le biais SHORT que l'override était censé corriger.
+            # Les protections restantes (economic gate, market quality, min_score, risk engine)
+            # suffisent à filtrer les mauvaises entrées sans biais directionnel.
             min_proofs = getattr(profile_params, "min_structural_proofs", 0) if profile_params else 0
-            if min_proofs > 0 and mq_data:
+            if min_proofs > 0 and mq_data and not tm_override_active:
                 proof_count = 0
                 proof_details = []
                 # Preuve 1 : volume confirmé (ratio >= 1.0)

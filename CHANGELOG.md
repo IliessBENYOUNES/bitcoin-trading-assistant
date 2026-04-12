@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.20] - 2026-04-13
+
+### Fixed
+- **FIX BIAIS 100% SHORT SCALPING** — Le tick momentum override (v2.0.14) détectait correctement les LONGs (prix en hausse) mais le gate structural proofs (v2.0.0) les bloquait systématiquement. Ce gate vérifie `micro_trend_score ≥ 3` pour les LONGs — un indicateur lagging 15 min, négatif en marché bearish. Résultat : 100% des trades scalping étaient des SHORTs car seuls ceux-ci passaient le gate (micro_trend négatif = preuve pour short). Fix : bypass des structural proofs quand `tm_override_active=True` — la direction réelle du prix sur 30 sec EST la preuve structurelle.
+
+### Changed
+- `_tick_single_slot` : structural proofs gate bypassé quand tick momentum override est actif (`not tm_override_active`).
+
+### Technical
+- Modifié : `backend/app/services/paper_trading_service.py` — 1 ligne : ajout condition `and not tm_override_active` au structural proofs gate
+- Ajouté : `backend/tests/test_pivot_v200.py` — Classe `TestScalpingV2020` avec 2 tests (bypass structural proofs + non-régression)
+- Tests : 1732 (+2)
+
 ## [2.0.19] - 2026-04-12
 
 ### Fixed

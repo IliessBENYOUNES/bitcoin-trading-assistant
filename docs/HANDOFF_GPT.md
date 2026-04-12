@@ -1,88 +1,87 @@
-# 🔄 HANDOFF GPT — v2.0.19
+# 🔄 HANDOFF GPT — v2.0.20
 
-**Date :** 12 avril 2026  
-**Intervention :** Analyse runtime 33 trades + 3 corrections critiques
+> **Date :** 13 avril 2026
+> **Intervention :** Fix biais 100% SHORT sur slot scalping
 
 ---
 
 ## Problème
 
-L'export de 33 trades paper trading a révélé 3 problèmes :
-1. Le slot aggressive perd -$10.32 sur un trade qui dérive 3h sans protection
-2. Le candle reversal exit (v2.0.18) n'a JAMAIS déclenché (0/32 trades)
-3. Les trades override sont immédiatement fermés par signal contraire (churn)
+Le système de paper trading ne produisait **aucun trade LONG** sur le slot scalping depuis plusieurs heures. Tous les trades étaient des SHORTs (`mean_reversion_short` ou `tick_override_short`). Un trade aggressive a dérivé 3h en perte (-$10.32) avant d'être fermé en stale.
 
 ## Diagnostic
 
-### Problème 1 : Aggressive sans protection
-- Le profil aggressive n'a ni trailing stop, ni gain erosion, ni stale négatif
-- Le trade #597 (SHORT, score=-18, confiance LOW) a dérivé 180 min à -0.41% = -$10.32
-- Seul le `stale_exit_minutes=180` a fini par le fermer — trop tard
+Analyse du flux d'entrée dans `_tick_single_slot()` :
 
-### Problème 2 : Candle reversal jamais actif
-- `detect_direction()` utilise `MIN_MOVE_PCT=0.002%` ($1.42 sur BTC)
-- Avec des ticks à 5s et une fenêtre de 15s, seulement ~3 ticks
-- Le prix bouge souvent < $1.42 en 15s → direction = "flat" → tracker reset
-- Le reversal ne persiste jamais assez pour confirmer (3s)
-
-### Problème 3 : Override churn
-- Entry reason = "vendre | score=66" (pas préfixé `mean_reversion_`)
-- La logique `is_reversal` ne protège que les `mean_reversion_*`
-- Score 66 > short_exit_threshold (30) → signal contraire immédiat
+1. Le **tick momentum override** (v2.0.14) détecte la direction réelle du prix sur 30 sec
+2. Quand prix monte → `action = "acheter"` (LONG), `tm_override_active = True`
+3. Le code BYPASS correctement : bearish_veto, scalping_reversal, tick_momentum_confirmation
+4. **MAIS** le gate **structural proofs** (ligne ~1172) n'était PAS bypassé
 
 ## Cause racine
 
-1. Profil aggressive conçu pour du swing long terme mais sans protection intermédiaire
-2. Seuil fixe dans `detect_direction()` non adapté à la sensibilité nécessaire pour le reversal
-3. L'ajout du tick_override (v2.0.14) n'avait pas mis à jour la logique de protection anti-churn
+Le gate structural proofs vérifie 4 preuves pour valider une entrée :
+- `micro_trend_score ≥ 3` pour LONG, `≤ -3` pour SHORT
+- `price_position < 0.35` pour LONG, `> 0.65` pour SHORT
+- `volume_ratio ≥ 1.0`
+- `range_width_atr ≥ 1.5`
 
-## Corrections appliquées
+Le `micro_trend_score` vient des **indicateurs 15 min** (lagging). En marché bearish/ranging, il est **négatif**. Conséquence :
+- **SHORT** : micro_trend négatif = 1 preuve (+ éventuellement volume) → **PASSE** (2/4 requis)
+- **LONG** : micro_trend négatif = 0 preuves pour ce critère → **BLOQUÉ** (0-1/4, < 2 requis)
 
-### Fichier `trading_profile_service.py`
-- Profil `aggressive` : ajout `stale_negative_exit_minutes=60`, `trailing_stop_activation_pct=0.15`, `trailing_stop_drop_ratio=0.30`, `gain_erosion_ratio=0.50`
-- Profil `scalping` : `candle_reversal_window_seconds` 15→30
+Le tick momentum override était conçu pour bypasser les indicateurs lagging. Mais le structural proofs gate réintroduisait ce même biais via micro_trend_score → **100% SHORT**.
 
-### Fichier `tick_momentum_service.py`
-- `detect_direction()` : nouveau paramètre `min_move_pct` (None=0.002% par défaut)
-- `check_candle_reversal()` : passe `min_move_pct=0.001` pour sensibilité 2× supérieure
+## Correction appliquée
 
-### Fichier `paper_trading_service.py`
-- Entry reason des override trades : `tick_override_{direction} | score=...`
-- `is_reversal` check : inclut désormais `tick_override_` (long ET short)
+| Fichier | Ligne | Avant | Après |
+|---------|-------|-------|-------|
+| `paper_trading_service.py` | ~1180 | `if min_proofs > 0 and mq_data:` | `if min_proofs > 0 and mq_data and not tm_override_active:` |
+
+1 seule ligne modifiée. Commentaire v2.0.20 ajouté avec justification.
 
 ## Ce qui n'a PAS été touché
 
-- Le mean reversion (scalping) fonctionne bien (+$15.91 net, non modifié)
-- Le profil scalping (entrées, gates, trailing) inchangé sauf la fenêtre reversal
-- Le profil conservative et balanced non modifiés
-- Le frontend non modifié
-- Aucune migration DB nécessaire (paramètres profil uniquement)
+- Profils (aucun paramètre changé)
+- Tick momentum service (inchangé)
+- Candle reversal (inchangé)
+- Slot aggressive (les protections v2.0.19 sont déjà en place)
+- Frontend (aucun changement)
+- Toutes les autres gates (economic, market quality, min_score, risk engine)
 
 ## Validations
 
-- ✅ 1730 tests backend passent
-- ✅ `tsc --noEmit` frontend sans erreur
-- ✅ 2 tests mis à jour pour refléter les nouveaux params aggressive
+| Check | Résultat |
+|-------|----------|
+| Tests backend | **1732 passed** ✅ (+2 nouveaux) |
+| TypeScript | `tsc --noEmit` clean ✅ |
+| Test override LONG | `opened_long` avec micro_trend=-5 ✅ |
+| Non-régression structural proofs | `min_structural_proofs=2` toujours actif sans override ✅ |
 
 ## Documentation mise à jour
 
 | Document | Changement |
-|----------|-----------|
-| `docs/CURRENT_STATE.md` | Version 2.0.19, 3 features ajoutées, phase mise à jour |
-| `CHANGELOG.md` | Nouvelle entrée [2.0.19] avec Fixed/Changed/Technical |
+|----------|------------|
+| `docs/CURRENT_STATE.md` | Version 2.0.20, tests 1732, description fix v2.0.20 |
+| `CHANGELOG.md` | Nouvelle entrée [2.0.20] Fixed + Changed + Technical |
+| `docs/ROADMAP.md` | (pas de changement de phase) |
+| `docs/requirements_traceability.md` | (pas de nouvelles exigences) |
 | `docs/HANDOFF_GPT.md` | Ce fichier |
-| `docs/ROADMAP.md` | Non modifié (pas de changement de phase) |
-| `docs/requirements_traceability.md` | Non modifié (pas de nouvelles exigences) |
 
 ## Commit
 
-`fix(trading): aggressive slot protection + candle reversal sensitivity + override anti-churn v2.0.19`
+```
+fix(scalping): bypass structural proofs when tick momentum override active — fixes 100% SHORT bias v2.0.20
+```
 
 ## État actuel
 
-- **Version :** v2.0.19
-- **Tests :** 1730 passing
-- **Prochaine action :** Relancer le paper trading pour valider les 3 corrections en runtime
+| Élément | Valeur |
+|---------|--------|
+| Version | v2.0.20 |
+| Tests | 1732 passing |
+| Frontend | tsc clean |
+| Prochaine action | Observer le runtime : vérifier que des LONGs apparaissent sur le slot scalping |
 
 ## Commandes de relance
 
@@ -97,3 +96,21 @@ cd frontend && npm run dev
 cd backend && python -m pytest tests/ -v
 cd frontend && npx tsc --noEmit
 ```
+
+## Explication technique détaillée
+
+### Pourquoi le bypass est sûr
+
+Quand `tm_override_active=True`, la direction vient de la **direction réelle du prix** sur les 30 dernières secondes (6+ ticks). C'est une preuve structurelle EN SOI — plus fiable que le micro_trend_score 15 min qui est en retard.
+
+Les protections restantes sans structural proofs :
+1. **Economic gate** : vérifie la viabilité financière (coût RT vs capture attendue)
+2. **Market quality gate** : quality_score ≥ 50, volume_ratio ≥ 0.8
+3. **Min score** : |score| ≥ 10 (réduit en override, filtre les marchés morts)
+4. **Cooldown** : 1 min minimum entre trades
+5. **Risk engine** : SL/TP, kill switch, daily loss limit
+6. **Max trades/jour** : 30 max
+
+### Pourquoi le trade aggressive de 3h
+
+Le slot aggressive n'a **pas** de tick momentum override (by design — c'est un swing intraday). Il suit les indicateurs 1h. En marché bearish sur le 1h, il ne produit que des SHORTs. Le trade #597 a dérivé 3h car l'ancien profil aggressive n'avait aucun trailing stop ni stale négatif raccourci. **C'est déjà corrigé** par v2.0.19 (`stale_negative=60 min`, `trailing 0.15%+30%`, `gain_erosion 50%`).

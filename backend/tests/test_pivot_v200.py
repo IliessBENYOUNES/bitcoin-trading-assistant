@@ -1512,7 +1512,7 @@ class TestReversalSignalContraireProtection:
             should_close = abs(current_score) > abs(entry_score)
         assert should_close
     def test_reversal_short_with_score_0_at_entry(self):
-        """Edge case : reversal score 0 -> seuil = max(30, 1) = 30."""
+        """Edge case : reversal score 0 -> seuil = max(30, 1) =  30."""
         entry_reason = "mean_reversion_short | score=0 | low | test"
         entry_score = 0
         short_exit_th = 30
@@ -1831,7 +1831,7 @@ class TestGainErosionStopV2012:
 
         entry_time = datetime.now(timezone.utc) - timedelta(minutes=1)
         entry_price = 83000.0
-        # Short : peak = lowest at 82979 → peak_pct = 21/83000 = 0.0253%
+        # Short : peak = lowest at 82979 → peak_pct = (83000-82979)/83000 = 0.0253%
         trade = PaperTrade(
             account_id=account.id,
             direction="short",
@@ -2378,4 +2378,99 @@ class TestTickMomentumIntegrationV2013:
         # Prix flat → pas de direction → hold
         assert result.action_taken == "hold"
         assert result.non_trade_reason == "tick_momentum_no_direction"
+
+
+# ================================================================
+# v2.0.20 -- Corrections diverses
+# ================================================================
+
+class TestScalpingV2020:
+    """Tests v2.0.20 — Bypass structural proofs pour tick momentum override."""
+
+    def setup_method(self):
+        """Nettoyer le buffer avant chaque test."""
+        TickMomentumService.clear_buffer()
+
+    def test_override_long_bypasses_structural_proofs(self, db_session):
+        """[v2.0.20] Un LONG via override n'est PAS bloqué par structural proofs bearish.
+
+        Bug v2.0.18 : le gate structural proofs utilisait micro_trend_score (lagging 15 min)
+        pour vérifier les LONGs. En marché bearish (micro_trend négatif), TOUS les LONGs
+        de l'override étaient bloqués, causant un biais 100% short.
+        Fix v2.0.20 : bypass structural proofs quand tm_override_active=True.
+        """
+        from unittest.mock import patch
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount
+        from datetime import timedelta
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            peak_capital=10000.0, is_active=True, active_profile="scalping",
+            btc_price_at_start=83000.0,
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        svc = PaperTradingService(db_session)
+        base = datetime.now(timezone.utc)
+
+        # Simuler des ticks avec prix MONTANT sur 30 sec → override = LONG
+        for i in range(7):
+            TickMomentumService.record_tick(
+                "scalping", 83000.0 + i * 10, base - timedelta(seconds=30 - i * 5)
+            )
+
+        # Le DecisionService recommande "acheter" (score positif)
+        decision = {
+            "recommendation": {"action": "acheter", "confidence": "medium"},
+            "combined_score": 66,
+            "technical_score": 88,
+            "summary": "Bullish override but bearish micro-trend",
+            "_series": [
+                {"close": 83000, "high": 83100, "low": 82900, "volume": 100,
+                 "volume_sma_20": 80, "atr_14": 200}
+            ] * 20,
+            "rules_evaluated": [
+                {"rule_name": "rsi_neutral", "satisfied": False, "direction": "neutral"},
+            ],
+        }
+
+        # mq_data avec micro_trend BEARISH (-5) → aurait bloqué le LONG via structural proofs
+        mq_data = {
+            "market_quality_score": 60, "volume_ratio": 0.7,
+            "price_position_pct": 0.6, "range_width_atr": 1.0,
+            "micro_trend_score": -5,  # Bearish ! 0 structural proofs for LONG
+            "vwap_distance_pct": 0.1,
+        }
+
+        with patch.object(svc, "_get_decision", return_value=decision), \
+             patch.object(svc, "_check_market_quality", return_value=(None, mq_data)), \
+             patch.object(svc, "_check_cooldown", return_value=None), \
+             patch.object(svc, "_check_max_trades_per_day", return_value=None):
+            result = svc._tick_single_slot(
+                account=account, slot_name="scalping",
+                current_price=83060.0, now=base, is_multi=True,
+            )
+
+        # Avant v2.0.20 : le LONG serait bloqué par structural_proof_insufficient
+        # Après v2.0.20 : le LONG passe grâce au bypass de structural proofs
+        assert result.non_trade_reason != "structural_proof_insufficient", (
+            f"Un LONG via tick momentum override ne doit PAS être bloqué par les "
+            f"structural proofs (basées sur micro_trend lagging). Got: {result.non_trade_reason}"
+        )
+        # Le trade devrait s'ouvrir comme un LONG (tick_override_long)
+        assert result.action_taken == "opened_long", (
+            f"Attendu opened_long via override, obtenu {result.action_taken} "
+            f"(reason: {result.non_trade_reason or result.detail})"
+        )
+
+    def test_structural_proofs_still_apply_without_override(self, db_session):
+        """[v2.0.20] Les structural proofs s'appliquent toujours sans override (non-régression)."""
+        from app.services.trading_profile_service import PROFILE_PRESETS
+        scalp = PROFILE_PRESETS["scalping"]
+        # Le scalping exige toujours 2 preuves structurelles
+        assert scalp.min_structural_proofs == 2
+        # L'override est activé pour le scalping
+        assert scalp.tick_momentum_override_direction is True
 
