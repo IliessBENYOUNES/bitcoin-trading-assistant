@@ -668,10 +668,10 @@ class TestSignalContraireLong:
 # ============================================================
 
 class TestReversalCheck:
-    """Tests du reversal check scalping."""
+    """Tests du reversal check scalping v2.0.8 (seuil abaissé à 1)."""
 
-    def test_single_overbought_no_reversal(self):
-        """1 seul oscillateur overbought ne suffit pas (exige 2)."""
+    def test_single_overbought_triggers_reversal(self):
+        """[v2.0.8] 1 seul oscillateur overbought SUFFIT maintenant (seuil 2→1)."""
         from app.services.paper_trading_service import PaperTradingService
         pts = PaperTradingService.__new__(PaperTradingService)
 
@@ -684,7 +684,7 @@ class TestReversalCheck:
             "technical_score": 72,
         }
         result = pts._scalping_reversal_check(decision_result)
-        assert result is None, "1 seul oscillateur ne devrait pas déclencher de reversal"
+        assert result == "short", "1 oscillateur overbought doit suffire (v2.0.8)"
 
     def test_two_overbought_triggers_short(self):
         """2 oscillateurs overbought → reversal short."""
@@ -701,6 +701,22 @@ class TestReversalCheck:
         }
         result = pts._scalping_reversal_check(decision_result)
         assert result == "short"
+
+    def test_no_reversal_when_nothing_satisfied(self):
+        """Pas de reversal si aucun signal n'est satisfait."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService.__new__(PaperTradingService)
+
+        decision_result = {
+            "rules_evaluated": [
+                {"rule_name": "rsi_overbought", "satisfied": False, "direction": "bearish"},
+                {"rule_name": "stochrsi_overbought", "satisfied": False, "direction": "bearish"},
+            ],
+            "combined_score": 50,
+            "technical_score": 50,
+        }
+        result = pts._scalping_reversal_check(decision_result)
+        assert result is None, "Aucun signal satisfait → pas de reversal"
 
 
 # ============================================================

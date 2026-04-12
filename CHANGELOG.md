@@ -10,17 +10,35 @@ All notable changes to this project will be documented in this file.
   - **Breakeven stop (nouveau)** : filet de sécurité — si peak ≥ activation/2 (0.05%) et PnL retombe ≤ 0%, fermeture immédiate au breakeven. Protège les positions qui étaient profitables mais n'atteignaient pas le seuil d'activation du trailing. Sans ce filet, ces positions étaient fermées en perte par le stale négatif (-$1 à -$5).
   - **Stale exit préservé** : gère uniquement les positions qui n'ont JAMAIS été en profit significatif (peak < 0.05%).
 
+- **SHORTS BIDIRECTIONNELS — 0 short en 24h** — Le robot n'ouvrait AUCUN short en marché range car :
+  1. Le reversal check exigeait **2 signaux overbought** (RSI ≥ 70 + StochRSI ≥ 80) — quasi impossible en range avec RSI à 55
+  2. Le filtre `short_min_score` exigeait abs(score) ≥ 30 pour un trade **contrarian** — absurde car un score bullish positif CONFIRME le surachat
+  - **Seuil reversal 2→1** : un seul signal overbought/oversold suffit pour déclencher un reversal
+  - **Nouveau signal "majorité bearish"** : si ≥2 règles bearish sont satisfaites ET plus de bearish que bullish → overbought signal. Détecte les retournements en range même sans RSI extrême
+  - **`short_min_score` supprimé pour reversals** : le filtre abs(score) bloquait les trades contrarians. Gardé uniquement pour les shorts directionnels (non-reversal). La protection contre les mauvais shorts est assurée par trailing stop, breakeven stop, et stale exit
+
 ### Added
 - **4 tests `TestTrailingStopPriorityV208`** :
   - `test_trailing_fires_before_stale_negative` — position peak > activation qui retombe en négatif → trailing ferme (pas stale)
   - `test_breakeven_stop_protects_small_gains` — peak entre activation/2 et activation, PnL retombe à 0% → breakeven ferme
   - `test_stale_still_works_for_never_profitable` — position jamais profitable → stale négatif ferme normalement
   - `test_exit_priority_order` — vérification statique que trailing/breakeven apparaissent AVANT stale dans le source code
+- **7 tests `TestShortBidirectionalV208`** :
+  - `test_reversal_fires_with_bearish_majority` — 2 bearish > 0 bullish → short reversal
+  - `test_reversal_fires_with_bullish_majority` — 2 bullish > 0 bearish → long reversal
+  - `test_reversal_no_fire_with_equal_rules` — égalité → pas de reversal
+  - `test_short_trailing_stop_symmetric` — calcul PnL symétrique pour short
+  - `test_short_breakeven_stop_symmetric` — breakeven protection pour short
+  - `test_no_short_min_score_for_reversals` — short_min_score ne bloque plus les reversals
+- **Tests mis à jour dans 3 fichiers** : `test_scalping_audit.py`, `test_short_optimization.py`, `test_stability.py` — adaptés au seuil de reversal à 1
 
 ### Technical
-- Modifié : `backend/app/services/paper_trading_service.py` — Réordonnancement exit checks + ajout breakeven stop
-- Modifié : `backend/tests/test_pivot_v200.py` — 4 nouveaux tests intégration v2.0.8
-- Nombre total de tests : 1604→1608 (4 ajoutés, 0 supprimé)
+- Modifié : `backend/app/services/paper_trading_service.py` — Réordonnancement exit checks + breakeven stop + refonte `_scalping_reversal_check` (seuil 2→1, majorité bearish, bypass short_min_score)
+- Modifié : `backend/tests/test_pivot_v200.py` — 11 nouveaux tests (4 trailing priority + 7 shorts bidirectionnels)
+- Modifié : `backend/tests/test_scalping_audit.py` — 3 tests reversal mis à jour pour seuil à 1
+- Modifié : `backend/tests/test_short_optimization.py` — 7 tests reversal mis à jour (3 modifiés, 3 ajoutés, 1 supprimé)
+- Modifié : `backend/tests/test_stability.py` — 3 tests reversal mis à jour (1 modifié, 1 ajouté)
+- Nombre total de tests : 1608→1617 (9 ajoutés net)
 
 ## [2.0.7] - 2026-04-12
 

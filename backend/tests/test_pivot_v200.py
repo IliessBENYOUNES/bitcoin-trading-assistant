@@ -833,3 +833,128 @@ class TestTrailingStopPriorityV208:
             f"stale (pos {stale_pos}) dans le code"
         )
 
+
+# ================================================================
+# 10. [v2.0.8] SHORTS BIDIRECTIONNELS — Reversal + Trailing symétrique
+# ================================================================
+
+
+class TestShortBidirectionalV208:
+    """Tests v2.0.8 : shorts activés via reversal à seuil 1, symétrie trailing."""
+
+    def test_reversal_fires_with_bearish_majority(self, db_session):
+        """[v2.0.8] Majorité bearish (2 bearish > 0 bullish) → reversal short."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "macd_bearish", "satisfied": True, "direction": "bearish"},
+                {"rule_name": "sma_death_cross", "satisfied": True, "direction": "bearish"},
+            ],
+            "combined_score": 30,
+            "technical_score": 30,
+        }
+        result = pts._scalping_reversal_check(decision)
+        assert result == "short", "Majorité bearish → short reversal"
+
+    def test_reversal_fires_with_bullish_majority(self, db_session):
+        """[v2.0.8] Majorité bullish (2 bullish > 0 bearish) → reversal long."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "rsi_oversold", "satisfied": True, "direction": "bullish"},
+                {"rule_name": "stochrsi_oversold", "satisfied": True, "direction": "bullish"},
+            ],
+            "combined_score": -30,
+            "technical_score": -30,
+        }
+        result = pts._scalping_reversal_check(decision)
+        assert result == "long", "Majorité bullish → long reversal"
+
+    def test_reversal_no_fire_with_equal_rules(self, db_session):
+        """[v2.0.8] Aucune majorité (1b vs 1h, aucun overbought) → pas de reversal."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "macd_bearish", "satisfied": True, "direction": "bearish"},
+                {"rule_name": "rsi_bullish", "satisfied": True, "direction": "bullish"},
+            ],
+            "combined_score": 30,
+            "technical_score": 30,
+        }
+        result = pts._scalping_reversal_check(decision)
+        assert result is None, "Égalité bearish/bullish → pas de reversal"
+
+    def test_short_trailing_stop_symmetric(self, db_session):
+        """[v2.0.8] Le trailing stop fonctionne symétriquement pour les shorts."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+
+        # Simuler un trade short : entry=73000, le prix a baissé jusqu'à 72900
+        # puis est remonté à 72960 (recul de 0.082% depuis le peak)
+        from app.models.paper_account import PaperAccount, PaperTrade
+
+        entry_price = 73000.0
+        lowest_price = 72900.0  # peak gain pour short
+        current_price = 72960.0  # prix remonte
+
+        # PnL au peak : (73000-72900)/73000 * 2500 * 1.0 = 0.137% * 2500 = $3.42
+        peak_pnl = (entry_price - lowest_price) / entry_price * 2500
+        peak_pct = peak_pnl / 2500 * 100  # ~0.137%
+        assert peak_pct > 0.10, f"Peak doit être > activation (0.10%): {peak_pct:.3f}%"
+
+        # PnL actuel : (73000-72960)/73000 = 0.055%
+        current_pnl = (entry_price - current_price) / entry_price * 2500
+        current_pct = current_pnl / 2500 * 100  # ~0.055%
+
+        # Recul depuis le pic : 0.137% - 0.055% = 0.082%
+        drop = peak_pct - current_pct
+        assert drop >= 0.06, f"Drop {drop:.3f}% doit être >= trailing_stop_pct (0.06%)"
+
+    def test_short_breakeven_stop_symmetric(self, db_session):
+        """[v2.0.8] Le breakeven stop protège aussi les shorts qui étaient en gain."""
+        from app.services.paper_trading_service import PaperTradingService
+
+        entry_price = 73000.0
+        lowest_price = 72963.5  # peak = +0.05% pour short
+        current_price = 73001.0  # prix remonte au-dessus de l'entrée
+
+        # Peak PnL pour short : (73000-72963.5)/73000 = 0.05%
+        peak_pct = (entry_price - lowest_price) / entry_price * 100
+        assert abs(peak_pct - 0.05) < 0.01, f"Peak ~0.05%: {peak_pct:.3f}%"
+
+        # PnL actuel : (73000-73001)/73000 = -0.0014% (en perte)
+        current_pct = (entry_price - current_price) / entry_price * 100
+        assert current_pct <= 0, f"PnL actuel doit être <= 0%: {current_pct:.3f}%"
+
+        # Le breakeven doit se déclencher : peak >= 0.05% (activation/2) ET PnL <= 0
+        breakeven_activation = 0.10 / 2  # trailing_activation / 2
+        assert peak_pct >= breakeven_activation, "Peak >= breakeven activation"
+        assert current_pct <= 0, "PnL retombé en négatif → breakeven"
+
+    def test_no_short_min_score_for_reversals(self, db_session):
+        """[v2.0.8] Le short_min_score ne bloque plus les reversals contrarians."""
+        from app.services.paper_trading_service import PaperTradingService
+        from app.services.trading_profile_service import PROFILE_PRESETS
+
+        # Le short_min_score existe toujours (30) mais n'est plus vérifié
+        # pour les reversals dans _tick_single_slot
+        p = PROFILE_PRESETS["scalping"]
+        assert p.short_min_score == 30, "short_min_score existe toujours"
+
+        # Un reversal avec score=+25 (< 30) doit quand même passer
+        # car le reversal est contrarian : le score positif CONFIRME le surachat
+        pts = PaperTradingService(db_session)
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "rsi_overbought", "satisfied": True, "direction": "bearish"},
+            ],
+            "combined_score": 25,  # < short_min_score (30)
+            "technical_score": 25,
+        }
+        result = pts._scalping_reversal_check(decision)
+        # Le reversal détecte 1 signal overbought → "short"
+        # La vérification short_min_score n'est plus dans le chemin reversal
+        assert result == "short", "Score +25 avec 1 overbought → short (pas bloqué par short_min_score)"

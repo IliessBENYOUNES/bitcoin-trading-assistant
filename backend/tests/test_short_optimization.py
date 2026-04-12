@@ -679,10 +679,10 @@ class TestEconomicEdgeIntegration:
 # ================================================================
 
 class TestReversalSelectivity:
-    """Tests pour la sélectivité du reversal scalping v1.9.4."""
+    """Tests pour la sélectivité du reversal scalping v2.0.8 (seuil abaissé à 1)."""
 
-    def test_single_overbought_no_reversal(self, db_session):
-        """Un seul RSI overbought ne déclenche plus un reversal short."""
+    def test_single_overbought_triggers_reversal(self, db_session):
+        """[v2.0.8] Un seul RSI overbought SUFFIT pour un reversal short (seuil 2→1)."""
         from app.services.paper_trading_service import PaperTradingService
         pts = PaperTradingService(db_session)
         decision = {
@@ -693,7 +693,7 @@ class TestReversalSelectivity:
             "technical_score": 70,
         }
         result = pts._scalping_reversal_check(decision)
-        assert result is None, "1 seul oscillateur ne doit plus déclencher un short"
+        assert result == "short", "1 oscillateur overbought doit suffire (v2.0.8)"
 
     def test_double_overbought_triggers_reversal(self, db_session):
         """2 oscillateurs overbought déclenchent un reversal short."""
@@ -710,8 +710,8 @@ class TestReversalSelectivity:
         result = pts._scalping_reversal_check(decision)
         assert result == "short"
 
-    def test_tech_score_alone_not_enough(self, db_session):
-        """Tech score extrême seul ne suffit pas pour un reversal."""
+    def test_tech_score_alone_triggers_reversal(self, db_session):
+        """[v2.0.8] Tech score extrême seul suffit (seuil à 1)."""
         from app.services.paper_trading_service import PaperTradingService
         pts = PaperTradingService(db_session)
         decision = {
@@ -720,17 +720,43 @@ class TestReversalSelectivity:
             "technical_score": 98,
         }
         result = pts._scalping_reversal_check(decision)
-        # tech_score ≥ 95 + bearish_rules==0 → overbought=1, mais pas ≥2
-        assert result is None, "tech_score seul ne suffit pas"
+        # tech_score ≥ 95 + bearish_rules==0 → overbought=1, seuil=1 → short
+        assert result == "short", "tech_score ≥ 95 doit suffire (v2.0.8)"
 
-    def test_short_min_score_rejects_weak(self):
-        """[v2.0.3] Le short_min_score à 30 rejette les shorts avec abs(score) < 30."""
+    def test_bearish_majority_triggers_short_reversal(self, db_session):
+        """[v2.0.8] Majorité bearish (2+ rules bearish > bullish) → short reversal."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "macd_bearish_cross", "satisfied": True, "direction": "bearish"},
+                {"rule_name": "sma_death_cross", "satisfied": True, "direction": "bearish"},
+                {"rule_name": "rsi_bullish", "satisfied": True, "direction": "bullish"},
+            ],
+            "combined_score": 25,
+            "technical_score": 30,
+        }
+        result = pts._scalping_reversal_check(decision)
+        assert result == "short", "Majorité bearish (2b vs 1h) → short (v2.0.8)"
+
+    def test_no_reversal_when_no_signals(self, db_session):
+        """[v2.0.8] Pas de reversal si aucun signal n'est satisfait."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "rsi_overbought", "satisfied": False, "direction": "bearish"},
+            ],
+            "combined_score": 50,
+            "technical_score": 50,
+        }
+        result = pts._scalping_reversal_check(decision)
+        assert result is None, "Pas de signal satisfait → pas de reversal"
+
+    def test_short_min_score_still_configured(self):
+        """[v2.0.8] Le short_min_score existe toujours (pour les shorts non-reversal)."""
         p = PROFILE_PRESETS["scalping"]
         assert p.short_min_score == 30
-        # Score de 25 → rejeté
-        assert abs(25) < p.short_min_score
-        # Score de 35 → accepté
-        assert abs(35) >= p.short_min_score
 
 
 # ================================================================

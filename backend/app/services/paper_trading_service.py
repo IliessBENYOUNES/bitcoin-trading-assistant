@@ -823,31 +823,21 @@ class PaperTradingService:
                 if reversal_dir:
                     new_action = "acheter" if reversal_dir == "long" else "vendre"
                     if new_action != action:
-                        # [v1.9.3] Filtre économique pour les shorts mean reversion.
-                        # Un short ne doit être ouvert que si le score est suffisamment
-                        # discriminant. Les shorts à score trop faible produisent des
-                        # trades insignifiants ou du churn.
-                        short_min = getattr(profile_params, "short_min_score", None) or 0
-                        if reversal_dir == "short" and short_min > 0:
-                            if abs(score) < short_min:
-                                logger.info(
-                                    f"⚡ Short rejeté (score {abs(score)} < short_min_score {short_min})"
-                                )
-                                # On ne fait pas le reversal, on garde l'action originale
-                            else:
-                                logger.info(
-                                    f"⚡ Scalping mean reversion: {action}→{new_action} "
-                                    f"(oscillateurs → {reversal_dir}, score={score})"
-                                )
-                                action = new_action
-                                scalping_reversal = True
-                        else:
-                            logger.info(
-                                f"⚡ Scalping mean reversion: {action}→{new_action} "
-                                f"(oscillateurs → {reversal_dir})"
-                            )
-                            action = new_action
-                            scalping_reversal = True
+                        # [v2.0.8] Le filtre short_min_score est SUPPRIMÉ pour les reversals.
+                        # C'est un trade CONTRARIAN : un score bullish de +25 confirme le surachat,
+                        # c'est exactement ce qu'on veut pour un short reversal.
+                        # L'ancien filtre (abs(score) >= 30) bloquait 100% des shorts
+                        # car un reversal se déclenche quand le score est positif.
+                        # La protection contre les mauvais shorts est assurée par :
+                        # - Le trailing stop (sort dès 0.06% de recul)
+                        # - Le breakeven stop (sort à 0% si le peak était > 0.05%)
+                        # - Le stale négatif (sort en 2 min si en perte)
+                        logger.info(
+                            f"⚡ Scalping mean reversion: {action}→{new_action} "
+                            f"(reversal → {reversal_dir}, score={score})"
+                        )
+                        action = new_action
+                        scalping_reversal = True
 
             if action == "attendre":
                 _log_tick(action_taken="hold", btc_price=current_price,
@@ -1523,27 +1513,32 @@ class PaperTradingService:
 
     def _scalping_reversal_check(self, decision_result: dict) -> Optional[str]:
         """
-        Vérifie si les oscillateurs justifient une position contrariante (mean reversion).
+        Vérifie si les conditions justifient une position contrariante (mean reversion).
 
-        En scalping, quand les oscillateurs (RSI, StochRSI) sont en zone extrême,
-        il y a une probabilité accrue de pullback. On exploite ce pullback avec
-        une position contrariante et un SL/TP serré.
+        En scalping, quand le marché oscille dans un range, on veut alterner
+        long/short pour capter chaque micro-mouvement. Le reversal détecte les
+        points de retournement via plusieurs signaux :
 
-        [v1.9.4] Rebalancé pour éviter la surcorrection vers le short :
-        - Avant : 1 seul oscillateur en zone extrême suffisait → trop de shorts
-        - Maintenant : exige au moins 2 signaux convergents de surachat/survente
-        - Le tech_score seul ne suffit plus à déclencher un reversal
-        - En marché haussier, RSI overbought est NORMAL, pas un signal de short
-        - Le reversal doit être réservé aux situations de surachat/survente EXTRÊMES
+        [v2.0.8] REFONTE — Le seuil de 2 signaux (v1.9.4) bloquait 100% des shorts.
+        En marché range, RSI reste à 55 (jamais overbought) et StochRSI aussi.
+        Résultat : 0 short en 24h, le robot ne trade que dans un sens.
+
+        Nouveaux signaux ajoutés pour détecter les retournements en range :
+        - Majorité bearish dans les règles satisfaites (plus de baissiers que haussiers)
+        - Score négatif du moteur de décision (le marché penche vers le baissier)
+
+        Seuil abaissé à 1 signal. Les sorties (trailing, breakeven, stale 2min)
+        protègent suffisamment contre les faux signaux. Un mauvais short sort
+        en ~30sec-2min avec une perte de $0-1 max.
 
         Returns:
-            "short" si surachat extrême détecté (pullback baissier probable)
-            "long" si survente extrême détectée (rebond haussier probable)
-            None si pas de signal de reversal suffisamment fort
+            "short" si retournement baissier détecté
+            "long" si retournement haussier détecté
+            None si pas de signal de reversal
         """
         rules = decision_result.get("rules_evaluated", [])
 
-        # Méthode 1 : Règles satisfaites (RSI/StochRSI overbought/oversold)
+        # Source 1 : Règles overbought/oversold (RSI/StochRSI en zone extrême)
         overbought_signals = {"rsi_overbought", "stochrsi_overbought"}
         oversold_signals = {"rsi_oversold", "stochrsi_oversold"}
 
@@ -1558,10 +1553,7 @@ class PaperTradingService:
             elif name in oversold_signals:
                 oversold += 1
 
-        # Méthode 2 (restreinte) : Score technique extrême
-        # [v1.9.4] Relevé de 90 à 95 pour ne pas générer de faux positifs
-        # Le tech_score seul ne peut plus déclencher un reversal — il ne fait
-        # qu'ajouter un signal qui doit être confirmé par un oscillateur.
+        # Source 2 : Score technique extrême (≥95 ou ≤-95)
         score = decision_result.get("combined_score", 0)
         tech_score = decision_result.get("technical_score", score)
 
@@ -1575,14 +1567,28 @@ class PaperTradingService:
             oversold += 1
             logger.debug(f"⚡ Scalping reversal: tech_score={tech_score} → oversold signal")
 
-        # [v1.9.4] Exiger au moins 2 signaux convergents pour un reversal.
-        # 1 seul oscillateur en zone extrême n'est PAS suffisant — en marché
-        # haussier, RSI > 70 est quasi permanent, ce n'est pas un signal de short.
-        # Il faut RSI overbought + StochRSI overbought (ou + tech_score extrême)
-        # pour justifier un trade contrarian.
-        if overbought >= 2:
+        # [v2.0.8] Source 3 : Majorité bearish/bullish dans les règles
+        # Si plus de règles bearish que bullish sont satisfaites, le momentum
+        # penche vers le bas → signal overbought (un pullback baissier est probable).
+        # Cela permet de détecter les retournements en range même quand RSI est à 55.
+        if bearish_rules > bullish_rules and bearish_rules >= 2:
+            overbought += 1
+            logger.debug(
+                f"⚡ Scalping reversal: majorité bearish ({bearish_rules}b vs {bullish_rules}h) → overbought signal"
+            )
+        elif bullish_rules > bearish_rules and bullish_rules >= 2:
+            oversold += 1
+            logger.debug(
+                f"⚡ Scalping reversal: majorité bullish ({bullish_rules}h vs {bearish_rules}b) → oversold signal"
+            )
+
+
+        # [v2.0.8] Seuil abaissé de 2 à 1 signal.
+        # Les sorties (trailing stop, breakeven stop, stale 2min) protègent
+        # contre les faux signaux. Un mauvais short est coupé très vite.
+        if overbought >= 1:
             return "short"
-        if oversold >= 2:
+        if oversold >= 1:
             return "long"
         return None
 

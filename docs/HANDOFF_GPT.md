@@ -1,4 +1,4 @@
-# HANDOFF GPT — Fix critique trailing stop prioritaire v2.0.8
+# HANDOFF GPT — Shorts bidirectionnels v2.0.8
 
 **Date :** 12 avril 2026  
 **Version :** v2.0.8  
@@ -8,78 +8,71 @@
 
 ## Problème
 
-Les positions scalping qui ÉTAIENT gagnantes (peak > 0.10%) retombaient en perte et étaient fermées à -$1.41 au lieu d'être protégées par le trailing stop. Le fix v2.0.7 (recalibration des seuils) ne suffisait pas.
+Le robot n'ouvrait **AUCUN short** en 24h. Même en marché range (BTC oscillant), seuls des longs étaient ouverts. L'utilisateur voulait voir des shorts alterner avec des longs pour capter les micro-mouvements dans les deux sens.
 
-## Diagnostic — Bug d'ordonnancement
+## Diagnostic — Double blocage
 
-L'ordre des vérifications de sortie dans `_tick_single_slot()` était :
+Deux mécanismes empêchaient les shorts :
 
-```
-1. SL/TP
-2. Expiration
-3. Update peak price
-4. *** STALE EXIT *** ← vérifié EN PREMIER
-5. Trailing stop  ← JAMAIS ATTEINT si stale fire
-6. Momentum fade
-```
+### Blocage 1 : Reversal check trop restrictif (seuil = 2)
+Le `_scalping_reversal_check()` exigeait **2 signaux overbought convergents** :
+- RSI overbought (RSI ≥ 70, strength ≥ 0.7)
+- StochRSI overbought (K ≥ 80, D ≥ 75, strength ≥ 0.6)
 
-Quand une position avec peak > activation (0.10%) retombe en négatif :
-- **Stale négatif** : PnL < -0.03% ET elapsed ≥ 2 min → **FIRE, RETURN**
-- **Trailing stop** : **JAMAIS ATTEINT** car le `return` du stale l'a court-circuité
+En marché range avec RSI à 55 et StochRSI à 60, **aucun** de ces signaux ne se déclenchait jamais.
+
+### Blocage 2 : short_min_score illogique pour reversals
+Le filtre `short_min_score` (= 30) exigeait `abs(score) ≥ 30` pour ouvrir un short. Mais le reversal est **contrarian** : quand le score est +25 (bullish), le reversal dit "trop bullish = surachat = short". Le filtre bloquait car abs(25) = 25 < 30.
+
+C'est fondamentalement illogique : un score **positif** n'est pas une faiblesse pour un short contrarian, c'est une **confirmation** du surachat.
 
 ## Cause racine
 
-Le stale exit avait **priorité sur le trailing stop** dans l'ordre du code.
+1. Le seuil de 2 signaux (v1.9.4) avait été mis pour éviter "trop de shorts en bull run". Mais les sorties étaient mauvaises à l'époque. Maintenant avec trailing stop, breakeven stop, et stale 2 min, un mauvais short sort en 30sec-2min avec ~$0-1 de perte max.
+
+2. Le `short_min_score` avait été conçu pour des shorts **directionnels** (où un score bearish confirme la direction). Pour un trade contrarian, le filtre est contre-productif.
 
 ## Corrections appliquées
 
 **Fichier : `backend/app/services/paper_trading_service.py`**
 
-### 1. Réordonnancement des exit checks
-```
-Nouvel ordre :
-1. SL/TP → 2. Expiration → 3. Update peak →
-4. TRAILING STOP (priorité max) → 5. BREAKEVEN STOP (nouveau) →
-6. Stale exit → 7. Momentum fade
-```
+### 1. Refonte `_scalping_reversal_check()` (L1524-1609)
+- **Seuil abaissé de 2 à 1** signal
+- **Nouveau signal "majorité bearish"** : si ≥2 règles bearish satisfaites ET bearish > bullish → +1 overbought
+- Symétrique : majorité bullish → +1 oversold (pour les reversals long)
+- Tech score extrême ≥ 95 conservé comme signal additionnel
 
-### 2. Breakeven stop (nouveau mécanisme)
-- **Activation** : peak ≥ trailing_activation / 2 (= 0.05%)
-- **Trigger** : PnL retombe ≤ 0%
-- **Effet** : ferme immédiatement au breakeven (~0$)
+### 2. Suppression `short_min_score` pour reversals (L820-838)
+- **Avant** : le code vérifiait `abs(score) < short_min_score` et bloquait le reversal
+- **Après** : le reversal est appliqué directement, sans vérification de score
+- `short_min_score` reste actif pour les shorts NON-reversal
 
 ## Ce qui n'a PAS été touché
 
-- ❌ Paramètres scalping (inchangés depuis v2.0.7)
-- ❌ Aggressive (sanctuarisé)
-- ❌ Frontend, logique d'entrée, SL/TP
+- ❌ Trailing stop / breakeven stop (inchangés)
+- ❌ Profil aggressive (sanctuarisé)
+- ❌ SL/TP, gates économiques, market quality
+- ❌ Frontend
 
 ## Validations
 
-- ✅ **1608 tests** backend passent (4 ajoutés)
+- ✅ **1617 tests** backend passent (9 ajoutés net)
 - ✅ `tsc --noEmit` clean
 
 ## Documentation mise à jour
 
 | Document | Mis à jour |
 |----------|-----------|
-| `docs/CURRENT_STATE.md` | ✅ Version 2.0.8, 1608 tests |
-| `CHANGELOG.md` | ✅ Entrée [2.0.8] |
+| `docs/CURRENT_STATE.md` | ✅ 1617 tests, feature shorts bidirectionnels |
+| `CHANGELOG.md` | ✅ Section Fixed + Added + Technical enrichie |
 | `docs/HANDOFF_GPT.md` | ✅ Ce fichier |
-
-## Tests ajoutés
-
-- `TestTrailingStopPriorityV208::test_trailing_fires_before_stale_negative`
-- `TestTrailingStopPriorityV208::test_breakeven_stop_protects_small_gains`
-- `TestTrailingStopPriorityV208::test_stale_still_works_for_never_profitable`
-- `TestTrailingStopPriorityV208::test_exit_priority_order`
 
 ## État actuel
 
 | Élément | Valeur |
 |---------|--------|
 | Version | v2.0.8 |
-| Tests backend | 1608 passing ✅ |
+| Tests backend | 1617 passing ✅ |
 | TypeScript | tsc --noEmit clean ✅ |
 
 ## Commandes de relance
@@ -88,5 +81,5 @@ Nouvel ordre :
 cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 8000
 cd frontend && npm run dev
 cd backend && python -m pytest tests/ -v
-cd backend && python -m pytest tests/test_pivot_v200.py::TestTrailingStopPriorityV208 -v
+cd backend && python -m pytest tests/test_pivot_v200.py::TestShortBidirectionalV208 -v
 ```
