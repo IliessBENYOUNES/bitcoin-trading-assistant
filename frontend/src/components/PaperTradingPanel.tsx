@@ -47,10 +47,53 @@ import {
   FileDownload as ExportIcon,
   Cloud as HeadlessIcon,
   CloudOff as HeadlessOffIcon,
+  VerifiedUser as VerifiedIcon,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { usePaperTrading } from '../hooks/usePaperTrading';
 import { setPaperProfile, getPaperProfile, createPaperAccount, closePaperPosition, getPaperTradesExport, resetDailyLoss, startAutonomous, stopAutonomous, getAutonomousStatus } from '../api/marketApi';
 import type { PaperTradeItem, TradingProfileType, AutonomousStatus } from '../types';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [v2.0.6] Timer de position — affiche la durée exacte depuis entry_ts
+// Se met à jour chaque seconde. Format hh:mm:ss ou mm:ss si < 1h.
+// ─────────────────────────────────────────────────────────────────────────────
+function PositionTimer({ entryTs }: { entryTs: string }) {
+  const [elapsed, setElapsed] = useState('');
+
+  useEffect(() => {
+    const entryDate = new Date(entryTs);
+    const update = () => {
+      const diffMs = Date.now() - entryDate.getTime();
+      if (diffMs < 0) { setElapsed('00:00'); return; }
+      const totalSec = Math.floor(diffMs / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      setElapsed(h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`);
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [entryTs]);
+
+  return (
+    <Chip
+      size="small"
+      icon={<TimerIcon sx={{ fontSize: 14 }} />}
+      label={elapsed}
+      variant="outlined"
+      sx={{
+        fontFamily: 'monospace',
+        fontWeight: 700,
+        fontSize: '0.8rem',
+        borderColor: '#42a5f5',
+        color: '#42a5f5',
+      }}
+    />
+  );
+}
 
 // Couleur selon PnL
 const pnlColor = (pnl: number | null): string => {
@@ -244,6 +287,16 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
   }, []);
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
+
+  // [v2.0.6] Synchroniser le profil actif avec le backend à chaque poll
+  // C'est la source de vérité — le profil remonté par status.account.active_profile
+  // est celui réellement utilisé par le moteur de trading.
+  const backendProfile = status?.account?.active_profile as TradingProfileType | undefined;
+  useEffect(() => {
+    if (backendProfile) {
+      setActiveProfile(backendProfile);
+    }
+  }, [backendProfile]);
 
   // Gère le countdown quand autoMode est actif
   useEffect(() => {
@@ -447,6 +500,10 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
   // Profil actif — trouver les infos d'affichage
   const activeProfileInfo = PROFILE_OPTIONS.find(p => p.value === activeProfile);
 
+  // [v2.0.6] Certification du profil — détection de désynchronisation
+  const backendProfileInfo = PROFILE_OPTIONS.find(p => p.value === backendProfile);
+  const profileMismatch = isActive && backendProfile && backendProfile !== selectedProfile;
+
   // Progress pour le countdown
   const countdownProgress = autoMode && autoIntervalSec > 0
     ? ((autoIntervalSec - countdown) / autoIntervalSec) * 100
@@ -500,6 +557,63 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* 🔒 CERTIFICATION PROFIL — Source de vérité backend (v2.0.6)      */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {isActive && backendProfile && (
+        <Alert
+          severity={profileMismatch ? 'warning' : 'success'}
+          icon={profileMismatch ? <WarningIcon /> : <VerifiedIcon />}
+          sx={{
+            mb: 2,
+            py: 0.5,
+            fontWeight: 700,
+            border: profileMismatch
+              ? '2px solid #ff9800'
+              : `2px solid ${backendProfileInfo?.color ?? '#4caf50'}`,
+            bgcolor: profileMismatch
+              ? 'rgba(255, 152, 0, 0.08)'
+              : `${backendProfileInfo?.color ?? '#4caf50'}11`,
+            '& .MuiAlert-icon': {
+              color: profileMismatch ? '#ff9800' : backendProfileInfo?.color ?? '#4caf50',
+            },
+            animation: profileMismatch ? 'pulse-warn 1.5s ease-in-out infinite' : undefined,
+            '@keyframes pulse-warn': {
+              '0%, 100%': { borderColor: '#ff9800' },
+              '50%': { borderColor: '#f44336' },
+            },
+          }}
+        >
+          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+            <Typography variant="body2" fontWeight={800}>
+              {profileMismatch ? '⚠️ ATTENTION — Profil backend ≠ sélection' : '🔒 Profil certifié par le serveur'}
+            </Typography>
+            <Chip
+              size="small"
+              label={`${backendProfileInfo?.emoji ?? '❓'} ${backendProfileInfo?.label ?? backendProfile}`}
+              sx={{
+                fontWeight: 800,
+                fontSize: '0.85rem',
+                bgcolor: `${backendProfileInfo?.color ?? '#999'}33`,
+                color: backendProfileInfo?.color ?? '#999',
+                border: `2px solid ${backendProfileInfo?.color ?? '#999'}`,
+              }}
+            />
+            {profileMismatch && (
+              <Typography variant="caption" sx={{ color: '#ff9800' }}>
+                Sélectionné : {PROFILE_OPTIONS.find(p => p.value === selectedProfile)?.emoji} {PROFILE_OPTIONS.find(p => p.value === selectedProfile)?.label ?? selectedProfile}
+                {' '}→ Relancez le robot pour appliquer
+              </Typography>
+            )}
+            {!profileMismatch && (
+              <Typography variant="caption" sx={{ color: backendProfileInfo?.color ?? '#4caf50' }}>
+                ✅ Le moteur de trading utilise bien ce profil
+              </Typography>
+            )}
+          </Stack>
+        </Alert>
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════ */}
@@ -862,6 +976,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
                   {pos.slot && <Chip size="small" label={pos.slot} sx={{ ml: 1, fontSize: 11, height: 20 }} />}
                 </Typography>
                 {statusChip(pos.status)}
+                <PositionTimer entryTs={pos.entry_ts} />
                 <Button
                   variant="outlined"
                   color="warning"
@@ -898,6 +1013,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
               Position {openPos.direction.toUpperCase()} ouverte
             </Typography>
             {statusChip(openPos.status)}
+            <PositionTimer entryTs={openPos.entry_ts} />
             <Button
               variant="outlined"
               color="warning"

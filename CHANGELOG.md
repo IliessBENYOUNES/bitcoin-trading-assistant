@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.6] - 2026-04-12
+
+### Changed
+- **Gate micro-tendance DÉSACTIVÉ** (`min_micro_trend_long` 1→0) — L'audit post-v2.0.4 révèle 135/135 ticks scalping (100%) encore bloqués par `micro_trend_insufficient`. Tous avaient `micro_trend_score=-2`, `decision_score=65`, `market_quality=59`. Le gate à mt≥1 restait trop restrictif dans les phases latérales. Désactivé : la protection micro-trend reste via `structural_proofs` (mt≥3 = 1 preuve sur 4 requises).
+
+### Added
+- **Certification profil UI** (`🔒 Profil certifié par le serveur`) — Bandeau vert affichant le profil réellement actif côté backend, synchronisé via `status.account.active_profile` à chaque poll. Alerte orange clignotante en cas de désynchronisation frontend/backend.
+- **`active_profile` dans PaperAccountResponse** — Le champ est désormais remonté dans chaque réponse `/paper/status`, éliminant la dépendance à un appel `GET /paper/profile` séparé.
+- **Timer de position live** — Chronomètre `hh:mm:ss` (ou `mm:ss` si < 1h) sur chaque carte de position ouverte, basé sur `entry_ts`, rafraîchi chaque seconde.
+- **4 tests mis à jour** pour refléter `min_micro_trend_long=0` (+ 1 nouveau test `economic_gate_still_active`).
+
+### Technical
+- Modifié : `backend/app/services/trading_profile_service.py` — `min_micro_trend_long` scalping 1→0
+- Modifié : `backend/app/schemas/paper_trading.py` — `active_profile` ajouté à `PaperAccountResponse`
+- Modifié : `frontend/src/types/api.ts` — `active_profile` ajouté à `PaperAccountItem`
+- Modifié : `frontend/src/components/PaperTradingPanel.tsx` — Composant `PositionTimer`, bandeau certification profil, sync `backendProfile` via polling
+- Modifié : `backend/tests/test_pivot_v200.py` — Tests `TestScalpingV206MicroTrendDisable` (remplace `V204`)
+- Nombre total de tests : 1598 (0 ajouté net).
+
 ## [2.0.5] - 2026-04-12
 
 ### Fixed

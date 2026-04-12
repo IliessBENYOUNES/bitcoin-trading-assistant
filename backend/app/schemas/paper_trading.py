@@ -162,6 +162,7 @@ class PaperAccountResponse(BaseModel):
     is_active: bool
     max_open_duration_hours: float
     max_open_positions: int = 1  # v1.7
+    active_profile: str = "conservative"  # v2.0.6 — profil actif remonté dans chaque status
     btc_price_at_start: Optional[float] = None
     peak_capital: float
     created_at: Optional[datetime] = None

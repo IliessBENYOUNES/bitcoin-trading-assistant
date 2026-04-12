@@ -693,6 +693,7 @@ export interface PaperAccountItem {
   is_active: boolean;
   max_open_duration_hours: number;
   max_open_positions?: number; // v1.7
+  active_profile?: string; // v2.0.6 — profil actif certifié par le backend
   btc_price_at_start: number | null;
   peak_capital: number;
   created_at: string | null;

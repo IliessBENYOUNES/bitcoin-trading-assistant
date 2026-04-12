@@ -1,81 +1,87 @@
-# HANDOFF GPT — Incident grave : bascule silencieuse du profil actif v2.0.5
+# HANDOFF GPT — Déblocage scalping v2.0.6 + Timer position + Certification profil UI
 
 **Date :** 12 avril 2026  
-**Version :** v2.0.5  
-**Commit :** `ab038da` — fix(profile): préservation du profil actif lors du reset — anti-bascule conservative
+**Version :** v2.0.6  
+**Commit :** (en cours)
 
 ---
 
 ## Problème
 
-Le profil actif du paper trading basculait silencieusement de "scalping" vers "conservative" sans aucune action explicite de l'utilisateur. L'export runtime montrait `active_profile = "conservative"` avec un slot conservative ouvert, alors que l'utilisateur avait lancé le run en mode scalping.
+Le scalping était 100% bloqué — aucune position ne s'ouvrait sur le slot scalping. Le slot aggressive fonctionnait normalement. L'utilisateur a aussi demandé une confirmation visuelle du profil actif et un timer de position.
 
-## Diagnostic
+## Diagnostic — Audit runtime exhaustif
 
-Audit exhaustif de **tous les chemins** qui lisent ou écrivent `active_profile` dans le code. 5 chemins identifiés comme responsables :
+Requête SQL sur `tick_activity_log` — 135 ticks scalping analysés :
 
-| # | Chemin | Fichier | Gravité |
-|---|--------|---------|---------|
-| 1 | `reset_account()` crée PaperAccount sans active_profile | `paper_trading_service.py:150` | 🔴 CRITIQUE |
-| 2 | `get_or_create_account()` crée PaperAccount sans active_profile | `paper_trading_service.py:80` | 🔴 CRITIQUE |
-| 3 | Fallback `or "conservative"` masque le None | `paper_trading_service.py:199, :1832` | 🟡 MASQUE |
-| 4 | Default SQLAlchemy `default="conservative"` | `paper_account.py:43` | 🟠 RACINE |
-| 5 | Frontend self-healing appelle `createPaperAccount` sans profil | `usePaperTrading.ts:178` | 🟡 INDIRECT |
+| Métrique | Valeur |
+|----------|--------|
+| Ticks scalping | 135 |
+| `micro_trend_insufficient` | **135 (100%)** |
+| `micro_trend_score` | **-2** (tous) |
+| `decision_score` | **65** (seuil = 30) |
+| `decision_action` | **acheter** (tous) |
+| `market_quality_score` | **59** (seuil = 50) |
+| Autres gates atteints | **0** |
+
+**Verdict : le gate `micro_trend_insufficient` est le seul et unique coupable.** Il avait été assoupli de 2→1 en v2.0.4, mais le marché stagne à mt=-2 dans cette phase, rendant mt≥1 encore trop restrictif.
 
 ## Cause racine
 
-**Catégorie : C — Valeur par défaut destructrice + D — Reset qui écrase le profil.**
+Le gate micro-tendance dédié (`min_micro_trend_long=1`) bloque **séquentiellement** tous les ticks scalping avant qu'aucun autre gate ne soit atteint. Avec un micro_trend_score constant de -2 dans les phases latérales/baissières, le gate à mt≥1 est un verrou total.
 
-Le modèle SQLAlchemy `PaperAccount` a `active_profile` avec `default="conservative"` (ligne 43 de `paper_account.py`). C'est le comportement attendu pour une création initiale, mais c'est destructeur quand le compte est recréé par un `reset_account()` : l'ancien profil est détruit avec le compte, et le nouveau est créé avec le default "conservative" — le profil demandé par l'utilisateur est perdu.
+## Corrections appliquées
 
-**Scénario reproduit :**
-1. L'utilisateur sélectionne "scalping" et lance le robot
-2. `setPaperProfile("scalping")` → `active_profile="scalping"` ✅
-3. Un full reset est déclenché (bouton frontend ou via processus)
-4. `reset_account()` → DELETE old PaperAccount → INSERT new PaperAccount(active_profile="conservative") ❌
-5. Aucun code ne restaure le profil après → le robot tourne en conservative
+### MISSION 2 — Déblocage scalping
 
-## Correction appliquée
+**Fichier : `backend/app/services/trading_profile_service.py`**
+- `min_micro_trend_long` : 1 → **0** (désactivé)
+- Le code vérifie `if min_mt_long > 0` → avec 0, le gate est inactif
+- La protection micro-trend reste via `structural_proofs` (mt≥3 = 1 preuve sur 4 requises, min_structural_proofs=2)
 
-### Backend
+### MISSION 3 — Timer de position UI
 
-**Fichier 1 : `backend/app/services/paper_trading_service.py`**
-- `reset_account()` : Ajout du paramètre `preserve_profile`. Le profil de l'ancien compte est capturé AVANT la purge et restauré dans le nouveau compte.
-- `get_or_create_account()` : Ajout du paramètre `active_profile`. Si le compte est créé pour la première fois, le profil demandé est utilisé au lieu du default. Si le compte existe déjà, le profil n'est PAS écrasé.
+**Fichier : `frontend/src/components/PaperTradingPanel.tsx`**
+- Nouveau composant `PositionTimer` — chronomètre live basé sur `entry_ts`
+- Format : `hh:mm:ss` ou `mm:ss` si < 1h
+- Rafraîchi chaque seconde via `setInterval`
+- Intégré dans les 2 zones de position (multi-slot et single-slot)
 
-**Fichier 2 : `backend/app/api/routes/paper_trading.py`**
-- `start_autonomous()` : Ajout de `account.active_profile = request.profile` — force le profil demandé dans TOUS les cas (compte existant ou nouveau).
+### Certification profil UI (livré dans l'intervention précédente, complété ici)
 
-**Fichier 3 : `backend/app/services/autonomous_manager.py`**
-- `_set_profile()` : Passe le profil à `get_or_create_account(active_profile=profile)`.
+**Fichier : `backend/app/schemas/paper_trading.py`**
+- `active_profile` ajouté à `PaperAccountResponse` → remonté dans chaque poll
 
-### Frontend
+**Fichier : `frontend/src/types/api.ts`**
+- `active_profile` ajouté à `PaperAccountItem`
 
-**Fichier 4 : `frontend/src/components/PaperTradingPanel.tsx`**
-- `handleFullReset()` : Après le reset, appel explicite `setPaperProfile(selectedProfile)` pour restaurer le profil.
-- `handleStartAuto()` : Appel `setPaperProfile(selectedProfile)` avant de démarrer l'auto-tick.
+**Fichier : `frontend/src/components/PaperTradingPanel.tsx`**
+- Bandeau `🔒 Profil certifié par le serveur` avec couleur du profil
+- Sync automatique `activeProfile` via `status.account.active_profile` à chaque poll
+- Alerte orange clignotante si désynchronisation détectée
 
 ## Ce qui n'a PAS été touché
 
 - ❌ Aggressive (sanctuarisé)
-- ❌ Logique de trading / tick / SL/TP
-- ❌ Gate économique, structural proofs
-- ❌ Decision engine, scoring
-- ❌ Default SQLAlchemy dans le modèle (gardé pour la rétrocompatibilité, le fix est au niveau service)
-- ❌ Schema PaperAccountCreate (pas de champ active_profile ajouté — le profil se gère via `POST /paper/profile`)
+- ❌ Scoring global
+- ❌ Stale exit
+- ❌ Trailing stop
+- ❌ Economic gate (toujours actif)
+- ❌ Structural proofs (toujours 2 requis)
+- ❌ buy_threshold (reste à 30 — pas nécessaire, le score est 65)
 
 ## Validations
 
-- ✅ **1598 tests** backend passent (1587 + 11 nouveaux)
+- ✅ **1598 tests** backend passent
 - ✅ `tsc --noEmit` clean
-- ✅ 11 tests de non-régression spécifiques à l'incident
+- ✅ Audit runtime prouve que seul le micro_trend gate bloquait
 
 ## Documentation mise à jour
 
 | Document | Mis à jour |
 |----------|-----------|
-| `docs/CURRENT_STATE.md` | ✅ Version 2.0.5, tests 1598, feature fix |
-| `CHANGELOG.md` | ✅ Nouvelle entrée [2.0.5] avec Fixed + Added + Technical |
+| `docs/CURRENT_STATE.md` | ✅ Version 2.0.6, features, phase |
+| `CHANGELOG.md` | ✅ Nouvelle entrée [2.0.6] |
 | `docs/ROADMAP.md` | — (pas de changement de phase) |
 | `docs/requirements_traceability.md` | — (pas de nouvelles exigences formelles) |
 | `docs/HANDOFF_GPT.md` | ✅ Ce fichier |
@@ -84,18 +90,32 @@ Le modèle SQLAlchemy `PaperAccount` a `active_profile` avec `default="conservat
 
 | Élément | Valeur |
 |---------|--------|
-| Version | v2.0.5 |
+| Version | v2.0.6 |
 | Tests backend | 1598 passing ✅ |
 | TypeScript | tsc --noEmit clean ✅ |
-| Profil préservé lors du reset | ✅ Prouvé par 11 tests |
-| Chemins corrigés | 5/5 |
+| Gate micro-trend | DÉSACTIVÉ (0) |
+| Certification profil | ✅ Bandeau UI |
+| Timer position | ✅ Live hh:mm:ss |
 
-## Prochaine action recommandée
+## Protocole exact pour relancer un run propre
 
-1. **Commit + push** le fix
-2. **Relancer un run scalping** propre
-3. **Vérifier** via `GET /paper/profile` que le profil reste "scalping" après chaque action
-4. **Si le profil bascule encore** : utiliser les tests de diagnostic
+```bash
+# 1. Full reset du compte
+curl -X POST http://localhost:8000/paper/account/reset -H "Content-Type: application/json" -d "{\"initial_capital\": 10000}"
+
+# 2. Poser le profil scalping
+curl -X POST http://localhost:8000/paper/profile -H "Content-Type: application/json" -d "{\"profile\": \"scalping\"}"
+
+# 3. Vérifier le profil
+curl http://localhost:8000/paper/profile
+
+# 4. Lancer le robot autonome en scalping
+# (Via l'UI : sélectionner scalping → cliquer "Lancer le Robot")
+# Ou headless :
+curl -X POST http://localhost:8000/paper/autonomous/start -H "Content-Type: application/json" -d "{\"interval_seconds\": 5, \"profile\": \"scalping\"}"
+
+# 5. Vérifier que le bandeau UI affiche "🔒 Profil certifié : ⚡ Scalping"
+```
 
 ## Commandes de relance
 
@@ -109,12 +129,6 @@ cd frontend && npm run dev
 # Tests complets
 cd backend && python -m pytest tests/ -v
 
-# Tests spécifiques anti-bascule
-cd backend && python -m pytest tests/test_paper_trading.py::TestProfilePreservation -v
-
-# Vérifier le profil actif
-curl http://localhost:8000/paper/profile
-
-# Lancer un run scalping autonome
-curl -X POST http://localhost:8000/paper/autonomous/start -H "Content-Type: application/json" -d '{"interval_seconds": 10, "profile": "scalping"}'
+# Tests pivot spécifiques
+cd backend && python -m pytest tests/test_pivot_v200.py::TestScalpingV206MicroTrendDisable -v
 ```

@@ -436,11 +436,11 @@ class TestScalpingV203MiniLot:
         scalp = PROFILE_PRESETS["scalping"]
         assert scalp.trailing_stop_pct == 0.10
 
-    def test_min_micro_trend_long_is_1(self):
-        """[v2.0.4] Gate micro-tendance assoupli pour longs : micro_trend_score ≥ 1."""
+    def test_min_micro_trend_long_is_0(self):
+        """[v2.0.6] Gate micro-tendance désactivé : min_micro_trend_long = 0 (le code skip si <= 0)."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.min_micro_trend_long == 1, (
-            f"Attendu 1, obtenu {scalp.min_micro_trend_long}"
+        assert scalp.min_micro_trend_long == 0, (
+            f"Attendu 0, obtenu {scalp.min_micro_trend_long}"
         )
 
     def test_min_micro_trend_long_absent_on_aggressive(self):
@@ -509,41 +509,42 @@ class TestScalpingV203MiniLot:
 # TESTS : Assouplissement micro-tendance v2.0.4
 # ================================================================
 
-class TestScalpingV204MicroTrendRelax:
+class TestScalpingV206MicroTrendDisable:
     """
-    Tests pour l'assouplissement du gate micro-tendance v2.0.4.
+    Tests pour la désactivation du gate micro-tendance v2.0.6.
 
-    Audit post-v2.0.3 : 966 ticks scalping, 100% bloqués par micro_trend_insufficient.
-    Tous avaient micro_trend_score=-2 et decision_score=65 (bien au-dessus du seuil 30).
-    Le gate à mt≥2 était trop restrictif : il exigeait une tendance confirmée.
+    Audit post-v2.0.4 : 135 ticks scalping, 100% bloqués par micro_trend_insufficient.
+    Tous avaient micro_trend_score=-2, decision_score=65, market_quality=59.
+    Le gate à mt≥1 bloquait encore 100% des ticks dans les phases latérales.
+    Les structural_proofs (2/4 requis) passaient déjà — seul le gate dédié bloquait.
 
-    Correction : min_micro_trend_long 2→1.
+    Correction : min_micro_trend_long 1→0 (désactivé, le code skip si <= 0).
+    La protection micro-trend reste via structural_proofs (mt >= 3 = 1 preuve sur 4).
     """
 
-    def test_min_micro_trend_long_lowered_to_1(self):
-        """min_micro_trend_long abaissé de 2 à 1 pour débloquer les débuts de reprise."""
+    def test_min_micro_trend_long_disabled(self):
+        """min_micro_trend_long = 0 = gate désactivé."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.min_micro_trend_long == 1, (
-            f"Attendu 1, obtenu {scalp.min_micro_trend_long}"
+        assert scalp.min_micro_trend_long == 0, (
+            f"Attendu 0, obtenu {scalp.min_micro_trend_long}"
         )
 
-    def test_micro_trend_score_1_passes_gate(self):
-        """Un micro_trend_score de 1 doit passer le gate (début de reprise)."""
+    def test_gate_code_skips_when_zero(self):
+        """Avec min_micro_trend_long=0, le code ne doit PAS bloquer (condition > 0 fausse)."""
         scalp = PROFILE_PRESETS["scalping"]
-        mt_threshold = scalp.min_micro_trend_long
-        assert 1 >= mt_threshold, "micro_trend_score=1 doit passer le gate"
+        # Le code vérifie : if min_mt_long is not None and min_mt_long > 0
+        assert not (scalp.min_micro_trend_long is not None and scalp.min_micro_trend_long > 0), \
+            "Le gate doit être inactif quand min_micro_trend_long=0"
 
-    def test_micro_trend_score_0_still_blocked(self):
-        """Un micro_trend_score de 0 reste bloqué (flat = pas de tendance)."""
+    def test_structural_proofs_still_active(self):
+        """Les structural_proofs (2 requis) sont toujours actifs — micro-trend reste une preuve."""
         scalp = PROFILE_PRESETS["scalping"]
-        mt_threshold = scalp.min_micro_trend_long
-        assert 0 < mt_threshold, "micro_trend_score=0 doit être bloqué"
+        assert scalp.min_structural_proofs == 2, "Structural proofs doit rester à 2"
 
-    def test_micro_trend_score_negative_still_blocked(self):
-        """Un micro_trend_score négatif reste bloqué (baissier)."""
+    def test_economic_gate_still_active(self):
+        """Le gate économique reste actif — on ne désactive que le micro-trend dédié."""
         scalp = PROFILE_PRESETS["scalping"]
-        mt_threshold = scalp.min_micro_trend_long
-        assert -2 < mt_threshold, "micro_trend_score=-2 doit être bloqué"
+        assert scalp.economic_gate_enabled is True, "Economic gate doit rester actif"
 
     def test_buy_threshold_unchanged(self):
         """Le buy_threshold reste à 30 — l'audit montre que le score (65) le franchit déjà."""
