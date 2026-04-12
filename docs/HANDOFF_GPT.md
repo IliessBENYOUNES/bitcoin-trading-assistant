@@ -1,105 +1,132 @@
-# HANDOFF GPT — Tick Momentum Confirmation v2.0.13
+# HANDOFF GPT — Candle Direction Override v2.0.14
 
 **Date :** 12 avril 2026  
-**Version :** v2.0.13  
-**Commit :** `dea2018`
+**Version :** v2.0.14  
+**Commit :** `pending`
 
 ---
 
 ## Problème
 
-Les shorts scalping entraient pendant que le prix montait réellement. Le moteur se basait sur des indicateurs 15 min (lagging) et un cooldown fixe de 1 min entre les trades. Résultat : les shorts étaient immédiatement en négatif dès l'ouverture, restaient négatifs pendant 2 min, puis sortaient via `stale_negative_exit` avec une perte systématique. Le bot ne vérifiait pas la **direction réelle du prix** au moment de l'entrée.
+Deux problèmes majeurs identifiés en observation runtime :
+
+1. **Fenêtre tick momentum trop courte (10 sec)** — Avec des ticks toutes les 5 sec, seulement 2-3 points de données. En pleine volatilité d'une bougie, ça ne suffisait pas pour déterminer si le prix monte ou descend réellement.
+
+2. **Biais 100% short** — Le decision service utilise des indicateurs 15 min (lagging) qui restaient bearish en marché ranging, produisant UNIQUEMENT des recommendations SHORT (score < -20). Le buy_threshold=30 était rarement atteint. Le bearish_veto bloquait les rares tentatives de LONG (micro_trend < 0). Résultat : aucun LONG observé pendant plus d'une heure, même quand le BTC alternait entre montées et baisses.
 
 ## Diagnostic
 
-| Scénario | Direction signal | Direction prix réelle | Résultat |
-|----------|-----------------|----------------------|----------|
-| Score -45 (bearish) | SHORT | Prix monte (+$60/10s) | Perte → stale -2 min |
-| Score -45 (bearish) | SHORT | Prix descend (-$60/10s) | ✅ Entrée correcte |
-| Score +65 (bullish) | LONG | Prix descend (-$30/10s) | Perte → stale -2 min |
-| Score +65 (bullish) | LONG | Prix monte (+$30/10s) | ✅ Entrée correcte |
-
-Le problème : le score technique est en **retard** (basé sur des candles 15 min) et peut rester bearish/bullish pendant que le prix va dans l'autre sens. Le cooldown fixe de 1 min ne résout rien car il bloque par le TEMPS, pas par la DIRECTION.
+| Condition | Score technique | Direction prix 30s | Avant v2.0.14 | Après v2.0.14 |
+|-----------|----------------|-------------------|---------------|---------------|
+| Score -30, prix monte | SHORT | UP | SHORT → perte | LONG ✅ |
+| Score -30, prix descend | SHORT | DOWN | SHORT | SHORT ✅ |
+| Score +15 (attendre), prix monte | HOLD | UP | Pas de trade | LONG ✅ |
+| Score +15 (attendre), prix descend | HOLD | DOWN | Pas de trade | SHORT ✅ |
+| Score +35, prix descend | LONG | DOWN | LONG → perte | SHORT ✅ |
+| Score -25, prix flat | SHORT | FLAT | SHORT → risque | Pas de trade ✅ |
 
 ## Cause racine
 
-Absence de vérification de la direction **temps réel** du prix avant l'ouverture de position. Le moteur de décision produit des signaux lagging (15 min) qui ne reflètent pas le mouvement instantané du prix.
+1. Les indicateurs 15 min sont **lagging** : le score reste bearish pendant des minutes alors que le prix alterne haut/bas.
+2. Les seuils BUY/SELL sont **asymétriques** (BUY=30, SELL=20) : plus facile de shorter que de longer.
+3. Le bearish_veto bloque les LONG quand micro_trend < 0, mais rien ne bloque les SHORT quand le prix monte.
+4. Le check "attendre" empêche tout trade quand le score est modéré (-20 à +30), même si le prix bouge clairement.
 
 ## Correction appliquée
 
-### Tick Momentum Confirmation Gate
+### Candle Direction Override
 
-Nouveau service `TickMomentumService` qui :
-1. **Enregistre** le prix à chaque tick dans un buffer circulaire en mémoire
-2. **Analyse** les ticks des dernières ~10 secondes avant d'ouvrir
-3. **Confirme** ou **rejette** l'entrée selon la direction du prix :
-   - SHORT → le prix doit être en **baisse** sur la fenêtre
-   - LONG → le prix doit être en **hausse** sur la fenêtre
-   - FLAT (< 0.001% de variation) → entrée **rejetée** (bruit)
+En scalping, la direction du trade est maintenant déterminée par la direction **RÉELLE du prix** sur les 30 dernières secondes :
 
-**Logique :** On prend le premier et le dernier tick dans la fenêtre de 10 sec. Si price_end > price_start → "up". Si price_end < price_start → "down". Si variation < 0.001% → "flat". On calcule aussi le ratio ticks montants/descendants pour le diagnostic.
+- **Bougie verte** (prix monte) → entre **LONG**
+- **Bougie rouge** (prix descend) → entre **SHORT**
+- **Bougie neutre** (flat < 0.002%) → **pas de trade**
+
+Le score technique n'est plus qu'un **filtre de qualité** (|score| >= 10 quand override actif) — il vérifie que le marché est actif, mais ne détermine plus la direction.
 
 ### Fichiers modifiés
 
 | Fichier | Changement |
 |---------|-----------|
-| `services/tick_momentum_service.py` | **NOUVEAU** — Service complet (buffer, record, check_direction) |
-| `schemas/journal.py` | 3 nouveaux champs : `tick_momentum_enabled`, `window_seconds`, `min_ticks` |
-| `services/paper_trading_service.py` | Import TickMomentumService + record_tick à chaque tick + gate avant entrée |
-| `services/trading_profile_service.py` | tick_momentum activé sur profil scalping (window=10s, min_ticks=2) |
-| `services/journal_service.py` | Label `tick_momentum_mismatch` dans REASON_LABELS |
-| `tests/test_pivot_v200.py` | 20 nouveaux tests (service + intégration) |
+| `services/tick_momentum_service.py` | Ajout `detect_direction()`, buffer 200→500, MIN_MOVE 0.001→0.002% |
+| `schemas/journal.py` | 2 nouveaux champs : `tick_momentum_override_direction`, `tick_momentum_min_score` |
+| `services/paper_trading_service.py` | Override direction TÔT dans le pipeline + skip bearish_veto/reversal/attendre |
+| `services/trading_profile_service.py` | window 10→30s, min_ticks 2→3, override=True, min_score=10 |
+| `services/journal_service.py` | Labels `tick_momentum_no_direction`, `tick_momentum_override` |
+| `tests/test_pivot_v200.py` | 9 nouveaux tests + mise à jour tests existants |
+
+### Pipeline de gates modifié
+
+```
+1. Decision (score, action) — lagging 15 min
+2. Market quality computation
+3. ★ CANDLE DIRECTION OVERRIDE ★ (NOUVEAU — v2.0.14)
+   - Si override actif : detect_direction() → up=LONG, down=SHORT, flat=HOLD
+   - Si override inactif : flow classique
+4. Scalping reversal — SKIPPÉ si override actif
+5. Check "attendre" — BYPASSÉ si override actif
+6. Market quality gate
+7. Economic viability gate
+8. Structural proofs
+9. Micro-trend gate
+10. Bearish veto — SKIPPÉ si override actif
+11. Tick momentum confirmation — SKIPPÉ si override actif (redondant)
+12. Score minimum (réduit à 10 si override actif)
+13. Cooldown, max_trades, risk
+14. Open position
+```
 
 ## Ce qui n'a PAS été touché
 
-- ❌ Cooldown (toujours présent, vérifié APRÈS le tick momentum)
 - ❌ Trailing stop, breakeven, gain erosion (inchangés)
-- ❌ Bearish veto (inchangé, complémentaire au tick momentum)
-- ❌ Market quality gate (inchangé)
-- ❌ Profils aggressive/conservative/balanced (tick_momentum_enabled=False)
+- ❌ SL/TP, stale exit, signal contraire (inchangés)
+- ❌ Profils aggressive/conservative/balanced (override=False)
+- ❌ Market quality gate, economic gate, structural proofs (toujours actifs)
+- ❌ Cooldown, max_trades_per_day (toujours actifs)
 - ❌ Frontend
-- ❌ SL/TP, stale exit, signal contraire
 
 ## Validations
 
-- ✅ **1685 tests** backend passent (20 ajoutés)
-- ✅ Zéro régression sur les 1665 tests existants
+- ✅ **1694 tests** backend passent (9 ajoutés)
+- ✅ Zéro régression sur les 1685 tests existants
 - ✅ `tsc --noEmit` sans erreur frontend
 
 ## Documentation mise à jour
 
 | Document | Mis à jour |
 |----------|-----------|
-| `docs/CURRENT_STATE.md` | ✅ v2.0.13, 1685 tests, feature tick momentum |
-| `CHANGELOG.md` | ✅ Section v2.0.13 (Added + Changed + Technical) |
-| `docs/ROADMAP.md` | ✅ État actuel v2.0.13 |
-| `docs/requirements_traceability.md` | ✅ FR-TMC-001, total 1685 tests |
+| `docs/CURRENT_STATE.md` | ✅ v2.0.14, 1694 tests, feature candle direction |
+| `CHANGELOG.md` | ✅ Section v2.0.14 (Added + Changed + Fixed + Technical) |
+| `docs/ROADMAP.md` | ✅ État actuel v2.0.14 |
+| `docs/requirements_traceability.md` | ✅ FR-CDO-001, total 1694 tests |
 | `docs/HANDOFF_GPT.md` | ✅ Ce fichier |
 
 ## Commit
 
 ```
-pending — feat(scalping): tick momentum confirmation v2.0.13
+pending — feat(scalping): candle direction override v2.0.14
 ```
 
 ## État actuel
 
 | Élément | Valeur |
 |---------|--------|
-| Version | v2.0.13 |
-| Tests | 1685 passing |
-| Phase | Tick momentum confirmation livré |
+| Version | v2.0.14 |
+| Tests | 1694 passing |
+| Phase | Candle direction override livré |
 
 ## Prochaine action recommandée
 
 1. **Full reset + nouveau run** : faire tourner le robot en scalping pendant 1-2h
 2. **Vérifier que** :
-   - Les shorts ne s'ouvrent QUE quand le prix descend réellement (log "✅ Momentum SHORT confirmé")
-   - Les entrées bloquées par tick momentum apparaissent dans les logs ("tick_momentum_mismatch")
-   - Le nombre de shorts stagnants/négatifs diminue significativement
-   - Le PnL moyen par trade s'améliore
-3. **Audit runtime** : `GET /audit/enriched-export` pour vérifier la distribution des non_trade_reason
-4. **Si trop de blocages** : ajuster `tick_momentum_window_seconds` (réduire de 10→5 sec) ou `MIN_MOVE_PCT` (réduire de 0.001→0.0005%)
+   - Des LONG apparaissent quand le prix monte (log "🟢 Bougie verte → LONG")
+   - Des SHORT apparaissent quand le prix descend (log "🔴 Bougie rouge → SHORT")
+   - Les bougies flat sont bloquées (log "⚪ Bougie neutre")
+   - Le ratio long/short est ~50/50 en marché ranging
+   - Le PnL moyen par trade s'améliore (entrées dans le sens du prix)
+3. **Si trop de blocages "flat"** : réduire `MIN_MOVE_PCT` de 0.002→0.001%
+4. **Si les positions perdent quand même** : la fenêtre de 30 sec peut être ajustée (20→45 sec)
+5. **Audit runtime** : `GET /audit/enriched-export` pour vérifier la distribution des actions
 
 ## Commandes de relance
 

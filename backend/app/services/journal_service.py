@@ -57,6 +57,8 @@ REASON_LABELS = {
     "bearish_veto": "Veto bearish : marché en baisse → LONG bloqué",
     "closed_gain_erosion": "Gain erosion : gain érodé au-delà du seuil",
     "tick_momentum_mismatch": "Tick momentum : direction du prix ne confirme pas l'entrée",
+    "tick_momentum_no_direction": "Tick momentum : bougie neutre, pas de direction claire",
+    "tick_momentum_override": "Tick momentum : direction overridée par la bougie",
     "other": "Autre",
 }
 

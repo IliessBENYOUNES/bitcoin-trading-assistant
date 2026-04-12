@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.14] - 2026-04-12
+
+### Added
+- **CANDLE DIRECTION OVERRIDE** — En mode scalping, la direction du trade est désormais déterminée par la direction RÉELLE du prix sur les 30 dernières secondes (bougie verte → LONG, bougie rouge → SHORT), au lieu de suivre le score technique lagging 15 min. Élimine le biais 100% short quand les indicateurs restent bearish en marché ranging.
+- Nouvelle méthode `TickMomentumService.detect_direction()` : détecte la direction dominante du prix sans attendre de direction souhaitée, retourne "long", "short", ou None (flat/insufficient).
+- Nouveaux champs `tick_momentum_override_direction`, `tick_momentum_min_score` dans `TradingProfileParams`.
+- Nouveau status de non-trade `tick_momentum_no_direction` + labels `tick_momentum_override` dans REASON_LABELS.
+- **9 nouveaux tests** : 6 tests unitaires `detect_direction()` + 3 tests d'intégration override/flat.
+
+### Changed
+- **Fenêtre tick momentum 10→30 secondes** : 10 sec ne suffisait pas en cas de volatilité, 30 sec donne 6 ticks (~5 sec/tick) pour une analyse fiable de la direction.
+- **MIN_MOVE_PCT 0.001→0.002%** : calibré pour 30 sec de fenêtre, filtre le bruit sans bloquer les vrais mouvements.
+- **MAX_BUFFER_SIZE 200→500** : supporte la fenêtre élargie.
+- **Score minimum réduit à 10 quand l'override est actif** : le score n'est plus qu'un filtre de qualité (marché actif), pas un signal de direction.
+- **Bearish veto SKIPPÉ** quand l'override est actif : la bougie EST la confirmation de direction, le micro_trend 15 min n'est plus pertinent.
+- **Scalping reversal SKIPPÉ** quand l'override est actif : la bougie décide la direction, pas les oscillateurs.
+- **"attendre" BYPASSÉ** quand l'override est actif : le score "attendre" signifie que les indicateurs 15 min sont indécis, mais le prix bouge quand même. Permet des LONG même quand le score est entre -20 et +30.
+
+### Fixed
+- **Biais 100% short** : les indicateurs 15 min restaient bearish en marché ranging, produisant uniquement des recommendations SHORT. Aucun LONG n'était possible. L'override permet des LONG quand le prix monte.
+
+### Technical
+- Modifié : `backend/app/services/tick_momentum_service.py` — Ajout `detect_direction()`, buffer 500, MIN_MOVE 0.002%
+- Modifié : `backend/app/schemas/journal.py` — 2 nouveaux champs override
+- Modifié : `backend/app/services/paper_trading_service.py` — Override direction + skip bearish_veto/reversal/attendre
+- Modifié : `backend/app/services/trading_profile_service.py` — window 30s, override=True, min_score=10
+- Modifié : `backend/app/services/journal_service.py` — Labels override
+- Modifié : `backend/tests/test_pivot_v200.py` — 9 nouveaux tests + mise à jour tests existants
+- **1694 tests** backend, tous passing
+
 ## [2.0.13] - 2026-04-12
 
 ### Added

@@ -2,19 +2,23 @@
 TickMomentumService — Confirmation de direction par micro price-action.
 
 Au lieu de se baser uniquement sur des indicateurs lagging (15 min),
-ce service analyse les ticks récents (dernières ~10 secondes) pour
+ce service analyse les ticks récents (dernières ~30 secondes) pour
 déterminer la direction IMMÉDIATE du prix BTC.
 
-Utilisation avant l'entrée en position :
-- SHORT → le prix doit être en baisse (momentum négatif)
-- LONG → le prix doit être en hausse (momentum positif)
+Utilisation :
+1. **Gate de confirmation** (v2.0.13) :
+   - SHORT → le prix doit être en baisse (momentum négatif)
+   - LONG → le prix doit être en hausse (momentum positif)
 
-Si le momentum ne confirme pas la direction, l'entrée est bloquée.
-Cela remplace le cooldown fixe comme gate d'entrée principal :
-- Plus de positions qui entrent à contre-courant dès la première seconde
-- Plus de cooldown aveugle de 1 min : si le prix confirme, on entre tout de suite
+2. **Override de direction** (v2.0.14) :
+   - detect_direction() retourne la direction dominante sans attendre de direction souhaitée.
+   - En mode override, c'est la direction tick-level qui DÉTERMINE si on entre long ou short,
+     au lieu de suivre le score technique lagging.
+   - Prix monte depuis 30 sec → LONG, peu importe ce que disent les indicateurs 15 min.
+   - Prix descend depuis 30 sec → SHORT, idem.
+   - Élimine le biais 100% short quand les indicateurs restent bearish en marché ranging.
 
-v2.0.13
+v2.0.14
 """
 
 import logging
@@ -72,13 +76,15 @@ class TickMomentumService:
     _buffers: dict[str, list[tuple[datetime, float]]] = {}
 
     # Taille max du buffer par slot (éviter fuite mémoire)
-    MAX_BUFFER_SIZE = 200
+    # [v2.0.14] 200→500 : fenêtre élargie à 30s+ nécessite plus de ticks
+    MAX_BUFFER_SIZE = 500
 
     # Variation minimale (en %) pour considérer un mouvement significatif.
     # En dessous, c'est du bruit et on retourne "flat".
-    # [v2.0.13] Calibré pour BTC ~$83K : 0.001% ≈ $0.83
-    # Un tick normal bouge de $5-20, soit ~0.006-0.024%.
-    MIN_MOVE_PCT = 0.001
+    # [v2.0.14] Calibré pour BTC ~$83K : 0.002% ≈ $1.66
+    # Sur 30 sec, le BTC bouge typiquement de $10-$50 (0.012-0.060%).
+    # 0.002% filtre le bruit sans bloquer les vrais mouvements.
+    MIN_MOVE_PCT = 0.002
 
     @classmethod
     def record_tick(cls, slot: str, price: float, timestamp: datetime = None):
@@ -245,6 +251,121 @@ class TickMomentumService:
 
         logger.info(f"📊 Tick momentum [{slot}]: {result.detail}")
         return confirmed, result
+
+    @classmethod
+    def detect_direction(
+        cls,
+        slot: str,
+        window_seconds: float = 30.0,
+        min_ticks: int = 3,
+    ) -> tuple[str | None, TickMomentumResult]:
+        """
+        Détecte la direction dominante du prix sans attendre de direction souhaitée.
+
+        [v2.0.14] Utilisé en mode "override" : c'est la direction tick-level
+        qui DÉTERMINE si on entre long ou short, au lieu de confirmer la direction
+        du score technique.
+
+        Args:
+            slot: Nom du slot (ex: "scalping")
+            window_seconds: Fenêtre d'analyse en secondes (défaut: 30)
+            min_ticks: Nombre minimum de ticks requis dans la fenêtre
+
+        Returns:
+            (direction, result) :
+            - direction: "long" si prix monte, "short" si prix descend, None si flat/insufficient
+            - result: TickMomentumResult avec les détails
+        """
+        buffer = cls._buffers.get(slot, [])
+
+        if len(buffer) < min_ticks:
+            result = TickMomentumResult(
+                direction="insufficient_data",
+                tick_count=len(buffer),
+                detail=f"Données insuffisantes : {len(buffer)} ticks < {min_ticks} minimum",
+            )
+            return None, result
+
+        # Prendre les ticks dans la fenêtre temporelle
+        now = buffer[-1][0]
+        cutoff_time = now.timestamp() - window_seconds
+
+        window_ticks = [
+            (ts, price) for ts, price in buffer
+            if ts.timestamp() >= cutoff_time
+        ]
+
+        if len(window_ticks) < min_ticks:
+            result = TickMomentumResult(
+                direction="insufficient_data",
+                tick_count=len(window_ticks),
+                detail=f"Ticks dans fenêtre : {len(window_ticks)} < {min_ticks} minimum (fenêtre {window_seconds}s)",
+            )
+            return None, result
+
+        # Analyser la direction
+        price_start = window_ticks[0][1]
+        price_end = window_ticks[-1][1]
+        price_change = price_end - price_start
+        price_change_pct = (price_change / price_start * 100) if price_start > 0 else 0
+        actual_window = now.timestamp() - window_ticks[0][0].timestamp()
+
+        # Compter les ticks montants vs descendants
+        up_ticks = 0
+        down_ticks = 0
+        for i in range(1, len(window_ticks)):
+            if window_ticks[i][1] > window_ticks[i - 1][1]:
+                up_ticks += 1
+            elif window_ticks[i][1] < window_ticks[i - 1][1]:
+                down_ticks += 1
+
+        total_moves = up_ticks + down_ticks
+        up_ratio = up_ticks / total_moves if total_moves > 0 else 0.5
+
+        # Déterminer la direction du momentum
+        if abs(price_change_pct) < cls.MIN_MOVE_PCT:
+            tick_direction = "flat"
+        elif price_change > 0:
+            tick_direction = "up"
+        else:
+            tick_direction = "down"
+
+        result = TickMomentumResult(
+            direction=tick_direction,
+            price_change_usd=round(price_change, 2),
+            price_change_pct=round(price_change_pct, 5),
+            tick_count=len(window_ticks),
+            price_start=price_start,
+            price_end=price_end,
+            window_seconds=round(actual_window, 1),
+            up_ratio=round(up_ratio, 2),
+        )
+
+        # Mapper la direction du prix vers la direction de trade
+        if tick_direction == "up":
+            trade_direction = "long"
+            result.detail = (
+                f"🟢 Bougie verte : prix en hausse "
+                f"+${abs(price_change):.2f} ({price_change_pct:+.4f}%) "
+                f"sur {len(window_ticks)} ticks ({actual_window:.0f}s) → LONG"
+            )
+        elif tick_direction == "down":
+            trade_direction = "short"
+            result.detail = (
+                f"🔴 Bougie rouge : prix en baisse "
+                f"-${abs(price_change):.2f} ({price_change_pct:+.4f}%) "
+                f"sur {len(window_ticks)} ticks ({actual_window:.0f}s) → SHORT"
+            )
+        else:
+            trade_direction = None
+            result.detail = (
+                f"⚪ Bougie neutre : prix plat "
+                f"${price_change:+.2f} ({price_change_pct:+.4f}%) "
+                f"sur {len(window_ticks)} ticks ({actual_window:.0f}s) → pas de trade"
+            )
+
+        logger.info(f"🕯️ Candle direction [{slot}]: {result.detail}")
+        return trade_direction, result
 
     @classmethod
     def clear_buffer(cls, slot: str = None):

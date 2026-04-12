@@ -942,27 +942,71 @@ class PaperTradingService:
                     direction="long" if action == "acheter" else "short",
                 )
 
+            # [v2.0.14] TICK MOMENTUM DIRECTION OVERRIDE — La bougie décide la direction.
+            # En mode override, on n'utilise PAS la direction du score technique (lagging 15 min).
+            # On utilise la direction RÉELLE du prix sur les dernières ~30 secondes :
+            # - Bougie verte (prix monte) → LONG
+            # - Bougie rouge (prix descend) → SHORT
+            # - Bougie neutre (flat) → pas de trade
+            # Le score technique est gardé comme filtre de qualité (marché actif).
+            # Cela élimine le biais 100% short quand les indicateurs restent bearish.
+            tm_override_active = False
+            tm_override_enabled = getattr(profile_params, "tick_momentum_override_direction", False) if profile_params else False
+            tm_enabled = getattr(profile_params, "tick_momentum_enabled", False) if profile_params else False
+
+            if tm_override_enabled and tm_enabled:
+                tm_window = getattr(profile_params, "tick_momentum_window_seconds", 30.0)
+                tm_min_ticks = getattr(profile_params, "tick_momentum_min_ticks", 3)
+
+                tm_direction, tm_result = TickMomentumService.detect_direction(
+                    slot=slot_name,
+                    window_seconds=tm_window,
+                    min_ticks=tm_min_ticks,
+                )
+
+                if tm_direction is None:
+                    # Bougie flat ou données insuffisantes → pas de trade
+                    # Ne bloque pas au démarrage (insufficient_data → on laisse passer l'ancien flow)
+                    if tm_result.direction != "insufficient_data":
+                        _log_tick(action_taken="hold", btc_price=current_price,
+                                  decision_score=score, decision_action=action,
+                                  decision_confidence=confidence,
+                                  reason_no_trade="tick_momentum_no_direction",
+                                  reason_detail=tm_result.detail[:500])
+                        return PaperTickResult(
+                            action_taken="hold",
+                            detail=f"Bougie neutre : {tm_result.detail}",
+                            current_price=current_price,
+                            timestamp=now.isoformat(),
+                            decision_score=score,
+                            decision_action=action,
+                            profile_type=profile_name,
+                            non_trade_reason="tick_momentum_no_direction",
+                        )
+                    # insufficient_data → on continue avec le flow normal (fallback)
+                else:
+                    # La bougie a une direction claire → override
+                    old_action = action
+                    action = "acheter" if tm_direction == "long" else "vendre"
+                    tm_override_active = True
+                    logger.info(
+                        f"🕯️ Candle override [{slot_name}]: {old_action}→{action} "
+                        f"({tm_result.detail})"
+                    )
+
             # [v1.6.2] Scalping bidirectionnel — mean reversion
             # En scalping, on ne suit pas aveuglément la tendance. Quand les
             # oscillateurs (RSI, StochRSI) montrent un surachat/survente extrême,
             # on ouvre une position contrariante pour capter le pullback.
             # Cela permet d'ouvrir des SHORT même en tendance haussière.
             # [v2.0.10] Le reversal reçoit maintenant mq_data pour exploiter le micro_trend.
+            # [v2.0.14] Le reversal est SKIPPÉ quand l'override est actif (la bougie prime).
             scalping_reversal = False
-            if profile_params and profile_params.loss_cut_pct <= 0.5:
+            if not tm_override_active and profile_params and profile_params.loss_cut_pct <= 0.5:
                 reversal_dir = self._scalping_reversal_check(decision_result, mq_data=mq_data)
                 if reversal_dir:
                     new_action = "acheter" if reversal_dir == "long" else "vendre"
                     if new_action != action:
-                        # [v2.0.8] Le filtre short_min_score est SUPPRIMÉ pour les reversals.
-                        # C'est un trade CONTRARIAN : un score bullish de +25 confirme le surachat,
-                        # c'est exactement ce qu'on veut pour un short reversal.
-                        # L'ancien filtre (abs(score) >= 30) bloquait 100% des shorts
-                        # car un reversal se déclenche quand le score est positif.
-                        # La protection contre les mauvais shorts est assurée par :
-                        # - Le trailing stop (sort dès 0.06% de recul)
-                        # - Le breakeven stop (sort à 0% si le peak était > 0.05%)
-                        # - Le stale négatif (sort en 2 min si en perte)
                         logger.info(
                             f"⚡ Scalping mean reversion: {action}→{new_action} "
                             f"(reversal → {reversal_dir}, score={score})"
@@ -970,7 +1014,10 @@ class PaperTradingService:
                         action = new_action
                         scalping_reversal = True
 
-            if action == "attendre":
+            # [v2.0.14] Quand l'override est actif, le check "attendre" est BYPASSÉ.
+            # La direction vient de la bougie, pas du score. Le score "attendre" signifie
+            # juste que les indicateurs 15 min sont indécis — mais le prix bouge quand même.
+            if action == "attendre" and not tm_override_active:
                 _log_tick(action_taken="hold", btc_price=current_price,
                           decision_score=score, decision_action=action,
                           decision_confidence=confidence,
@@ -1159,7 +1206,9 @@ class PaperTradingService:
             # des indicateurs 15min) et reste bullish pendant un pullback.
             # Ce veto vérifie le micro_trend_score TEMPS RÉEL : s'il est négatif (bearish),
             # on bloque le LONG. Les reversals (shorts contrarians) ne sont PAS bloqués.
-            if mq_data and not scalping_reversal:
+            # [v2.0.14] SKIPPÉ quand tick momentum override est actif — la bougie EST la
+            # confirmation de direction, le micro_trend 15 min n'est plus pertinent.
+            if mq_data and not scalping_reversal and not tm_override_active:
                 direction_check = "long" if action == "acheter" else "short"
                 mt = mq_data.get("micro_trend_score", 0) or 0
                 if direction_check == "long" and mt < 0:
@@ -1187,15 +1236,10 @@ class PaperTradingService:
                     )
 
             # [v2.0.13] TICK MOMENTUM CONFIRMATION — Gate d'entrée par micro price-action.
-            # Analyse les derniers ~10 sec de ticks pour confirmer que le prix va
+            # [v2.0.14] SKIPPÉ quand override est actif (la direction est déjà confirmée).
+            # En mode non-override (profils classiques), ce gate vérifie que le prix va
             # dans la direction du trade AVANT d'ouvrir.
-            # SHORT → le prix doit être en baisse. LONG → le prix doit être en hausse.
-            # Élimine les shorts qui entrent pendant que le prix monte et restent
-            # négatifs 2 min jusqu'au stale exit → perte systématique.
-            # Ce gate remplace conceptuellement le cooldown aveugle : on ne bloque pas
-            # par le TEMPS mais par la DIRECTION du prix.
-            tm_enabled = getattr(profile_params, "tick_momentum_enabled", False) if profile_params else False
-            if tm_enabled:
+            if tm_enabled and not tm_override_active:
                 tm_window = getattr(profile_params, "tick_momentum_window_seconds", 10.0)
                 tm_min_ticks = getattr(profile_params, "tick_momentum_min_ticks", 2)
                 trade_direction = "long" if action == "acheter" else "short"
@@ -1233,7 +1277,13 @@ class PaperTradingService:
             # [v1.5] Vérification profil — score minimum
             # Les trades de reversal (mean reversion) ne sont pas soumis au
             # seuil de score car leur signal vient des oscillateurs, pas du score.
-            min_score = profile_params.min_score if profile_params else 35
+            # [v2.0.14] Quand tick momentum override est actif, on utilise un seuil
+            # réduit car le score n'est qu'un filtre de qualité (le marché est-il actif ?).
+            # La direction vient de la bougie, pas du score.
+            if tm_override_active:
+                min_score = getattr(profile_params, "tick_momentum_min_score", 10) if profile_params else 10
+            else:
+                min_score = profile_params.min_score if profile_params else 35
             if abs(score) < min_score and not scalping_reversal:
                 reason = "score_too_low"
                 detail = f"Score {score} < seuil profil {min_score}"

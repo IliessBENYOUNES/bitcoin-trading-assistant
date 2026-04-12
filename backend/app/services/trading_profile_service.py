@@ -170,14 +170,18 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # Peak +$0.60 → exit si gain < $0.42 (érosion > 30%). Sauve $0.42 au lieu de -$1.20.
         # S'active uniquement si peak ≥ 0.01% (~$0.25) pour éviter le bruit.
         gain_erosion_ratio=0.30,
-        # [v2.0.13] TICK MOMENTUM CONFIRMATION — Remplace le cooldown aveugle.
-        # Analyse les derniers ~10 sec de ticks pour confirmer que le prix
-        # va dans la direction du trade AVANT d'ouvrir. Élimine les shorts
-        # qui entrent pendant que le prix monte (→ stale négatif 2 min).
-        # SHORT → prix doit descendre. LONG → prix doit monter.
+        # [v2.0.14] CANDLE DIRECTION OVERRIDE — La direction du trade vient de la
+        # direction RÉELLE du prix (bougie verte → LONG, bougie rouge → SHORT),
+        # pas du score technique lagging. Le score est gardé comme filtre de qualité
+        # (marché actif) mais ne détermine plus la direction.
+        # Corrige le biais 100% short : quand les indicateurs 15 min restent bearish
+        # en marché ranging, seuls des shorts sortaient. Maintenant on entre LONG
+        # quand le prix monte et SHORT quand il descend, peu importe les indicateurs.
         tick_momentum_enabled=True,
-        tick_momentum_window_seconds=10.0,  # Fenêtre de 10 sec (~2-3 ticks à 5sec/tick)
-        tick_momentum_min_ticks=2,  # Au moins 2 ticks pour décider
+        tick_momentum_window_seconds=30.0,  # [v2.0.14] 10→30 sec : analyse la bougie sur ~6 ticks
+        tick_momentum_min_ticks=3,  # [v2.0.14] 2→3 : au moins 3 ticks (15 sec de données minimum)
+        tick_momentum_override_direction=True,  # [v2.0.14] La bougie décide la direction
+        tick_momentum_min_score=10,  # [v2.0.14] Score réduit quand override actif
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
         # [v2.0.11] max_cooldown 10→5 min : en scalping, 10 min = éternité.

@@ -80,9 +80,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v2.0.13 livré — Tick momentum confirmation (entrée par direction prix)
+### État actuel : v2.0.14 livré — Candle direction override (la bougie décide la direction)
 
-> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. La v2.0.13 ajoute le tick momentum confirmation : analyse des ticks récents (~10 sec) pour confirmer que le prix va dans la direction du trade AVANT d'ouvrir. SHORT → prix doit baisser. LONG → prix doit monter. Élimine les shorts stagnants qui entraient à contre-courant du prix réel. **1685 tests passing.**
+> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. La v2.0.14 ajoute le candle direction override : en scalping, la direction du trade est déterminée par la direction RÉELLE du prix sur les 30 dernières secondes (bougie verte → LONG, bougie rouge → SHORT), au lieu de suivre les indicateurs 15 min lagging. Corrige le biais 100% short en marché ranging. **1694 tests passing.**
 
 | Composant | Status |
 |-----------|--------|

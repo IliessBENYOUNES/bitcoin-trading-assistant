@@ -148,8 +148,21 @@ class TradingProfileParams(BaseModel):
     # Si le momentum ne confirme pas → pas d'entrée (on attend le prochain tick).
     # Élimine les shorts qui entrent à contre-courant et restent négatifs 2 min.
     tick_momentum_enabled: bool = Field(default=False, description="Activer la confirmation de direction par tick momentum avant entrée")
-    tick_momentum_window_seconds: float = Field(default=10.0, description="Fenêtre d'analyse des ticks en secondes (défaut: 10)")
-    tick_momentum_min_ticks: int = Field(default=2, description="Nombre minimum de ticks requis dans la fenêtre pour décider")
+    tick_momentum_window_seconds: float = Field(default=30.0, description="Fenêtre d'analyse des ticks en secondes (défaut: 30)")
+    tick_momentum_min_ticks: int = Field(default=3, description="Nombre minimum de ticks requis dans la fenêtre pour décider")
+    # [v2.0.14] CANDLE DIRECTION OVERRIDE — Le tick momentum DÉTERMINE la direction du trade.
+    # Au lieu de suivre le score technique (lagging 15 min), on utilise la direction réelle
+    # du prix sur les dernières ~30 secondes :
+    # - Prix monte → LONG (même si le score dit "vendre")
+    # - Prix descend → SHORT (même si le score dit "acheter")
+    # - Prix flat → pas de trade (attendre)
+    # Élimine le biais 100% short quand les indicateurs restent bearish en marché ranging.
+    tick_momentum_override_direction: bool = Field(default=False, description="Utiliser la direction tick momentum comme signal primaire (True=la bougie décide, pas le score)")
+    # [v2.0.14] Score minimum réduit quand l'override est actif.
+    # Normalement min_score=30, mais avec l'override on n'utilise le score que comme
+    # filtre de qualité (le marché est-il actif ?). Un seuil plus bas permet de ne pas
+    # rater les opportunités quand le score est modéré mais le prix bouge clairement.
+    tick_momentum_min_score: int = Field(default=10, description="Score minimum quand tick momentum override est actif (remplace min_score)")
 
 
 class TradingProfileResponse(BaseModel):
