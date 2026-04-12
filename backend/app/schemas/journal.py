@@ -193,6 +193,13 @@ class TradingProfileParams(BaseModel):
     # et qu'on veut un LONG, ou en bas de range (<30%) et qu'on veut un SHORT,
     # le SAS est plus exigeant (annulation immédiate si PnL négatif sur un seul tick).
     entry_sas_range_caution: bool = Field(default=True, description="Prudence renforcée aux extrémités de range (haut→pas de long, bas→pas de short)")
+    # [v2.0.23] MICRO STOP LOSS — Sortie immédiate dès que le PnL latent dépasse
+    # un seuil négatif ultra-serré. Contrairement au loss_cut_pct (0.20%, vérifié
+    # avec le score), le micro stop loss ferme IMMÉDIATEMENT, sans condition.
+    # Ex: 0.01 = on sort dès que le PnL < -0.01% (= -$0.25 sur $2500).
+    # Philosophie : on préfère perdre $0.25 que risquer -$21 sur un retournement.
+    # None = désactivé (profils classiques qui utilisent le SL normal).
+    micro_stop_loss_pct: Optional[float] = Field(default=None, description="% PnL négatif max avant sortie immédiate (ex: 0.01 = -0.01%). None=désactivé.")
 
 
 class TradingProfileResponse(BaseModel):

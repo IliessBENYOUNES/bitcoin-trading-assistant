@@ -436,6 +436,34 @@ class PaperTradingService:
                     open_pos.lowest_price_since_entry = current_price
                     self.db.commit()
 
+            # [v2.0.23] MICRO STOP LOSS — PRIORITÉ ABSOLUE (avant trailing stop)
+            # Si le PnL latent dépasse le seuil négatif micro, on sort IMMÉDIATEMENT.
+            # C'est le garde-fou ultime : on ne laisse JAMAIS une perte grossir.
+            # Contrairement au loss_cut_pct (vérifié avec le score), le micro SL
+            # est inconditionnel et ultra-serré (-0.01% = -$0.25 sur $2500).
+            micro_sl_pct = getattr(profile_params, "micro_stop_loss_pct", None) if profile_params else None
+            if micro_sl_pct is not None and micro_sl_pct > 0:
+                micro_unrealized = self._calc_unrealized_pnl(open_pos, current_price)
+                micro_unrealized_pct = (micro_unrealized / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
+                if micro_unrealized_pct <= -micro_sl_pct:
+                    micro_reason = (
+                        f"Micro stop loss : PnL latent {micro_unrealized_pct:.3f}% "
+                        f"(≤ -{micro_sl_pct:.3f}%) → sortie immédiate"
+                    )
+                    closed = self._close_position(open_pos, current_price, micro_reason, "closed_micro_sl")
+                    _log_tick(action_taken="closed_micro_sl", btc_price=current_price,
+                              had_open_position=True, trade_id=closed.id,
+                              leverage_final=getattr(closed, "leverage", 1.0))
+                    return PaperTickResult(
+                        action_taken="closed_micro_sl",
+                        detail=f"Position fermée (micro stop loss) : {micro_reason}",
+                        position_closed=PaperTradeResponse.model_validate(closed),
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        leverage_used=getattr(closed, "leverage", 1.0),
+                        profile_type=profile_name,
+                    )
+
             # [v2.0.8] TRAILING STOP — PRIORITÉ MAXIMALE (avant stale exit)
             # BUG FIX CRITIQUE : Avant v2.0.8, le stale exit (lignes 428-500) était vérifié
             # AVANT le trailing stop (lignes 502-540). Conséquence : quand une position

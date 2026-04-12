@@ -773,7 +773,8 @@ class TestTrailingStopPriorityV208:
     def test_stale_still_works_for_never_profitable(self, db_session):
         """
         Position jamais en profit (peak < activation/2) :
-        le stale négatif ferme normalement après 2 min.
+        [v2.0.23] Avec le micro SL (-0.01%), une perte de -0.04% déclenche
+        le micro SL AVANT le stale exit. Le micro SL a la priorité.
         """
         from app.services.paper_trading_service import PaperTradingService
         from app.models.paper_account import PaperAccount, PaperTrade
@@ -821,30 +822,36 @@ class TestTrailingStopPriorityV208:
             is_multi=True,
         )
 
-        # Stale négatif doit fermer (ni trailing ni breakeven)
-        assert result.action_taken == "closed_stale", (
-            f"Attendu closed_stale, obtenu {result.action_taken}"
+        # [v2.0.23] Le micro SL ferme avant le stale exit car -0.04% > -0.01% seuil
+        assert result.action_taken in ("closed_micro_sl", "closed_stale"), (
+            f"Attendu closed_micro_sl ou closed_stale, obtenu {result.action_taken}"
         )
 
     def test_exit_priority_order(self):
         """
         Vérifier l'ordre conceptuel des vérifications de sortie dans le code.
-        SL/TP > Expiration > Trailing Stop > Breakeven > Stale > Momentum fade
+        SL/TP > Expiration > Micro SL > Trailing Stop > Breakeven > Stale > Momentum fade
         """
         import inspect
         from app.services.paper_trading_service import PaperTradingService
 
         source = inspect.getsource(PaperTradingService._tick_single_slot)
 
-        # Le trailing stop doit apparaître AVANT le stale exit dans le source
+        # [v2.0.23] Le micro SL doit apparaître AVANT le trailing stop
+        micro_sl_pos = source.find("closed_micro_sl")
         trailing_pos = source.find("closed_trailing_stop")
         breakeven_pos = source.find("closed_breakeven")
         stale_pos = source.find("closed_stale")
 
+        assert micro_sl_pos > 0, "closed_micro_sl non trouvé dans le code"
         assert trailing_pos > 0, "closed_trailing_stop non trouvé dans le code"
         assert breakeven_pos > 0, "closed_breakeven non trouvé dans le code"
         assert stale_pos > 0, "closed_stale non trouvé dans le code"
 
+        assert micro_sl_pos < trailing_pos, (
+            f"BUG ORDRE: micro_sl (pos {micro_sl_pos}) doit être AVANT "
+            f"trailing_stop (pos {trailing_pos}) dans le code"
+        )
         assert trailing_pos < stale_pos, (
             f"BUG ORDRE: trailing_stop (pos {trailing_pos}) doit être AVANT "
             f"stale (pos {stale_pos}) dans le code"

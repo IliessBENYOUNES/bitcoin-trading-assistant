@@ -264,6 +264,12 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         entry_sas_duration_seconds=15.0,   # Timeout max 15 sec
         entry_sas_min_positive_seconds=10.0,  # PnL positif continu pendant 10s
         entry_sas_range_caution=True,       # Extra prudent aux extrémités de range
+        # [v2.0.23] MICRO STOP LOSS — Sortie ultra-rapide en cas de perte.
+        # Le SAS filtre les mauvaises entrées, mais si le prix se retourne APRÈS
+        # l'ouverture, le micro SL coupe à -0.01% ($0.25) au lieu d'attendre le
+        # SL classique (-0.20% = -$5). On préfère sortir et retenter plutôt que
+        # laisser une perte grossir. Complète le SAS en post-ouverture.
+        micro_stop_loss_pct=0.01,
     ),
 }
 

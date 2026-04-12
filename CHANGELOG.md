@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.23] - 2026-04-13
+
+### Added
+- **MICRO STOP LOSS — SORTIE IMMÉDIATE EN PERTE** — Nouveau garde-fou ultra-serré qui ferme immédiatement une position dès que le PnL latent dépasse un seuil négatif configurable (-0.01% par défaut = -$0.25 sur $2500). Contrairement au loss_cut_pct classique (-0.20%, vérifié avec le score), le micro SL est INCONDITIONNEL et ultra-rapide. Philosophie : perdre $0.25 plutôt que risquer -$21 sur un retournement.
+- Nouveau paramètre `micro_stop_loss_pct` sur `TradingProfileParams` (None = désactivé, 0.01 = sortie à -0.01%).
+- Micro SL activé sur profil scalping (0.01%). Balanced, aggressive et conservative : désactivé (None).
+- Priorité de sortie mise à jour : SL/TP > Expiration > **Micro SL** > Trailing Stop > Breakeven > Stale > Momentum fade.
+- 18 tests dédiés (`test_micro_stop_loss.py`) : paramètres profils, calcul PnL, intégration _tick_single_slot, profil désactivé, non-régression trailing stop, edge cases.
+
+### Changed
+- `_tick_single_slot` : nouveau check micro SL ajouté juste après la mise à jour highest/lowest price, AVANT le trailing stop. C'est le premier check de sortie après SL/TP/expiration.
+- Test `test_stale_still_works_for_never_profitable` adapté : avec le micro SL, une position en perte de -0.04% est coupée par le micro SL (-0.01%) AVANT le stale exit (comportement correct).
+- Test `test_exit_priority_order` mis à jour pour vérifier que `closed_micro_sl` apparaît AVANT `closed_trailing_stop` dans le code source.
+
+### Technical
+- Total tests backend : **1796** (1778 existants + 18 micro stop loss)
+- Le micro SL complète le SAS (v2.0.22) : le SAS filtre les mauvaises entrées en amont, le micro SL coupe les pertes en aval → double protection.
+
 ## [2.0.22] - 2026-04-13
 
 ### Added
