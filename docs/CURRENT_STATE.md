@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 12 avril 2026
 > **Version :** v2.0.8
 > **Branche :** `master`
-> **Dernier commit :** (pending) — fix(scalping): trailing stop priority over stale exit + breakeven stop
+> **Dernier commit :** `0e2afec` — fix(scalping): trailing stop priority over stale exit + breakeven stop
 
 ---
 
