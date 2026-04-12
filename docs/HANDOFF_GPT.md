@@ -1,55 +1,61 @@
-# HANDOFF GPT — Candle Direction Indicator + REST Price Fallback v2.0.15
+# HANDOFF GPT — Fix Candle Direction Fallback v2.0.15
 
 **Date :** 12 avril 2026  
-**Version :** v2.0.15  
-**Commit :** `5589421`
+**Version :** v2.0.15 (fix)  
 
 ---
 
 ## Problème
 
-Deux demandes utilisateur :
+La pastille de couleur de bougie (🟢/🔴) ne s'affichait pas à côté des positions dans le PaperTradingPanel. Toutes les positions avaient `entry_candle_direction = null` en DB.
 
-1. **Indicateur de couleur de bougie manquant** — Aucun moyen visuel de vérifier dans le frontend que les positions scalping entrent dans le sens du prix.
+## Diagnostic
 
-2. **Prix BTC stale (~5 min de retard)** — Le Dashboard affichait un prix en retard quand le WebSocket Binance est inaccessible.
+1. Vérifié que le modèle, schéma, migration et composant frontend étaient en place → **OK**
+2. Vérifié les 10 derniers trades en DB → **tous `candle_dir=None`**
+3. Vérifié le code `paper_trading_service.py` lignes 1437-1449 :
+   - Source 1 : `tm_override_active` → False car buffer vide après restart
+   - Source 2 : `mq_data.micro_trend_score` → 0 (neutre) → pas de couleur
+   - **Pas de fallback final** → `entry_candle_dir = None`
+
+## Cause racine
+
+Après un restart du serveur, le buffer tick momentum est vide. `detect_direction()` retourne `"insufficient_data"`, ce qui n'active PAS l'override. Le fallback `mq_data` ne suffit pas si `micro_trend_score=0`. Résultat : `entry_candle_dir` reste `None` et le frontend n'affiche rien (`if (!candleDirection) return null`).
 
 ## Correction appliquée
 
-### Feature 1 — Candle Direction Indicator
-
 | Fichier | Changement |
 |---------|-----------|
-| `models/paper_account.py` | Nouvelle colonne `entry_candle_direction VARCHAR(10)` nullable |
-| `schemas/paper_trading.py` | Champ ajouté dans `PaperTradeResponse` + `PaperTradeExportItem` |
-| `services/paper_trading_service.py` | Param + détermination via tick momentum (scalping) ou micro_trend (autres) |
-| `migrate_v2015.py` | Script de migration DB |
-| `tests/test_paper_trading.py` | 7 nouveaux tests |
-| `types/api.ts` | Champ dans types TS |
-| `PaperTradingPanel.tsx` | Composant `CandleDirectionDot` : dot 🟢/🔴 + tooltip cohérence |
+| `backend/app/services/paper_trading_service.py` | Ajout d'un fallback final (ligne ~1457) : si aucune source ne détermine la couleur, on déduit de la direction du trade (long→green, short→red) |
 
-### Feature 2 — REST Price Fallback
+```python
+# AVANT (fin du bloc) :
+# entry_candle_dir pouvait rester None
 
-| Fichier | Changement |
-|---------|-----------|
-| `useLivePrice.ts` | Fallback REST /market/price si WS down après 5s, polling 10s |
-| `PriceTicker.tsx` | Prop `source`, badge "REST" orange |
-| `Dashboard.tsx` | Propagation `source`, footer "Mode REST (prix ~10s)" |
+# APRÈS :
+if entry_candle_dir is None:
+    entry_candle_dir = "green" if direction == "long" else "red"
+```
+
+## Ce qui n'a PAS été touché
+
+- Frontend inchangé (le composant `CandleDirectionDot` fonctionne déjà)
+- Modèle/schéma/migration inchangés
+- Aucun autre service modifié
 
 ## Validations
 
-- ✅ **1701 tests** backend passent (7 ajoutés)
+- ✅ **1701 tests** backend passent (0 régression)
 - ✅ `tsc --noEmit` sans erreur frontend
-- ✅ Migration DB exécutée
+- ✅ Trade #572 mis à jour manuellement (red) et visible dans l'API
+- ✅ Les prochains trades auront toujours une couleur de bougie
 
 ## Documentation mise à jour
 
 | Document | Mis à jour |
 |----------|-----------|
-| `docs/CURRENT_STATE.md` | ✅ v2.0.15, 1701 tests |
-| `CHANGELOG.md` | ✅ Section v2.0.15 |
-| `docs/ROADMAP.md` | ✅ État actuel v2.0.15 |
-| `docs/requirements_traceability.md` | ✅ FR-CDI-001, FR-RPF-001 |
+| `docs/CURRENT_STATE.md` | ✅ Dernier commit |
+| `CHANGELOG.md` | ✅ Nouveau fix ajouté dans v2.0.15 |
 | `docs/HANDOFF_GPT.md` | ✅ Ce fichier |
 
 ## État actuel

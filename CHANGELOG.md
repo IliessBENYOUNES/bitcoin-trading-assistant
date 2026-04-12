@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - **Prix stale ~5 min de retard** quand le WebSocket Binance est inaccessible : le fallback REST appelle Binance REST API (même source) via le backend.
+- **Pastille candle direction toujours null après restart** — Le buffer tick momentum est vide après restart → `detect_direction()` retourne `insufficient_data` → aucune source ne détermine la couleur. Ajout d'un fallback final basé sur la direction du trade (long→green, short→red) qui garantit toujours une valeur.
 
 ### Technical
 - Modifié : `backend/app/models/paper_account.py` — Nouvelle colonne `entry_candle_direction VARCHAR(10)` nullable

@@ -1437,6 +1437,8 @@ class PaperTradingService:
             # [v2.0.15] Déterminer la couleur de la bougie à l'entrée.
             # Source 1 : tick momentum override (la plus fiable en scalping)
             # Source 2 : micro_trend_score du market quality (proxy pour tous profils)
+            # Source 3 : fallback basé sur la direction du trade (toujours disponible)
+            # On garantit TOUJOURS une valeur pour l'affichage frontend de la pastille.
             entry_candle_dir = None
             if tm_override_active:
                 # Le tick momentum a déterminé la direction → la bougie est claire
@@ -1447,6 +1449,13 @@ class PaperTradingService:
                     entry_candle_dir = "green"
                 elif mt < 0:
                     entry_candle_dir = "red"
+
+            # [v2.0.15-fix] Fallback final : si aucune source n'a pu déterminer
+            # la couleur (ex: buffer vide après restart, micro_trend=0), on déduit
+            # la couleur de la direction du trade. C'est cohérent car le système
+            # n'ouvre un long que s'il détecte une tendance haussière, et inversement.
+            if entry_candle_dir is None:
+                entry_candle_dir = "green" if direction == "long" else "red"
 
             position = self._open_position(
                 account=account,
