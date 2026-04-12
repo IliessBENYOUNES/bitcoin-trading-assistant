@@ -2,7 +2,7 @@
 
 **Date :** 12 avril 2026  
 **Version :** v2.0.8  
-**Commit :** (pending)
+**Commit :** `dc14ef3`
 
 ---
 

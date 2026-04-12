@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 12 avril 2026
 > **Version :** v2.0.8
 > **Branche :** `master`
-> **Dernier commit :** (pending) — feat(scalping): shorts bidirectionnels — reversal seuil 2→1, bearish majority, short_min_score bypass
+> **Dernier commit :** `dc14ef3` — feat(scalping): shorts bidirectionnels — reversal seuil 2→1, bearish majority, short_min_score bypass
 
 ---
 
