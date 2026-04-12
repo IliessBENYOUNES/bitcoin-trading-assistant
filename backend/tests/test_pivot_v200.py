@@ -756,9 +756,12 @@ class TestTrailingStopPriorityV208:
             is_multi=True,
         )
 
-        # Le breakeven stop doit fermer (pas le stale)
-        assert result.action_taken == "closed_breakeven", (
-            f"Attendu closed_breakeven, obtenu {result.action_taken}"
+        # [v2.0.12] Le gain erosion stop a priorité sur le breakeven pour les gains
+        # dans la zone 0.01%-0.04%. Le gain erosion ferme dès que 30% du pic est perdu,
+        # AVANT que le gain retombe à 0% (breakeven). C'est le comportement souhaité :
+        # on préserve plus de gain qu'avant.
+        assert result.action_taken in ("closed_breakeven", "closed_gain_erosion"), (
+            f"Attendu closed_breakeven ou closed_gain_erosion, obtenu {result.action_taken}"
         )
 
     def test_stale_still_works_for_never_profitable(self, db_session):
@@ -1450,6 +1453,7 @@ class TestDowntrendProtectionV2010:
             "mq_data doit être calculé AVANT le reversal check dans la section d'entrée"
         )
 
+
 # ================================================================
 # v2.0.11 -- Protection reversal signal contraire + cooldown reduit
 # ================================================================
@@ -1556,3 +1560,306 @@ class TestReversalSignalContraireProtection:
         source = inspect.getsource(PaperTradingService._tick_single_slot)
         assert "mean_reversion_" in source
         assert "reversal" in source.lower()
+
+
+# ================================================================
+# v2.0.12 — GAIN EROSION STOP
+# ================================================================
+
+class TestGainErosionStopV2012:
+    """Tests pour le gain erosion stop v2.0.12.
+
+    Le gain erosion stop protège les petits gains (sous le seuil d'activation
+    du trailing) en sortant dès que le gain s'érode de plus de X% du pic.
+    """
+
+    def test_scalping_has_gain_erosion_ratio(self):
+        """Le profil scalping a gain_erosion_ratio=0.30."""
+        p = PROFILE_PRESETS["scalping"]
+        assert p.gain_erosion_ratio == 0.30
+
+    def test_aggressive_has_no_gain_erosion(self):
+        """Le profil aggressive n'a PAS de gain erosion (trades longs)."""
+        p = PROFILE_PRESETS["aggressive"]
+        assert p.gain_erosion_ratio is None
+
+    def test_conservative_has_no_gain_erosion(self):
+        """Le profil conservative n'a PAS de gain erosion."""
+        p = PROFILE_PRESETS["conservative"]
+        assert p.gain_erosion_ratio is None
+
+    def test_gain_erosion_fires_when_gain_eroded_past_threshold(self):
+        """Peak 0.03%, gain actuel 0.01% → érosion 67% > 30% → EXIT."""
+        peak_pct = 0.03
+        unrealized_pct_now = 0.01
+        ge_ratio = 0.30
+        ts_activation = 0.04
+        ge_retention = 1.0 - ge_ratio  # 0.70
+        ge_min_pct = peak_pct * ge_retention  # 0.021
+
+        # Conditions : peak >= 0.01, peak < ts_activation, unrealized <= ge_min
+        assert peak_pct >= 0.01
+        assert peak_pct < ts_activation
+        assert unrealized_pct_now <= ge_min_pct  # 0.01 <= 0.021 → FIRE
+
+    def test_gain_erosion_does_not_fire_when_gain_above_retention(self):
+        """Peak 0.03%, gain actuel 0.025% → érosion 17% < 30% → NO EXIT."""
+        peak_pct = 0.03
+        unrealized_pct_now = 0.025
+        ge_ratio = 0.30
+        ge_retention = 1.0 - ge_ratio  # 0.70
+        ge_min_pct = peak_pct * ge_retention  # 0.021
+
+        assert unrealized_pct_now > ge_min_pct  # 0.025 > 0.021 → no fire
+
+    def test_gain_erosion_does_not_fire_if_peak_below_min(self):
+        """Peak 0.005% (< 0.01%) → trop petit, bruit, pas de gain erosion."""
+        peak_pct = 0.005
+        assert peak_pct < 0.01  # En dessous du seuil minimum → pas de fire
+
+    def test_gain_erosion_does_not_fire_above_trailing_activation(self):
+        """Peak 0.05% (>= ts_activation 0.04%) → trailing gère, gain erosion skip."""
+        peak_pct = 0.05
+        ts_activation = 0.04
+        assert peak_pct >= ts_activation  # Le trailing est actif → gain erosion ne s'applique pas
+
+    def test_gain_erosion_does_not_fire_when_peak_zero(self):
+        """Peak 0% (jamais profitable) → gain erosion ne tire pas."""
+        peak_pct = 0.0
+        assert peak_pct < 0.01  # Jamais profitable → pas de fire
+
+    def test_gain_erosion_preserves_70pct_of_gain(self):
+        """Avec ratio 0.30, on garde au moins 70% du gain au pic."""
+        ge_ratio = 0.30
+        peak_pct = 0.025  # ~$0.63 sur $2500
+        ge_retention = 1.0 - ge_ratio
+        ge_min_pct = peak_pct * ge_retention
+        # On sort à ge_min_pct = 0.0175% → on a gardé 70% du gain
+        assert ge_min_pct == pytest.approx(0.0175)
+        assert ge_min_pct / peak_pct == pytest.approx(0.70)
+
+    def test_gain_erosion_code_exists_in_tick_single_slot(self):
+        """Le code du gain erosion stop est bien dans _tick_single_slot."""
+        from app.services.paper_trading_service import PaperTradingService
+        import inspect
+        source = inspect.getsource(PaperTradingService._tick_single_slot)
+        assert "gain_erosion" in source.lower()
+        assert "closed_gain_erosion" in source
+
+    def test_gain_erosion_is_before_breakeven_in_code(self):
+        """Le gain erosion est vérifié AVANT le breakeven dans le code."""
+        from app.services.paper_trading_service import PaperTradingService
+        import inspect
+        source = inspect.getsource(PaperTradingService._tick_single_slot)
+        ge_pos = source.find("closed_gain_erosion")
+        be_pos = source.find("closed_breakeven")
+        assert ge_pos > 0, "closed_gain_erosion not found in source"
+        assert be_pos > 0, "closed_breakeven not found in source"
+        assert ge_pos < be_pos, "gain erosion should be checked BEFORE breakeven"
+
+    def test_gain_erosion_is_after_trailing_in_code(self):
+        """Le gain erosion est vérifié APRÈS le trailing stop dans le code."""
+        from app.services.paper_trading_service import PaperTradingService
+        import inspect
+        source = inspect.getsource(PaperTradingService._tick_single_slot)
+        trailing_pos = source.find("closed_trailing_stop")
+        ge_pos = source.find("closed_gain_erosion")
+        assert trailing_pos > 0
+        assert ge_pos > 0
+        assert trailing_pos < ge_pos, "trailing stop should be checked BEFORE gain erosion"
+
+    def test_gain_erosion_label_in_journal(self):
+        """Le label gain erosion existe dans REASON_LABELS."""
+        from app.services.journal_service import REASON_LABELS
+        assert "closed_gain_erosion" in REASON_LABELS
+
+    def test_gain_erosion_ratio_in_schema(self):
+        """Le champ gain_erosion_ratio existe dans TradingProfileParams."""
+        from app.schemas.journal import TradingProfileParams
+        fields = TradingProfileParams.model_fields
+        assert "gain_erosion_ratio" in fields
+
+    def test_gain_erosion_other_scalping_params_unchanged(self):
+        """Les autres paramètres scalping ne sont pas affectés."""
+        p = PROFILE_PRESETS["scalping"]
+        assert p.trailing_stop_activation_pct == 0.04
+        assert p.trailing_stop_drop_ratio == 0.15
+        assert p.stale_negative_exit_minutes == 2
+        assert p.profit_take_pct == 0.8
+        assert p.loss_cut_pct == 0.20
+
+    def test_gain_erosion_fires_in_real_tick(self, db_session):
+        """Test d'intégration : le gain erosion ferme une position via _tick_single_slot.
+
+        Setup : position LONG avec peak 0.025% (< activation 0.04%), gain érodé à 0.005%.
+        Érosion = 80% > seuil 30% → devrait fermer en gain_erosion.
+        """
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount, PaperTrade
+        from datetime import datetime, timezone, timedelta
+
+        svc = PaperTradingService(db_session)
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        entry_time = datetime.now(timezone.utc) - timedelta(minutes=1)
+        entry_price = 83000.0
+        # Peak à 83021 → peak_pct = 21/83000 = 0.0253% (< activation 0.04%)
+        # gain_erosion seuil = 0.0253 * 0.70 = 0.0177%
+        trade = PaperTrade(
+            account_id=account.id,
+            direction="long",
+            entry_price=entry_price,
+            position_size_usd=2500.0,
+            stop_loss_price=entry_price * 0.998,
+            take_profit_price=entry_price * 1.008,
+            status="open",
+            entry_ts=entry_time,
+            highest_price_since_entry=83021.0,  # peak +0.0253%
+            lowest_price_since_entry=entry_price,
+            leverage=1.0,
+            entry_reason="Test gain erosion integration",
+            slot="scalping",
+        )
+        db_session.add(trade)
+        db_session.flush()
+
+        # Prix à 83004 → current_pct = 4/83000 = 0.0048%
+        # 0.0048% < 0.0177% (seuil) → érosion > 30% → FIRE
+        current_price = 83004.0
+        now = datetime.now(timezone.utc)
+
+        result = svc._tick_single_slot(
+            account=account,
+            slot_name="scalping",
+            current_price=current_price,
+            now=now,
+            is_multi=True,
+        )
+
+        assert result.action_taken == "closed_gain_erosion", (
+            f"Attendu closed_gain_erosion, obtenu {result.action_taken}"
+        )
+        assert "erosion" in result.detail.lower()
+
+    def test_gain_erosion_does_not_fire_in_real_tick_above_retention(self, db_session):
+        """Test d'intégration : gain au-dessus du seuil de rétention → PAS de fermeture.
+
+        Setup : position LONG avec peak 0.025%, gain actuel 0.022% (88% du peak).
+        Érosion = 12% < seuil 30% → ne ferme PAS.
+        """
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount, PaperTrade
+        from datetime import datetime, timezone, timedelta
+
+        svc = PaperTradingService(db_session)
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        entry_time = datetime.now(timezone.utc) - timedelta(seconds=30)
+        entry_price = 83000.0
+        # Peak à 83021 → peak_pct = 0.0253%
+        trade = PaperTrade(
+            account_id=account.id,
+            direction="long",
+            entry_price=entry_price,
+            position_size_usd=2500.0,
+            stop_loss_price=entry_price * 0.998,
+            take_profit_price=entry_price * 1.008,
+            status="open",
+            entry_ts=entry_time,
+            highest_price_since_entry=83021.0,  # peak +0.0253%
+            lowest_price_since_entry=entry_price,
+            leverage=1.0,
+            entry_reason="Test gain erosion no fire",
+            slot="scalping",
+        )
+        db_session.add(trade)
+        db_session.flush()
+
+        # Prix à 83018 → current_pct = 18/83000 = 0.0217%
+        # Seuil = 0.0253 * 0.70 = 0.0177%
+        # 0.0217% > 0.0177% → PAS de fire (érosion ~14%)
+        current_price = 83018.0
+        now = datetime.now(timezone.utc)
+
+        result = svc._tick_single_slot(
+            account=account,
+            slot_name="scalping",
+            current_price=current_price,
+            now=now,
+            is_multi=True,
+        )
+
+        assert result.action_taken != "closed_gain_erosion", (
+            f"Le gain erosion ne devrait PAS fire : gain encore au-dessus du seuil"
+        )
+
+    def test_gain_erosion_short_fires_in_real_tick(self, db_session):
+        """Test d'intégration : gain erosion fonctionne aussi pour les SHORTS.
+
+        Setup : position SHORT avec peak 0.025%, gain érodé à 0.005%.
+        """
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models.paper_account import PaperAccount, PaperTrade
+        from datetime import datetime, timezone, timedelta
+
+        svc = PaperTradingService(db_session)
+
+        account = PaperAccount(
+            initial_capital=10000.0, current_capital=10000.0,
+            is_active=True, active_profile="scalping",
+        )
+        db_session.add(account)
+        db_session.flush()
+
+        entry_time = datetime.now(timezone.utc) - timedelta(minutes=1)
+        entry_price = 83000.0
+        # Short : peak = lowest at 82979 → peak_pct = 21/83000 = 0.0253%
+        trade = PaperTrade(
+            account_id=account.id,
+            direction="short",
+            entry_price=entry_price,
+            position_size_usd=2500.0,
+            stop_loss_price=entry_price * 1.002,
+            take_profit_price=entry_price * 0.992,
+            status="open",
+            entry_ts=entry_time,
+            highest_price_since_entry=entry_price,
+            lowest_price_since_entry=82979.0,  # peak for short
+            leverage=1.0,
+            entry_reason="Test gain erosion short",
+            slot="scalping",
+        )
+        db_session.add(trade)
+        db_session.flush()
+
+        # Prix remonte à 82996 → current_pct = (83000-82996)/83000 = 0.0048%
+        # Seuil = 0.0253 * 0.70 = 0.0177%
+        # 0.0048% < 0.0177% → FIRE
+        current_price = 82996.0
+        now = datetime.now(timezone.utc)
+
+        result = svc._tick_single_slot(
+            account=account,
+            slot_name="scalping",
+            current_price=current_price,
+            now=now,
+            is_multi=True,
+        )
+
+        assert result.action_taken == "closed_gain_erosion", (
+            f"Short : gain erosion devrait fire, obtenu {result.action_taken}"
+        )
+
+

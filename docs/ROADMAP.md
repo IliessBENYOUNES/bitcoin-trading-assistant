@@ -80,9 +80,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v2.0.11 livré — Anti-churn reversal + cooldown réduit
+### État actuel : v2.0.12 livré — Gain erosion stop (protection petits gains)
 
-> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. La v2.0.11 corrige la boucle reversal-churn (30 shorts identiques en ~50sec chacun) et réduit le cooldown (2→1 min) pour capter les renversements de tendance plus vite. Le `bearish_veto` (v2.0.10) protège en amont, rendant les longs cooldowns redondants. **1647 tests passing.**
+> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. La v2.0.12 ajoute le gain erosion stop : protection des petits gains ($0.25-$1) qui fondaient sans mécanisme entre le trailing (activation 0.04%) et le breakeven (attend PnL ≤ 0%). Le gain erosion sort dès que 30% du pic est perdu (ratio=0.30, garde 70%). **1665 tests passing.**
 
 | Composant | Status |
 |-----------|--------|

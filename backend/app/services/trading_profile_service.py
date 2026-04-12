@@ -163,6 +163,13 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         trailing_stop_activation_pct=0.04,  # [v2.0.9] 0.02→0.04 : ~$1 de gain min
         trailing_stop_pct=0.06,  # fallback absolu (utilisé si drop_ratio est None)
         trailing_stop_drop_ratio=0.15,  # [v2.0.9] 15% : garde 85% du gain, réaliste pour 5sec ticks
+        # [v2.0.12] GAIN EROSION STOP — Protection des petits gains (sous le seuil trailing).
+        # Le trailing ne s'active qu'à 0.04% (~$1). Les gains entre $0 et $1 ne sont pas
+        # protégés : ils fondent jusqu'au stale négatif (2 min) qui ferme en perte.
+        # Avec gain_erosion_ratio=0.30, on sort dès que le gain a perdu 30% de son pic.
+        # Peak +$0.60 → exit si gain < $0.42 (érosion > 30%). Sauve $0.42 au lieu de -$1.20.
+        # S'active uniquement si peak ≥ 0.01% (~$0.25) pour éviter le bruit.
+        gain_erosion_ratio=0.30,
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
         # [v2.0.11] max_cooldown 10→5 min : en scalping, 10 min = éternité.

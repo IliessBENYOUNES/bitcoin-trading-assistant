@@ -133,6 +133,14 @@ class TradingProfileParams(BaseModel):
     # Exiger micro_trend_score ≥ N pour ouvrir un long filtre le bruit directionnel.
     # None = pas de filtre. 2 = tendance légère minimum. 3 = tendance claire.
     min_micro_trend_long: Optional[int] = Field(default=None, description="micro_trend_score minimum pour ouvrir un long (None=pas de filtre)")
+    # [v2.0.12] GAIN EROSION STOP — Protection des gains dès le premier dollar.
+    # Si le gain a existé (peak > 0) et qu'il s'érode de plus de X% du pic → sortie immédiate.
+    # Priorité AVANT le breakeven et le stale exit. Comble le trou entre trailing (qui exige
+    # un seuil d'activation) et breakeven (qui attend PnL ≤ 0 pour fermer).
+    # Ex: gain_erosion_ratio=0.30 → sort quand le gain tombe sous 70% du pic.
+    # Peak +$1.00 → exit si gain < $0.70 (érosion > 30%).
+    # None = désactivé (profils classiques).
+    gain_erosion_ratio: Optional[float] = Field(default=None, description="Ratio d'érosion max du gain avant sortie (0.30 = sort si gain < 70% du pic). None=désactivé.")
 
 
 class TradingProfileResponse(BaseModel):

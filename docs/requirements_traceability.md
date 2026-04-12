@@ -1,7 +1,7 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v2.0.11
+## Version: v2.0.12
 ## Date: 2026-04-12
 
 ---
@@ -92,6 +92,7 @@
 | **FR-STR-001** | **Structural proofs gate** | **≥2 preuves structurelles requises pour entrée scalping** | **✅ PASS** | **v2.0.0 — 3 tests (test_pivot_v200.py)** |
 | **FR-MFR-001** | **Momentum fade restricted** | **Momentum fade seulement si pic ≥ 0.35% ET sortie net-positive** | **✅ PASS** | **v2.0.0 — 4 tests (test_pivot_v200.py)** |
 | **FR-RVP-001** | **Protection reversal signal contraire** | **Reversal ne ferme plus par signal contraire au même score** | **✅ PASS** | **v2.0.11 — 12 tests (test_pivot_v200.py)** |
+| **FR-GES-001** | **Gain erosion stop** | **Sort quand gain érodé de 30% du pic (peak 0.01-0.04%)** | **✅ PASS** | **v2.0.12 — 18 tests (test_pivot_v200.py)** |
 
 ---
 
@@ -101,7 +102,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1647 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1665 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 

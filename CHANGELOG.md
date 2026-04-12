@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.12] - 2026-04-12
+
+### Added
+- **GAIN EROSION STOP** — Nouveau mécanisme de sortie qui protège les petits gains (sous le seuil d'activation du trailing). Le trailing ne s'active qu'à 0.04% (~$1). Les gains entre $0 et $1 fondaient sans protection. Le gain erosion stop sort dès que le gain a perdu 30% de son pic (ratio=0.30, garde 70%). S'active uniquement si peak ≥ 0.01% (~$0.25) ET peak < activation trailing (0.04%). Au-dessus, le trailing relatif (15% drop) prend le relais.
+- Nouveau champ `gain_erosion_ratio` dans `TradingProfileParams` (None=désactivé pour profils classiques)
+- Nouveau status de sortie `closed_gain_erosion` + label dans REASON_LABELS
+- **18 tests `TestGainErosionStopV2012`** :
+  - Config profils (scalping=0.30, aggressive/conservative=None)
+  - Logique mathématique (fire/no-fire/peak minimum/above trailing)
+  - Ordre dans le code (après trailing, avant breakeven)
+  - 3 tests d'intégration avec vrais ticks (LONG fire, LONG no-fire, SHORT fire)
+
+### Changed
+- Le breakeven stop ne gère plus que les cas où le gain retombe à ≤ 0% ET le gain erosion ne s'est pas déclenché (peak < 0.01% ou gain erosion désactivé).
+
+### Technical
+- Modifié : `backend/app/schemas/journal.py` — Nouveau champ `gain_erosion_ratio`
+- Modifié : `backend/app/services/paper_trading_service.py` — Gain erosion stop inséré entre trailing et breakeven
+- Modifié : `backend/app/services/trading_profile_service.py` — `gain_erosion_ratio=0.30` sur scalping
+- Modifié : `backend/app/services/journal_service.py` — Label `closed_gain_erosion`
+- Modifié : `backend/tests/test_pivot_v200.py` — 18 nouveaux tests + adaptation test breakeven existant
+- **1665 tests** backend, tous passing ✅
+
 ## [2.0.11] - 2026-04-12
 
 ### Fixed

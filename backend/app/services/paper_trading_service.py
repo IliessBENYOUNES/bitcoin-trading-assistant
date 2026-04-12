@@ -504,6 +504,37 @@ class PaperTradingService:
                 # Cela évite qu'une position qui ÉTAIT gagnante se transforme en perte.
                 # Sans ce filet, la seule protection est le stale négatif (2 min) ou le SL (-0.20%).
                 breakeven_activation = ts_activation / 2  # 0.05% par défaut
+
+                # [v2.0.12] GAIN EROSION STOP — Protection des gains dès le premier dollar.
+                # Comble le trou entre trailing (seuil activation) et breakeven (attend PnL ≤ 0).
+                # Si le gain a existé et qu'il s'érode de plus de X% du pic → sortie immédiate.
+                # Seul pré-requis : peak ≥ 0.01% (~$0.25) pour éviter les exits sur bruit.
+                ge_ratio = getattr(profile_params, "gain_erosion_ratio", None) if profile_params else None
+                if ge_ratio is not None and peak_pct >= 0.01 and peak_pct < ts_activation:
+                    # Le gain erosion ne s'applique que sous le seuil d'activation du trailing.
+                    # Au-dessus, le trailing (15% drop) est plus serré et prend le relais.
+                    ge_retention = 1.0 - ge_ratio
+                    ge_min_pct = peak_pct * ge_retention
+                    if unrealized_pct_now <= ge_min_pct:
+                        ge_reason = (
+                            f"Gain erosion stop : pic {peak_pct:.3f}%, actuel {unrealized_pct_now:.3f}%, "
+                            f"seuil {ge_min_pct:.3f}% ({ge_retention:.0%} du pic), "
+                            f"érosion {((peak_pct - unrealized_pct_now) / peak_pct * 100):.1f}% ≥ {ge_ratio * 100:.0f}%"
+                        )
+                        closed = self._close_position(open_pos, current_price, ge_reason, "closed_gain_erosion")
+                        _log_tick(action_taken="closed_gain_erosion", btc_price=current_price,
+                                  had_open_position=True, trade_id=closed.id,
+                                  leverage_final=getattr(closed, "leverage", 1.0))
+                        return PaperTickResult(
+                            action_taken="closed_gain_erosion",
+                            detail=f"Position fermée (gain erosion) : {ge_reason}",
+                            position_closed=PaperTradeResponse.model_validate(closed),
+                            current_price=current_price,
+                            timestamp=now.isoformat(),
+                            leverage_used=getattr(closed, "leverage", 1.0),
+                            profile_type=profile_name,
+                        )
+
                 if peak_pct >= breakeven_activation and unrealized_pct_now <= 0:
                     signal_reason = (
                         f"Breakeven stop : pic {peak_pct:.3f}% (≥ {breakeven_activation:.3f}%), "

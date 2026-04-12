@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 12 avril 2026
-> **Version :** v2.0.11
+> **Version :** v2.0.12
 > **Branche :** `master`
-> **Dernier commit :** `7a7acc6` — fix(scalping): anti-churn reversal + cooldown réduit v2.0.11
+> **Dernier commit :** `18186b3` — feat(scalping): gain erosion stop v2.0.12
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.11** |
+| Version courante | **v2.0.12** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1647 tests**, tous passing ✅ |
+| Tests backend | **1665 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.11 livré** — Anti-churn reversal + cooldown réduit |
+| Phase courante | **v2.0.12 livré** — Gain erosion stop (protection des petits gains) |
 
 ### ⚠️ État de maturité honnête
 
@@ -46,6 +46,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.9] TRAILING STOP RELATIF** — L'ancien trailing absolu (recul fixe de 0.06%) perdait 50-60% du gain sur les petits peaks (0.10-0.12%). Le nouveau trailing relatif (`trailing_stop_drop_ratio=0.30`) sort quand le gain a reculé de 30% par rapport à son pic, quelle que soit la taille du gain. Peak 0.12% → exit à 0.084% (garde 70%). Peak 0.50% → exit à 0.35% (garde 70%). Plus le gain est gros, plus le trailing tolère de recul en absolu — fini les sorties prématurées qui grignotaient les gains. 5 tests dédiés.
 - **[v2.0.10] DOWNTREND PROTECTION** — Les données montrent que 7/33 trades entrent LONG pendant que le BTC descend, perdant -$10.44 en stale exits. Le score technique de 65 est en retard (indicateurs 15min lagging) et reste bullish pendant le pullback. Corrections : (1) **Veto bearish** : si `micro_trend_score < 0` et direction = long (non-reversal), le trade est bloqué. (2) **Reversal enrichi** : `micro_trend_score ≤ -2` injecte un signal overbought dans le reversal check → favorise les SHORT contrarians au lieu des LONG perdants. (3) **mq_data calculé AVANT le reversal** : le market quality est maintenant évalué en premier pour alimenter le reversal et le veto. 11 tests dédiés.
 - **[v2.0.11] ANTI-CHURN REVERSAL + COOLDOWN RÉDUIT** — Deux problèmes runtime identifiés sur 30 trades : (1) **Boucle reversal-churn** : les shorts `mean_reversion_short` étaient fermés par signal contraire après ~50sec car le même score bullish (+66) qui déclenchait le reversal fermait aussi le trade (seuil 30). Fix : pour les reversals, le signal contraire ne ferme que si le score a AUGMENTÉ au-delà du score d'entrée (+1). (2) **Cooldown trop long** : le cooldown de 2min empêchait de capter le prochain signal après un renversement. Fix : `cooldown_minutes` 2→1, `max_cooldown_minutes` 10→5, `STALE_NEGATIVE_FLOOR` 4→2 (le `bearish_veto` v2.0.10 protège en amont). 12 tests dédiés.
+- **[v2.0.12] GAIN EROSION STOP** — Protection des petits gains (sous le seuil d'activation du trailing). Le trailing ne s'active qu'à 0.04% (~$1). Les gains entre $0 et $1 fondaient sans protection jusqu'au stale négatif (2 min) qui fermait en perte. Le gain erosion stop (`gain_erosion_ratio=0.30`) sort dès que le gain a perdu 30% de son pic, AVANT que le gain retombe à 0% (breakeven). Conditions : peak ≥ 0.01% (~$0.25) ET peak < activation trailing (0.04%). Au-dessus du trailing, le trailing relatif (15% drop) prend le relais. Peak +$0.60 → exit si gain < $0.42 (érosion > 30%). Sauve $0.42 au lieu de -$1.20. 18 tests dédiés.
 - **[v2.0.4] Export enrichi** — Service `EnrichedExportService` + endpoint `GET /audit/enriched-export`. Export tick-par-tick avec : prix BTC, variation %, décision moteur, score, raison de non-trade, position ouverte/fermée, PnL, market quality. Inclut ventilation des refus par gate + détection des tendances BTC ratées.
 - **[v2.0.4] Learning runtime** — Nouvelle méthode `LearningService.learn_from_runtime()` + endpoint `POST /learning/learn-runtime`. Analyse les TickActivityLog (pas les trades fermés) pour identifier les gates sur-bloquants et proposer des assouplissements en mode shadow. Suggestions 15 (micro-trend dominant) et 16 (gate unique > 70%).
 - **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.
