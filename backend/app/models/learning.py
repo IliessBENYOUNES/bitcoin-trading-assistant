@@ -78,6 +78,11 @@ class LearningSignal(Base):
     # % du mouvement BTC capturé par ce trade
     capture_efficiency_pct: Mapped[float] = mapped_column(Float, nullable=True)
 
+    # [v2.0.16] Candle directions — pour apprentissage ML des patterns d'entrée/sortie
+    # "green" = prix montait, "red" = prix descendait
+    entry_candle_direction: Mapped[str] = mapped_column(String(10), nullable=True)
+    exit_candle_direction: Mapped[str] = mapped_column(String(10), nullable=True)
+
     # Timestamp
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False

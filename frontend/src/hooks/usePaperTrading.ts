@@ -28,6 +28,7 @@ interface UsePaperTradingReturn {
   autoMode: boolean;
   autoIntervalSec: number;
   autoTickCount: number;
+  autoStartedAt: string | null; // v2.0.16 — ISO timestamp du début du run
   /** Compteur incrémenté à chaque trade exécuté (ouverture ou fermeture) */
   tradeVersion: number;
   startAuto: (intervalSec: number) => void;
@@ -53,6 +54,7 @@ export function usePaperTrading({
   const [autoMode, setAutoMode] = useState(false);
   const [autoIntervalSec, setAutoIntervalSec] = useState(60);
   const [autoTickCount, setAutoTickCount] = useState(0);
+  const [autoStartedAt, setAutoStartedAt] = useState<string | null>(null); // v2.0.16 — run start timestamp
   const autoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoTickingRef = useRef(false); // guard against overlapping ticks
 
@@ -200,6 +202,7 @@ export function usePaperTrading({
     setAutoIntervalSec(intervalSec);
     setAutoMode(true);
     setAutoTickCount(0);
+    setAutoStartedAt(new Date().toISOString()); // v2.0.16 — track run start
     // Execute first tick immediately
     doAutoTick();
     // Then set up interval
@@ -208,6 +211,7 @@ export function usePaperTrading({
 
   const stopAuto = useCallback(() => {
     setAutoMode(false);
+    setAutoStartedAt(null); // v2.0.16
     if (autoIntervalRef.current) {
       clearInterval(autoIntervalRef.current);
       autoIntervalRef.current = null;
@@ -231,6 +235,7 @@ export function usePaperTrading({
     autoMode,
     autoIntervalSec,
     autoTickCount,
+    autoStartedAt,
     tradeVersion,
     startAuto,
     stopAuto,

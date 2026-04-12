@@ -2331,3 +2331,144 @@ class TestEntryCandleDirection:
             pos = data["open_position"]
             assert pos["entry_candle_direction"] == "red"
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TESTS v2.0.16 — exit_candle_direction + duration_seconds + learning ML
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestExitCandleDirection:
+    """Tests pour le champ exit_candle_direction sur PaperTrade."""
+
+    def test_trade_default_exit_candle_direction_is_none(self, db_session):
+        """Un trade ouvert n'a pas encore de exit_candle_direction."""
+        trade = PaperTrade(
+            account_id=1, status="open", direction="long",
+            entry_price=80000.0, stop_loss_price=79000.0,
+            take_profit_price=82000.0, position_size_usd=1000.0,
+            entry_reason="test", entry_ts=datetime.now(timezone.utc),
+        )
+        db_session.add(trade)
+        db_session.commit()
+        assert trade.exit_candle_direction is None
+
+    def test_trade_stores_exit_candle_green(self, db_session):
+        """Un trade fermé peut stocker exit_candle_direction='green'."""
+        trade = PaperTrade(
+            account_id=1, status="closed_tp", direction="long",
+            entry_price=80000.0, exit_price=82000.0,
+            stop_loss_price=79000.0, take_profit_price=82000.0,
+            position_size_usd=1000.0, entry_reason="test",
+            entry_ts=datetime.now(timezone.utc),
+            entry_candle_direction="green",
+            exit_candle_direction="green",
+        )
+        db_session.add(trade)
+        db_session.commit()
+        assert trade.exit_candle_direction == "green"
+
+    def test_trade_stores_exit_candle_red(self, db_session):
+        """Un trade fermé peut stocker exit_candle_direction='red'."""
+        trade = PaperTrade(
+            account_id=1, status="closed_sl", direction="short",
+            entry_price=80000.0, exit_price=82000.0,
+            stop_loss_price=82000.0, take_profit_price=78000.0,
+            position_size_usd=1000.0, entry_reason="test",
+            entry_ts=datetime.now(timezone.utc),
+            entry_candle_direction="red",
+            exit_candle_direction="red",
+        )
+        db_session.add(trade)
+        db_session.commit()
+        assert trade.exit_candle_direction == "red"
+
+    def test_schema_includes_exit_candle_direction(self, db_session):
+        """PaperTradeResponse inclut exit_candle_direction."""
+        trade = PaperTrade(
+            account_id=1, status="closed_tp", direction="long",
+            entry_price=80000.0, exit_price=82000.0,
+            stop_loss_price=79000.0, take_profit_price=82000.0,
+            position_size_usd=1000.0, entry_reason="test",
+            entry_ts=datetime.now(timezone.utc),
+            pnl=50.0, pnl_pct=2.5, duration_hours=0.5,
+            entry_candle_direction="green",
+            exit_candle_direction="red",
+        )
+        db_session.add(trade)
+        db_session.commit()
+        resp = PaperTradeResponse.model_validate(trade)
+        assert resp.exit_candle_direction == "red"
+        assert resp.entry_candle_direction == "green"
+
+    def test_schema_duration_seconds_calculated(self, db_session):
+        """PaperTradeResponse calcule duration_seconds à partir de duration_hours."""
+        trade = PaperTrade(
+            account_id=1, status="closed_tp", direction="long",
+            entry_price=80000.0, exit_price=82000.0,
+            stop_loss_price=79000.0, take_profit_price=82000.0,
+            position_size_usd=1000.0, entry_reason="test",
+            entry_ts=datetime.now(timezone.utc),
+            pnl=50.0, pnl_pct=2.5, duration_hours=0.01,
+        )
+        db_session.add(trade)
+        db_session.commit()
+        resp = PaperTradeResponse.model_validate(trade)
+        assert resp.duration_seconds == 36.0  # 0.01h * 3600 = 36s
+
+    def test_close_position_sets_exit_candle_direction(self, db_session):
+        """_close_position doit toujours renseigner exit_candle_direction."""
+        svc = PaperTradingService(db_session)
+        account = svc.get_or_create_account()
+        account.is_active = True
+        db_session.commit()
+        trade = svc._open_position(
+            account=account, price=80000.0,
+            sl=79000.0, tp=82000.0,
+            size_usd=500.0, reason="test_exit",
+            score=25.0, direction="long",
+            entry_candle_direction="green",
+        )
+        assert trade is not None
+        closed = svc._close_position(trade, 81000.0, "test_close", "closed_tp")
+        assert closed.exit_candle_direction is not None
+        assert closed.exit_candle_direction in ("green", "red")
+
+
+class TestLearningCandleDirections:
+    """Tests pour l'enrichissement ML avec candle directions."""
+
+    def test_learning_signal_stores_candle_directions(self, db_session):
+        """LearningSignal stocke entry_candle_direction et exit_candle_direction."""
+        from app.models.learning import LearningSignal
+        sample = LearningSignal(
+            trade_id=999,
+            direction="short",
+            slot="scalping",
+            entry_candle_direction="red",
+            exit_candle_direction="green",
+        )
+        db_session.add(sample)
+        db_session.commit()
+        assert sample.entry_candle_direction == "red"
+        assert sample.exit_candle_direction == "green"
+
+    def test_learning_record_sample_includes_candle_dirs(self, db_session):
+        """record_sample copie les candle directions depuis le trade."""
+        from app.services.learning_service import LearningService
+        svc = PaperTradingService(db_session)
+        account = svc.get_or_create_account()
+        account.is_active = True
+        db_session.commit()
+        trade = svc._open_position(
+            account=account, price=80000.0,
+            sl=79000.0, tp=82000.0,
+            size_usd=500.0, reason="test_ml",
+            score=25.0, direction="long",
+            entry_candle_direction="green",
+        )
+        closed = svc._close_position(trade, 81000.0, "test_close", "closed_tp")
+        learning = LearningService(db_session)
+        sample = learning.record_sample(closed)
+        assert sample is not None
+        assert sample.entry_candle_direction == "green"
+        assert sample.exit_candle_direction is not None
+

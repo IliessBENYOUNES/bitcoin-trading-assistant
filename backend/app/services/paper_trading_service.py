@@ -1619,6 +1619,31 @@ class PaperTradingService:
         now = datetime.now(timezone.utc)
         account = self.db.query(PaperAccount).get(trade.account_id)
 
+        # [v2.0.16] Déterminer la direction de la bougie à la sortie.
+        # Source 1 : tick momentum buffer (précis pour scalping)
+        # Source 2 : comparaison exit_price vs entry_price (fallback universel)
+        exit_candle_dir = None
+        try:
+            slot = getattr(trade, "slot", None) or "default"
+            tm_dir, _ = TickMomentumService.detect_direction(
+                slot=slot, window_seconds=15.0, min_ticks=2
+            )
+            if tm_dir == "long":
+                exit_candle_dir = "green"
+            elif tm_dir == "short":
+                exit_candle_dir = "red"
+        except Exception:
+            pass  # Non-bloquant
+
+        # Fallback : comparer le prix de sortie à l'entry
+        if exit_candle_dir is None:
+            if exit_price > trade.entry_price:
+                exit_candle_dir = "green"
+            elif exit_price < trade.entry_price:
+                exit_candle_dir = "red"
+            else:
+                exit_candle_dir = "green"  # flat → neutre, on garde green par défaut
+
         # Calcul PnL — le levier amplifie le PnL
         leverage = getattr(trade, "leverage", None) or 1.0
         if trade.direction == "long":
@@ -1641,6 +1666,7 @@ class PaperTradingService:
         trade.status = status
         trade.exit_ts = now
         trade.duration_hours = round(duration, 2)
+        trade.exit_candle_direction = exit_candle_dir  # v2.0.16
 
         # Mise à jour du compte
         if account:

@@ -85,8 +85,15 @@ class PaperTradeResponse(BaseModel):
     updated_at: Optional[datetime] = None
     slot: Optional[str] = None  # v1.7 — slot multi-position
     entry_candle_direction: Optional[str] = None  # v2.0.15 — "green"/"red"/null
+    exit_candle_direction: Optional[str] = None  # v2.0.16 — "green"/"red"/null (à la fermeture)
+    duration_seconds: Optional[float] = None  # v2.0.16 — durée exacte en secondes
 
     model_config = {"from_attributes": True}
+
+    def model_post_init(self, __context) -> None:
+        """Calcule duration_seconds à partir de duration_hours (rétrocompat)."""
+        if self.duration_seconds is None and self.duration_hours is not None:
+            self.duration_seconds = round(self.duration_hours * 3600, 1)
 
 
 class PaperTradeListResponse(BaseModel):
@@ -117,6 +124,7 @@ class PaperTradeExportItem(BaseModel):
     profile_type: Optional[str] = None
     slot: Optional[str] = None
     entry_candle_direction: Optional[str] = None  # v2.0.15 — "green"/"red"/null
+    exit_candle_direction: Optional[str] = None  # v2.0.16 — "green"/"red"/null
     pnl: Optional[float] = None
     pnl_pct: Optional[float] = None
     entry_reason: str
@@ -125,8 +133,14 @@ class PaperTradeExportItem(BaseModel):
     entry_ts: datetime
     exit_ts: Optional[datetime] = None
     duration_hours: Optional[float] = None
+    duration_seconds: Optional[float] = None  # v2.0.16
 
     model_config = {"from_attributes": True}
+
+    def model_post_init(self, __context) -> None:
+        """Calcule duration_seconds à partir de duration_hours (rétrocompat)."""
+        if self.duration_seconds is None and self.duration_hours is not None:
+            self.duration_seconds = round(self.duration_hours * 3600, 1)
 
 
 class PaperExportAccountSummary(BaseModel):

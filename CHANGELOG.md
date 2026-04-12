@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.16] - 2026-04-12
+
+### Added
+- **EXIT CANDLE DIRECTION** — Nouveau champ `exit_candle_direction` ("green"/"red") stocké à la fermeture de chaque position. Permet de savoir dans quel sens allait le prix au moment de la sortie.
+- **PASTILLE DOUBLE (Entrée + Sortie)** — Dans le journal des trades, chaque ligne affiche maintenant deux pastilles colorées : 🟢/🔴 pour l'entrée ET pour la sortie, avec tooltip adapté pour chaque phase.
+- **TIMESTAMPS PRÉCIS** — Affichage de la date/heure/seconde exacte d'entrée (format "12 avr. 14:32:05") sur les positions ouvertes et dans le journal des trades. Tooltip montrant entrée + sortie au survol.
+- **DURÉE EXACTE EN SECONDES** — Colonne "Durée" enrichie avec format "2m 34s" ou "1h 05m 12s" au lieu de "0.1h". Nouveau champ `duration_seconds` calculé dans le schema Pydantic.
+- **DURÉE DU RUN EN TEMPS RÉEL** — Nouveau composant `RunDurationTimer` affiché dans la barre du robot actif (auto + headless). Compteur hh:mm:ss mis à jour chaque seconde avec couleur Bitcoin orange.
+- **ENRICHISSEMENT ML** — `LearningSignal` enrichi avec `entry_candle_direction` et `exit_candle_direction` pour permettre au futur modèle ML d'apprendre les patterns d'entrée/sortie par couleur de bougie.
+- Script de migration `migrate_v2016.py` pour les nouvelles colonnes.
+- **8 nouveaux tests** : modèle exit_candle_direction, schema duration_seconds, _close_position avec exit candle, LearningSignal enrichi.
+
+### Changed
+- `CandleDirectionDot` supporte un prop `type="entry"|"exit"` avec labels et tooltips adaptés à chaque phase.
+- `TradeRow` : nouvelle colonne "Heure" avec timestamp précis + colonne "Durée" avec format lisible.
+- `PositionTimer` et `RunDurationTimer` coexistent : le premier pour la position, le second pour le run complet.
+- Hook `usePaperTrading` : nouvel état `autoStartedAt` pour tracker le début du run frontend.
+- Headless mode : le `RunDurationTimer` remplace l'affichage statique de l'uptime.
+
+### Technical
+- Modifié : `backend/app/models/paper_account.py` — Nouvelle colonne `exit_candle_direction VARCHAR(10)` nullable
+- Modifié : `backend/app/models/learning.py` — Nouvelles colonnes `entry_candle_direction`, `exit_candle_direction`
+- Modifié : `backend/app/schemas/paper_trading.py` — `exit_candle_direction`, `duration_seconds`, `model_post_init`
+- Modifié : `backend/app/services/paper_trading_service.py` — `_close_position` détermine exit candle via tick momentum ou fallback prix
+- Modifié : `backend/app/services/learning_service.py` — `record_sample` copie les candle directions
+- Modifié : `frontend/src/types/api.ts` — `exit_candle_direction`, `duration_seconds`
+- Modifié : `frontend/src/hooks/usePaperTrading.ts` — `autoStartedAt` state
+- Modifié : `frontend/src/components/PaperTradingPanel.tsx` — Composants enrichis
+- Tests : 1701 → 1709 (+8)
+
 ## [2.0.15] - 2026-04-12
 
 ### Added

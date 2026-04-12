@@ -148,6 +148,9 @@ class LearningService:
             btc_move_after_exit_pct=btc_ctx.get("move_after"),
             missed_favorable_move=1 if btc_ctx.get("missed_favorable") else 0,
             capture_efficiency_pct=btc_ctx.get("capture_eff"),
+            # [v2.0.16] Candle directions pour apprentissage ML
+            entry_candle_direction=getattr(trade, "entry_candle_direction", None),
+            exit_candle_direction=getattr(trade, "exit_candle_direction", None),
         )
         self.db.add(sample)
         try:

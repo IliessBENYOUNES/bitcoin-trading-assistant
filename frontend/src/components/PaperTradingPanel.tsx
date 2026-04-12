@@ -129,21 +129,31 @@ function PositionPnL({ pos, currentPrice }: { pos: PaperTradeItem; currentPrice:
 
 // ─────────────────────────────────────────────────────────────────────────────
 // [v2.0.15] Indicateur de couleur de bougie — vérifie l'alignement direction/bougie
-// 🟢 = bougie verte (prix montait à l'entrée), 🔴 = bougie rouge (prix descendait)
+// 🟢 = bougie verte (prix montait), 🔴 = bougie rouge (prix descendait)
+// [v2.0.16] Supporte type="entry" (défaut) ou type="exit" avec label adapté
 // ─────────────────────────────────────────────────────────────────────────────
-function CandleDirectionDot({ direction, candleDirection }: { direction: string; candleDirection?: string | null }) {
+function CandleDirectionDot({ direction, candleDirection, type = 'entry' }: {
+  direction: string;
+  candleDirection?: string | null;
+  type?: 'entry' | 'exit';
+}) {
   if (!candleDirection) return null;
 
   const isGreen = candleDirection === 'green';
   const color = isGreen ? '#4caf50' : '#f44336';
   const emoji = isGreen ? '🟢' : '🔴';
-  const label = isGreen ? 'Bougie verte (prix montait)' : 'Bougie rouge (prix descendait)';
+  const phaseLabel = type === 'entry' ? 'Entrée' : 'Sortie';
+  const label = isGreen
+    ? `${phaseLabel} : bougie verte (prix montait)`
+    : `${phaseLabel} : bougie rouge (prix descendait)`;
 
   // Vérifier la cohérence direction/bougie
-  const isAligned = (direction === 'long' && isGreen) || (direction === 'short' && !isGreen);
-  const alignmentLabel = isAligned
-    ? '✅ Cohérent — entrée dans le sens du prix'
-    : '⚠️ Incohérent — entrée contre le sens du prix';
+  const isAligned = type === 'entry'
+    ? (direction === 'long' && isGreen) || (direction === 'short' && !isGreen)
+    : true; // Pour la sortie, pas de notion de cohérence direction/bougie
+  const alignmentLabel = type === 'entry'
+    ? (isAligned ? '✅ Cohérent — entrée dans le sens du prix' : '⚠️ Incohérent — entrée contre le sens du prix')
+    : (isGreen ? '📈 Prix montait à la sortie' : '📉 Prix descendait à la sortie');
 
   return (
     <Tooltip
@@ -173,6 +183,75 @@ function CandleDirectionDot({ direction, candleDirection }: { direction: string;
       />
     </Tooltip>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [v2.0.16] Timer de durée du run — temps réel depuis le lancement du robot
+// ─────────────────────────────────────────────────────────────────────────────
+function RunDurationTimer({ startedAt }: { startedAt: string | null | undefined }) {
+  const [elapsed, setElapsed] = useState('');
+
+  useEffect(() => {
+    if (!startedAt) return;
+    const startDate = new Date(startedAt);
+    const update = () => {
+      const diffMs = Date.now() - startDate.getTime();
+      if (diffMs < 0) { setElapsed('00:00:00'); return; }
+      const totalSec = Math.floor(diffMs / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      setElapsed(`${pad(h)}:${pad(m)}:${pad(s)}`);
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [startedAt]);
+
+  if (!startedAt || !elapsed) return null;
+
+  return (
+    <Chip
+      size="small"
+      icon={<TimerIcon sx={{ fontSize: 14 }} />}
+      label={`Run : ${elapsed}`}
+      variant="outlined"
+      sx={{
+        fontFamily: 'monospace',
+        fontWeight: 700,
+        fontSize: '0.8rem',
+        borderColor: '#F7931A',
+        color: '#F7931A',
+      }}
+    />
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [v2.0.16] Formatage timestamp précis — "12 avr. 14:32:05"
+// ─────────────────────────────────────────────────────────────────────────────
+function formatPreciseTime(isoStr: string | null | undefined): string {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr);
+  const day = d.getDate();
+  const months = ['jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+  const month = months[d.getMonth()];
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  const s = d.getSeconds().toString().padStart(2, '0');
+  return `${day} ${month} ${h}:${m}:${s}`;
+}
+
+// Formater une durée en secondes en texte lisible (ex: "2m 34s", "1h 05m 12s")
+function formatDurationSec(seconds: number | null | undefined): string {
+  if (seconds == null || seconds < 0) return '—';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.round(seconds % 60);
+  if (h > 0) return `${h}h ${m.toString().padStart(2, '0')}m ${s.toString().padStart(2, '0')}s`;
+  if (m > 0) return `${m}m ${s.toString().padStart(2, '0')}s`;
+  return `${s}s`;
 }
 
 // Couleur selon PnL
@@ -277,6 +356,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
     autoMode,
     autoIntervalSec,
     autoTickCount,
+    autoStartedAt,
     tradeVersion,
     startAuto,
     stopAuto,
@@ -853,6 +933,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
                 variant="outlined"
                 sx={{ fontWeight: 700, fontFamily: 'monospace' }}
               />
+              <RunDurationTimer startedAt={autoStartedAt} />
             </Stack>
             <Button
               variant="contained"
@@ -909,16 +990,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
                   sx={{ fontWeight: 600 }}
                 />
               )}
-              {headlessStatus.uptime_seconds != null && (
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  label={headlessStatus.uptime_seconds > 3600
-                    ? `${Math.floor(headlessStatus.uptime_seconds / 3600)}h${Math.floor((headlessStatus.uptime_seconds % 3600) / 60)}m`
-                    : `${Math.floor(headlessStatus.uptime_seconds / 60)}m`
-                  }
-                />
-              )}
+              <RunDurationTimer startedAt={headlessStatus.started_at} />
               <Button
                 variant="outlined"
                 color="error"
@@ -1076,8 +1148,8 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
                 {' | '}TP : <strong style={{ color: '#4caf50' }}>${pos.take_profit_price.toLocaleString()}</strong>
                 {' | '}Taille : <strong>${pos.position_size_usd.toLocaleString()}</strong>
               </Typography>
-              <Typography variant="body2" color="text.secondary" mt={0.5} fontSize={12}>
-                Score : {pos.decision_score?.toFixed(0) ?? '—'} | {pos.entry_reason?.slice(0, 120)}
+              <Typography variant="caption" color="text.secondary" mt={0.3} fontSize={11} sx={{ display: 'block' }}>
+                📅 Ouvert le {formatPreciseTime(pos.entry_ts)} | Score : {pos.decision_score?.toFixed(0) ?? '—'} | {pos.entry_reason?.slice(0, 100)}
               </Typography>
             </Box>
           ))}
@@ -1115,8 +1187,8 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
             {' | '}TP : <strong style={{ color: '#4caf50' }}>${openPos.take_profit_price.toLocaleString()}</strong>
             {' | '}Taille : <strong>${openPos.position_size_usd.toLocaleString()}</strong>
           </Typography>
-          <Typography variant="body2" color="text.secondary" mt={0.5}>
-            Score : {openPos.decision_score?.toFixed(0) ?? '—'} | {openPos.entry_reason}
+          <Typography variant="caption" color="text.secondary" mt={0.3} fontSize={11} sx={{ display: 'block' }}>
+            📅 Ouvert le {formatPreciseTime(openPos.entry_ts)} | Score : {openPos.decision_score?.toFixed(0) ?? '—'} | {openPos.entry_reason?.slice(0, 100)}
           </Typography>
         </Box>
       )}
@@ -1231,7 +1303,8 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
                 <TableCell align="right">Sortie</TableCell>
                 <TableCell align="right">PnL</TableCell>
                 <TableCell align="right">PnL %</TableCell>
-                <TableCell align="right">Durée (h)</TableCell>
+                <TableCell align="right">Durée</TableCell>
+                <TableCell>Heure</TableCell>
                 <TableCell>Raison</TableCell>
               </TableRow>
             </TableHead>
@@ -1269,15 +1342,21 @@ function MetricBox({ label, value, color }: { label: string; value: string; colo
   );
 }
 
-// Sous-composant : ligne de trade
+// Sous-composant : ligne de trade — v2.0.16 enrichi (pastilles entrée+sortie, timestamps, durée exacte)
 function TradeRow({ trade }: { trade: PaperTradeItem }) {
+  // Calculer duration_seconds à partir de duration_hours si pas fourni par le backend
+  const durationSec = trade.duration_seconds ?? (trade.duration_hours != null ? trade.duration_hours * 3600 : null);
+
   return (
     <TableRow hover>
       <TableCell>{statusChip(trade.status)}</TableCell>
       <TableCell>
         <Stack direction="row" alignItems="center" spacing={0.5}>
           <span>{trade.direction === 'long' ? '📈 Long' : '📉 Short'}</span>
-          <CandleDirectionDot direction={trade.direction} candleDirection={trade.entry_candle_direction} />
+          <CandleDirectionDot direction={trade.direction} candleDirection={trade.entry_candle_direction} type="entry" />
+          {trade.exit_candle_direction && (
+            <CandleDirectionDot direction={trade.direction} candleDirection={trade.exit_candle_direction} type="exit" />
+          )}
         </Stack>
       </TableCell>
       <TableCell align="right">${trade.entry_price.toLocaleString()}</TableCell>
@@ -1290,12 +1369,15 @@ function TradeRow({ trade }: { trade: PaperTradeItem }) {
       <TableCell align="right" sx={{ color: pnlColor(trade.pnl_pct) }}>
         {formatPnl(trade.pnl_pct, '%')}
       </TableCell>
-      <TableCell align="right">
-        {trade.duration_hours != null
-          ? trade.duration_hours < 0.1
-            ? `${Math.round(trade.duration_hours * 60)}m`
-            : `${trade.duration_hours.toFixed(1)}h`
-          : '—'}
+      <TableCell align="right" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+        {formatDurationSec(durationSec)}
+      </TableCell>
+      <TableCell>
+        <Tooltip title={`Entrée : ${formatPreciseTime(trade.entry_ts)}${trade.exit_ts ? ` → Sortie : ${formatPreciseTime(trade.exit_ts)}` : ''}`}>
+          <Typography variant="caption" noWrap sx={{ maxWidth: 110, display: 'block', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+            {formatPreciseTime(trade.entry_ts)}
+          </Typography>
+        </Tooltip>
       </TableCell>
       <TableCell>
         <Tooltip title={trade.exit_reason || trade.entry_reason}>

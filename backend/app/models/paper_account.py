@@ -127,6 +127,11 @@ class PaperTrade(Base):
     # Permet de vérifier la cohérence entre direction du trade et direction du prix.
     entry_candle_direction: Mapped[str] = mapped_column(String(10), nullable=True)
 
+    # --- Direction de la bougie à la sortie (v2.0.16) ---
+    # "green" = prix montait à la fermeture, "red" = prix descendait à la fermeture
+    # Permet au modèle ML d'apprendre le contexte de sortie (ex: sorti sur bougie verte = bon timing short)
+    exit_candle_direction: Mapped[str] = mapped_column(String(10), nullable=True)
+
     # --- PnL ---
     pnl: Mapped[float] = mapped_column(Float, nullable=True)
     pnl_pct: Mapped[float] = mapped_column(Float, nullable=True)

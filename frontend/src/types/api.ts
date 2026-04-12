@@ -677,6 +677,8 @@ export interface PaperTradeItem {
   updated_at: string | null;
   slot?: string | null; // v1.7 multi-slot
   entry_candle_direction?: string | null; // v2.0.15 — "green"/"red"/null
+  exit_candle_direction?: string | null; // v2.0.16 — "green"/"red"/null (à la sortie)
+  duration_seconds?: number | null; // v2.0.16 — durée exacte en secondes
 }
 
 export interface PaperAccountItem {
@@ -776,6 +778,7 @@ export interface PaperTradeExportItem {
   profile_type: string | null;
   slot: string | null;
   entry_candle_direction: string | null; // v2.0.15 — "green"/"red"/null
+  exit_candle_direction: string | null; // v2.0.16 — "green"/"red"/null
   pnl: number | null;
   pnl_pct: number | null;
   entry_reason: string;
@@ -784,6 +787,7 @@ export interface PaperTradeExportItem {
   entry_ts: string;
   exit_ts: string | null;
   duration_hours: number | null;
+  duration_seconds: number | null; // v2.0.16
 }
 
 export interface PaperExportAccountSummary {

@@ -1,69 +1,68 @@
-# HANDOFF GPT — Fix Candle Direction Fallback v2.0.15
+# HANDOFF GPT — Exit Candle Direction + Timestamps + Run Duration v2.0.16
 
 **Date :** 12 avril 2026  
-**Version :** v2.0.15 (fix)  
+**Version :** v2.0.16 (feature)  
 
 ---
 
 ## Problème
 
-La pastille de couleur de bougie (🟢/🔴) ne s'affichait pas à côté des positions dans le PaperTradingPanel. Toutes les positions avaient `entry_candle_direction = null` en DB.
+Seule la pastille d'entrée était affichée. Aucune info sur la couleur de bougie à la sortie, pas de timestamp précis, pas de durée du run visible. Le modèle ML ne pouvait pas apprendre des patterns entrée/sortie.
 
 ## Diagnostic
 
-1. Vérifié que le modèle, schéma, migration et composant frontend étaient en place → **OK**
-2. Vérifié les 10 derniers trades en DB → **tous `candle_dir=None`**
-3. Vérifié le code `paper_trading_service.py` lignes 1437-1449 :
-   - Source 1 : `tm_override_active` → False car buffer vide après restart
-   - Source 2 : `mq_data.micro_trend_score` → 0 (neutre) → pas de couleur
-   - **Pas de fallback final** → `entry_candle_dir = None`
+1. `_close_position()` ne déterminait pas la direction de la bougie à la fermeture → `exit_candle_direction` inexistant
+2. Le journal affichait seulement la durée en heures (arrondi) → perte de précision pour les trades courts
+3. Le `LearningSignal` ne stockait aucune info sur les couleurs de bougie → données ML incomplètes
+4. Pas de compteur de durée du run visible en temps réel
 
 ## Cause racine
 
-Après un restart du serveur, le buffer tick momentum est vide. `detect_direction()` retourne `"insufficient_data"`, ce qui n'active PAS l'override. Le fallback `mq_data` ne suffit pas si `micro_trend_score=0`. Résultat : `entry_candle_dir` reste `None` et le frontend n'affiche rien (`if (!candleDirection) return null`).
+Feature manquante — le v2.0.15 avait posé la base avec `entry_candle_direction` mais sans l'équivalent côté sortie.
 
 ## Correction appliquée
 
 | Fichier | Changement |
 |---------|-----------|
-| `backend/app/services/paper_trading_service.py` | Ajout d'un fallback final (ligne ~1457) : si aucune source ne détermine la couleur, on déduit de la direction du trade (long→green, short→red) |
-
-```python
-# AVANT (fin du bloc) :
-# entry_candle_dir pouvait rester None
-
-# APRÈS :
-if entry_candle_dir is None:
-    entry_candle_dir = "green" if direction == "long" else "red"
-```
+| `backend/app/models/paper_account.py` | + colonne `exit_candle_direction VARCHAR(10)` |
+| `backend/app/models/learning.py` | + colonnes `entry_candle_direction`, `exit_candle_direction` |
+| `backend/app/schemas/paper_trading.py` | + `exit_candle_direction`, `duration_seconds`, `model_post_init` |
+| `backend/app/services/paper_trading_service.py` | `_close_position` détermine exit candle (tick momentum + fallback prix) |
+| `backend/app/services/learning_service.py` | `record_sample` copie les deux candle directions |
+| `frontend/src/types/api.ts` | + `exit_candle_direction`, `duration_seconds` |
+| `frontend/src/hooks/usePaperTrading.ts` | + `autoStartedAt` state |
+| `frontend/src/components/PaperTradingPanel.tsx` | + `RunDurationTimer`, `formatPreciseTime`, `formatDurationSec`, CandleDirectionDot enrichi, TradeRow enrichi |
+| `backend/migrate_v2016.py` | Migration DB |
+| `backend/tests/test_paper_trading.py` | +8 tests |
 
 ## Ce qui n'a PAS été touché
 
-- Frontend inchangé (le composant `CandleDirectionDot` fonctionne déjà)
-- Modèle/schéma/migration inchangés
+- Logique d'ouverture de position inchangée
+- `entry_candle_direction` existant inchangé (rétrocompat)
 - Aucun autre service modifié
+- Pas de changement d'endpoint API
 
 ## Validations
 
-- ✅ **1701 tests** backend passent (0 régression)
+- ✅ **1709 tests** backend passent (0 régression, +8 nouveaux)
 - ✅ `tsc --noEmit` sans erreur frontend
-- ✅ Trade #572 mis à jour manuellement (red) et visible dans l'API
-- ✅ Les prochains trades auront toujours une couleur de bougie
+- ✅ Migration DB PostgreSQL réussie (3 colonnes ajoutées)
 
 ## Documentation mise à jour
 
 | Document | Mis à jour |
 |----------|-----------|
-| `docs/CURRENT_STATE.md` | ✅ Dernier commit |
-| `CHANGELOG.md` | ✅ Nouveau fix ajouté dans v2.0.15 |
+| `docs/CURRENT_STATE.md` | ✅ Version, tests, dernier commit |
+| `CHANGELOG.md` | ✅ Nouvelle section v2.0.16 complète |
 | `docs/HANDOFF_GPT.md` | ✅ Ce fichier |
 
 ## État actuel
 
 | Élément | Valeur |
 |---------|--------|
-| Version | v2.0.15 |
-| Tests | 1701 passing |
+| Version | v2.0.16 |
+| Tests | 1709 passing |
+| Frontend | tsc clean |
 
 ## Commandes de relance
 
