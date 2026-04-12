@@ -131,11 +131,27 @@ function PositionPnL({ pos, currentPrice }: { pos: PaperTradeItem; currentPrice:
 // [v2.0.15] Indicateur de couleur de bougie — vérifie l'alignement direction/bougie
 // 🟢 = bougie verte (prix montait), 🔴 = bougie rouge (prix descendait)
 // [v2.0.16] Supporte type="entry" (défaut) ou type="exit" avec label adapté
+// [v2.0.17] Mini-label "E"/"S", tooltip enrichi avec exit_type + pnl
 // ─────────────────────────────────────────────────────────────────────────────
-function CandleDirectionDot({ direction, candleDirection, type = 'entry' }: {
+
+// Mapping lisible des types de sortie
+const EXIT_TYPE_LABELS: Record<string, string> = {
+  closed_tp: '✅ Take Profit atteint',
+  closed_sl: '❌ Stop Loss touché',
+  closed_signal: '⚠️ Signal contraire',
+  closed_expired: '⏰ Expiré',
+  closed_manual: '✋ Fermeture manuelle',
+  closed_stale: '💤 Stagnation (stale)',
+  closed_momentum_fade: '📉 Momentum fade',
+  closed_trailing_stop: '🎯 Trailing stop',
+};
+
+function CandleDirectionDot({ direction, candleDirection, type = 'entry', exitType, pnl }: {
   direction: string;
   candleDirection?: string | null;
   type?: 'entry' | 'exit';
+  exitType?: string | null;
+  pnl?: number | null;
 }) {
   if (!candleDirection) return null;
 
@@ -143,6 +159,7 @@ function CandleDirectionDot({ direction, candleDirection, type = 'entry' }: {
   const color = isGreen ? '#4caf50' : '#f44336';
   const emoji = isGreen ? '🟢' : '🔴';
   const phaseLabel = type === 'entry' ? 'Entrée' : 'Sortie';
+  const miniLabel = type === 'entry' ? 'E' : 'S';
   const label = isGreen
     ? `${phaseLabel} : bougie verte (prix montait)`
     : `${phaseLabel} : bougie rouge (prix descendait)`;
@@ -155,6 +172,12 @@ function CandleDirectionDot({ direction, candleDirection, type = 'entry' }: {
     ? (isAligned ? '✅ Cohérent — entrée dans le sens du prix' : '⚠️ Incohérent — entrée contre le sens du prix')
     : (isGreen ? '📈 Prix montait à la sortie' : '📉 Prix descendait à la sortie');
 
+  // Info supplémentaire pour la sortie : type de sortie + PnL
+  const exitInfo = type === 'exit' && exitType ? EXIT_TYPE_LABELS[exitType] || exitType : null;
+  const pnlInfo = type === 'exit' && pnl != null
+    ? `${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)} $`
+    : null;
+
   return (
     <Tooltip
       title={
@@ -165,22 +188,45 @@ function CandleDirectionDot({ direction, candleDirection, type = 'entry' }: {
           <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: isAligned ? '#4caf50' : '#ff9800' }}>
             {alignmentLabel}
           </Typography>
+          {exitInfo && (
+            <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#90caf9' }}>
+              🏷️ {exitInfo}
+            </Typography>
+          )}
+          {pnlInfo && (
+            <Typography variant="caption" sx={{ display: 'block', mt: 0.3, fontWeight: 700, color: pnl != null && pnl >= 0 ? '#4caf50' : '#f44336' }}>
+              💰 Résultat : {pnlInfo}
+            </Typography>
+          )}
         </Box>
       }
       arrow
     >
       <Box
         sx={{
-          width: 14,
-          height: 14,
+          width: 20,
+          height: 20,
           borderRadius: '50%',
           bgcolor: color,
           border: `2px solid ${color}88`,
           boxShadow: `0 0 6px ${color}66`,
           cursor: 'help',
           flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
-      />
+      >
+        <Typography sx={{
+          fontSize: '0.55rem',
+          fontWeight: 900,
+          color: '#fff',
+          lineHeight: 1,
+          textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+        }}>
+          {miniLabel}
+        </Typography>
+      </Box>
     </Tooltip>
   );
 }
@@ -1342,10 +1388,18 @@ function MetricBox({ label, value, color }: { label: string; value: string; colo
   );
 }
 
-// Sous-composant : ligne de trade — v2.0.16 enrichi (pastilles entrée+sortie, timestamps, durée exacte)
+// Sous-composant : ligne de trade — v2.0.17 enrichi (pastilles entrée+sortie avec fallback, timestamps, durée exacte)
 function TradeRow({ trade }: { trade: PaperTradeItem }) {
   // Calculer duration_seconds à partir de duration_hours si pas fourni par le backend
   const durationSec = trade.duration_seconds ?? (trade.duration_hours != null ? trade.duration_hours * 3600 : null);
+
+  // [v2.0.17] Fallback pastille de sortie : si exit_candle_direction est null
+  // mais le trade est fermé (a un exit_price), on déduit la couleur du prix.
+  // Comparaison exit_price vs entry_price → green si le prix a monté, red sinon.
+  const exitCandle = trade.exit_candle_direction
+    ?? (trade.exit_price != null
+      ? (trade.exit_price >= trade.entry_price ? 'green' : 'red')
+      : null);
 
   return (
     <TableRow hover>
@@ -1354,8 +1408,11 @@ function TradeRow({ trade }: { trade: PaperTradeItem }) {
         <Stack direction="row" alignItems="center" spacing={0.5}>
           <span>{trade.direction === 'long' ? '📈 Long' : '📉 Short'}</span>
           <CandleDirectionDot direction={trade.direction} candleDirection={trade.entry_candle_direction} type="entry" />
-          {trade.exit_candle_direction && (
-            <CandleDirectionDot direction={trade.direction} candleDirection={trade.exit_candle_direction} type="exit" />
+          {exitCandle && (
+            <>
+              <Typography sx={{ fontSize: '0.65rem', color: 'text.secondary', mx: '1px' }}>→</Typography>
+              <CandleDirectionDot direction={trade.direction} candleDirection={exitCandle} type="exit" exitType={trade.status} pnl={trade.pnl} />
+            </>
           )}
         </Stack>
       </TableCell>

@@ -556,6 +556,140 @@ class LearningService:
                 impact=impact,
             ))
 
+        # Pattern 7 : [v2.0.17] Cohérence candle direction entrée → sortie
+        # C'est le pattern le plus important pour le scalping : si la couleur de
+        # la bougie change entre l'entrée et la sortie, ça indique que le momentum
+        # s'est retourné pendant le trade — souvent corrélé avec des pertes.
+        #
+        # 4 combinaisons possibles :
+        #   same_aligned   = entrée et sortie même couleur, alignée avec la direction
+        #                    (ex: long + green→green = prix montait à l'entrée ET à la sortie)
+        #   same_counter   = même couleur mais contre la direction
+        #                    (ex: long + red→red = prix descendait tout du long)
+        #   reversed_favor = changement de couleur favorable
+        #                    (ex: long + red→green = reversal qui a payé)
+        #   reversed_against = changement de couleur défavorable
+        #                    (ex: long + green→red = momentum perdu)
+        candle_groups = {
+            "same_aligned": [],
+            "same_counter": [],
+            "reversed_favor": [],
+            "reversed_against": [],
+        }
+        for s in samples:
+            if not s.entry_candle_direction or not s.exit_candle_direction or not s.direction:
+                continue
+            same_color = s.entry_candle_direction == s.exit_candle_direction
+            # "aligned" = la bougie de sortie va dans le sens du trade
+            exit_favorable = (
+                (s.direction == "long" and s.exit_candle_direction == "green")
+                or (s.direction == "short" and s.exit_candle_direction == "red")
+            )
+            if same_color and exit_favorable:
+                candle_groups["same_aligned"].append(s)
+            elif same_color and not exit_favorable:
+                candle_groups["same_counter"].append(s)
+            elif not same_color and exit_favorable:
+                candle_groups["reversed_favor"].append(s)
+            else:
+                candle_groups["reversed_against"].append(s)
+
+        candle_labels = {
+            "same_aligned": "Même couleur, alignée (momentum conservé ✅)",
+            "same_counter": "Même couleur, contre direction (piégé dans le contre-courant)",
+            "reversed_favor": "Changement favorable (reversal gagnant)",
+            "reversed_against": "Changement défavorable (momentum perdu ❌)",
+        }
+        for key, group in candle_groups.items():
+            if len(group) < 2:
+                continue
+            wins = sum(1 for s in group if s.was_profitable)
+            wr = wins / len(group) * 100
+            avg_pnl = sum(s.pnl_brut for s in group if s.pnl_brut) / len(group)
+            avg_dur = sum(s.duration_minutes for s in group if s.duration_minutes is not None) / max(1, sum(1 for s in group if s.duration_minutes is not None))
+            impact = "positif" if avg_pnl > 0 else ("négatif" if avg_pnl < -0.1 else "neutre")
+            patterns.append(PatternInsight(
+                pattern_name=f"candle_{key}",
+                description=(
+                    f"🕯️ {candle_labels[key]} : {len(group)} trades, "
+                    f"WR {wr:.0f}%, PnL moy {avg_pnl:.2f}, durée moy {avg_dur:.1f}min"
+                ),
+                sample_count=len(group),
+                win_rate=round(wr, 1),
+                avg_pnl=round(avg_pnl, 2),
+                impact=impact,
+            ))
+
+        # Méta-pattern : same color (toutes) vs reversed (toutes)
+        all_same = candle_groups["same_aligned"] + candle_groups["same_counter"]
+        all_reversed = candle_groups["reversed_favor"] + candle_groups["reversed_against"]
+        if len(all_same) >= 2 and len(all_reversed) >= 2:
+            same_wr = sum(1 for s in all_same if s.was_profitable) / len(all_same) * 100
+            same_pnl = sum(s.pnl_brut for s in all_same if s.pnl_brut) / len(all_same)
+            rev_wr = sum(1 for s in all_reversed if s.was_profitable) / len(all_reversed) * 100
+            rev_pnl = sum(s.pnl_brut for s in all_reversed if s.pnl_brut) / len(all_reversed)
+            delta_wr = same_wr - rev_wr
+            delta_pnl = same_pnl - rev_pnl
+            impact = "positif" if delta_pnl > 0.2 else ("négatif" if delta_pnl < -0.2 else "neutre")
+            patterns.append(PatternInsight(
+                pattern_name="candle_consistency_vs_reversal",
+                description=(
+                    f"🔑 MÊME COULEUR ({len(all_same)} trades, WR {same_wr:.0f}%, PnL {same_pnl:.2f}) "
+                    f"vs CHANGEMENT ({len(all_reversed)} trades, WR {rev_wr:.0f}%, PnL {rev_pnl:.2f}) "
+                    f"→ Δ WR {delta_wr:+.0f}pts, Δ PnL {delta_pnl:+.2f}"
+                ),
+                sample_count=len(all_same) + len(all_reversed),
+                win_rate=round(same_wr, 1),
+                avg_pnl=round(delta_pnl, 2),
+                impact=impact,
+            ))
+
+        # Pattern 8 : [v2.0.17] Croisement durée × cohérence candle
+        # Trades courts (< 2min) avec même couleur vs trades longs avec changement
+        # L'hypothèse : un scalp rapide qui reste dans le momentum = optimal
+        candle_with_dur = [
+            s for s in samples
+            if s.entry_candle_direction and s.exit_candle_direction
+            and s.duration_minutes is not None and s.direction
+        ]
+        if len(candle_with_dur) >= 4:
+            fast_same = [
+                s for s in candle_with_dur
+                if s.duration_minutes < 2
+                and s.entry_candle_direction == s.exit_candle_direction
+            ]
+            fast_reversed = [
+                s for s in candle_with_dur
+                if s.duration_minutes < 2
+                and s.entry_candle_direction != s.exit_candle_direction
+            ]
+            slow_reversed = [
+                s for s in candle_with_dur
+                if s.duration_minutes >= 2
+                and s.entry_candle_direction != s.exit_candle_direction
+            ]
+            for label, group, desc_prefix in [
+                ("fast_same_candle", fast_same, "⚡ Scalp rapide (<2min) + même couleur"),
+                ("fast_reversed_candle", fast_reversed, "⚡ Scalp rapide (<2min) + changement couleur"),
+                ("slow_reversed_candle", slow_reversed, "🐌 Trade lent (≥2min) + changement couleur"),
+            ]:
+                if len(group) < 2:
+                    continue
+                wins = sum(1 for s in group if s.was_profitable)
+                wr = wins / len(group) * 100
+                avg_pnl = sum(s.pnl_brut for s in group if s.pnl_brut) / len(group)
+                impact = "positif" if avg_pnl > 0 else ("négatif" if avg_pnl < -0.1 else "neutre")
+                patterns.append(PatternInsight(
+                    pattern_name=f"duration_candle_{label}",
+                    description=(
+                        f"{desc_prefix} : {len(group)} trades, WR {wr:.0f}%, PnL moy {avg_pnl:.2f}"
+                    ),
+                    sample_count=len(group),
+                    win_rate=round(wr, 1),
+                    avg_pnl=round(avg_pnl, 2),
+                    impact=impact,
+                ))
+
         return sorted(patterns, key=lambda p: abs(p.avg_pnl), reverse=True)
 
     def suggest_adjustments(self, profile_type: str = "scalping") -> list[StrategyFeedback]:
@@ -966,6 +1100,114 @@ class LearningService:
                         sample_size=len(long_scalp),
                         win_rate_observed=wr_long,
                         avg_pnl_observed=sum(s.pnl_brut or 0 for s in long_scalp) / len(long_scalp),
+                        profile_type=profile_type,
+                        version=version,
+                    ))
+
+        # ================================================================
+        # [v2.0.17] SUGGESTIONS CANDLE DIRECTION — Le pattern le plus prédictif
+        # ================================================================
+        # Analyse la cohérence de couleur de bougie entrée→sortie.
+        # Si les trades où la couleur change (momentum perdu) sont massivement
+        # perdants, on suggère de couper plus vite (stale exit) ou de relever
+        # le min_hold pour éviter les sorties-éclair qui rattrapent un reversal.
+
+        # Filtrer les échantillons avec candle direction renseignée
+        candle_samples = [
+            s for s in samples
+            if s.entry_candle_direction and s.exit_candle_direction and s.direction
+        ]
+
+        if len(candle_samples) >= 5:
+            # Trades avec changement de couleur défavorable
+            # = la bougie de sortie va CONTRE la direction du trade
+            reversed_against = [
+                s for s in candle_samples
+                if s.entry_candle_direction != s.exit_candle_direction
+                and not (
+                    (s.direction == "long" and s.exit_candle_direction == "green")
+                    or (s.direction == "short" and s.exit_candle_direction == "red")
+                )
+            ]
+            # Trades avec même couleur tout du long
+            same_color = [
+                s for s in candle_samples
+                if s.entry_candle_direction == s.exit_candle_direction
+            ]
+
+            # Suggestion 15 : Si les reversals défavorables sont massivement perdants
+            if len(reversed_against) >= 3:
+                rev_wr = sum(1 for s in reversed_against if s.was_profitable) / len(reversed_against) * 100
+                rev_avg = sum(s.pnl_brut for s in reversed_against if s.pnl_brut) / len(reversed_against)
+                rev_avg_dur = sum(
+                    s.duration_minutes for s in reversed_against if s.duration_minutes is not None
+                ) / max(1, sum(1 for s in reversed_against if s.duration_minutes is not None))
+
+                if rev_wr < 35 and rev_avg < -0.1:
+                    # Le momentum se retourne pendant le trade → couper plus vite
+                    current_stale = getattr(params, "stale_negative_exit_minutes", None) or 5
+                    suggested_stale = max(current_stale - 1, SAFETY_BOUNDS["stale_negative_exit_minutes"][0])
+
+                    same_avg = sum(s.pnl_brut for s in same_color if s.pnl_brut) / max(1, len(same_color))
+                    suggestions.append(self._create_feedback(
+                        parameter_name="stale_negative_exit_minutes",
+                        original_value=current_stale,
+                        suggested_value=suggested_stale,
+                        reason=(
+                            f"🕯️ PATTERN CANDLE CRITIQUE : {len(reversed_against)} trades avec changement "
+                            f"de couleur défavorable ont un WR de {rev_wr:.0f}% et un PnL moyen de "
+                            f"{rev_avg:.2f} (durée moy {rev_avg_dur:.1f}min). "
+                            f"En comparaison, les {len(same_color)} trades à couleur stable ont un PnL "
+                            f"moyen de {same_avg:.2f}. "
+                            f"Le momentum se retourne pendant le trade → couper les positions "
+                            f"perdantes plus rapidement."
+                        ),
+                        sample_size=len(reversed_against),
+                        win_rate_observed=rev_wr,
+                        avg_pnl_observed=rev_avg,
+                        profile_type=profile_type,
+                        version=version,
+                    ))
+
+            # Suggestion 16 : Si les trades contre-tendance à l'entrée sont destructeurs
+            # (ex: long ouvert sur bougie rouge = entrée contre le momentum)
+            entry_counter = [
+                s for s in candle_samples
+                if (s.direction == "long" and s.entry_candle_direction == "red")
+                or (s.direction == "short" and s.entry_candle_direction == "green")
+            ]
+            entry_aligned = [
+                s for s in candle_samples
+                if (s.direction == "long" and s.entry_candle_direction == "green")
+                or (s.direction == "short" and s.entry_candle_direction == "red")
+            ]
+
+            if len(entry_counter) >= 3 and len(entry_aligned) >= 3:
+                counter_wr = sum(1 for s in entry_counter if s.was_profitable) / len(entry_counter) * 100
+                counter_avg = sum(s.pnl_brut for s in entry_counter if s.pnl_brut) / len(entry_counter)
+                aligned_wr = sum(1 for s in entry_aligned if s.was_profitable) / len(entry_aligned) * 100
+                aligned_avg = sum(s.pnl_brut for s in entry_aligned if s.pnl_brut) / len(entry_aligned)
+
+                # Si entrer contre le momentum est nettement pire
+                if counter_wr < aligned_wr - 15 and counter_avg < aligned_avg:
+                    current_mt = getattr(params, "min_micro_trend_long", 0) or 0
+                    suggested_mt = min(current_mt + 1, SAFETY_BOUNDS["min_micro_trend_long"][1])
+                    suggestions.append(self._create_feedback(
+                        parameter_name="min_micro_trend_long",
+                        original_value=current_mt,
+                        suggested_value=suggested_mt,
+                        reason=(
+                            f"🕯️ ENTRÉE CONTRE-TENDANCE DESTRUCTRICE : {len(entry_counter)} trades "
+                            f"ouverts contre le momentum (bougie opposée) ont un WR de {counter_wr:.0f}% "
+                            f"et PnL moy {counter_avg:.2f}. "
+                            f"Les {len(entry_aligned)} trades alignés avec le momentum ont un WR de "
+                            f"{aligned_wr:.0f}% et PnL moy {aligned_avg:.2f}. "
+                            f"Écart WR : {aligned_wr - counter_wr:.0f}pts. "
+                            f"Relever min_micro_trend_long pour exiger un momentum confirmé avant d'entrer."
+                        ),
+                        sample_size=len(entry_counter) + len(entry_aligned),
+                        win_rate_observed=counter_wr,
+                        avg_pnl_observed=counter_avg,
                         profile_type=profile_type,
                         version=version,
                     ))

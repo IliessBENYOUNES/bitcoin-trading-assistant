@@ -1,67 +1,75 @@
-# HANDOFF GPT — Exit Candle Direction + Timestamps + Run Duration v2.0.16
+# HANDOFF GPT — Candle Direction Learning Patterns v2.0.17
 
 **Date :** 12 avril 2026  
-**Version :** v2.0.16 (feature)  
+**Version :** v2.0.17 (feature)  
 
 ---
 
 ## Problème
 
-Seule la pastille d'entrée était affichée. Aucune info sur la couleur de bougie à la sortie, pas de timestamp précis, pas de durée du run visible. Le modèle ML ne pouvait pas apprendre des patterns entrée/sortie.
+Le modèle d'apprentissage ne prenait pas en compte la **cohérence de couleur de bougie** entre l'entrée et la sortie d'un trade. L'utilisateur observait que les trades gagnants étaient ceux où la pastille restait de la même couleur (momentum conservé), tandis que les perdants avaient un changement de couleur (momentum retourné). Ce pattern n'était pas exploité par le learning.
+
+De plus, dans le journal UI, la pastille de sortie n'apparaissait pas pour les anciens trades (champ null), et les deux pastilles étaient visuellement indistinguables.
 
 ## Diagnostic
 
-1. `_close_position()` ne déterminait pas la direction de la bougie à la fermeture → `exit_candle_direction` inexistant
-2. Le journal affichait seulement la durée en heures (arrondi) → perte de précision pour les trades courts
-3. Le `LearningSignal` ne stockait aucune info sur les couleurs de bougie → données ML incomplètes
-4. Pas de compteur de durée du run visible en temps réel
+1. `analyze_patterns()` analysait par exit_type, score, direction, durée, utilité économique — mais **pas par cohérence candle direction**
+2. `suggest_adjustments()` ne générait aucune suggestion basée sur les patterns entrée/sortie de bougie
+3. L'UI n'avait pas de fallback pour les anciens trades sans `exit_candle_direction`
+4. Les pastilles E et S étaient identiques visuellement (même taille, pas de label)
 
 ## Cause racine
 
-Feature manquante — le v2.0.15 avait posé la base avec `entry_candle_direction` mais sans l'équivalent côté sortie.
+Feature manquante — le v2.0.16 avait posé les données (entry/exit candle dans LearningSignal) mais le moteur d'apprentissage ne les exploitait pas encore.
 
 ## Correction appliquée
 
-| Fichier | Changement |
-|---------|-----------|
-| `backend/app/models/paper_account.py` | + colonne `exit_candle_direction VARCHAR(10)` |
-| `backend/app/models/learning.py` | + colonnes `entry_candle_direction`, `exit_candle_direction` |
-| `backend/app/schemas/paper_trading.py` | + `exit_candle_direction`, `duration_seconds`, `model_post_init` |
-| `backend/app/services/paper_trading_service.py` | `_close_position` détermine exit candle (tick momentum + fallback prix) |
-| `backend/app/services/learning_service.py` | `record_sample` copie les deux candle directions |
-| `frontend/src/types/api.ts` | + `exit_candle_direction`, `duration_seconds` |
-| `frontend/src/hooks/usePaperTrading.ts` | + `autoStartedAt` state |
-| `frontend/src/components/PaperTradingPanel.tsx` | + `RunDurationTimer`, `formatPreciseTime`, `formatDurationSec`, CandleDirectionDot enrichi, TradeRow enrichi |
-| `backend/migrate_v2016.py` | Migration DB |
-| `backend/tests/test_paper_trading.py` | +8 tests |
+### Backend — Learning Service
+
+| Ajout | Détail |
+|-------|--------|
+| Pattern 7 : Candle consistency | 4 catégories : `same_aligned`, `same_counter`, `reversed_favor`, `reversed_against` |
+| Méta-pattern | Comparaison globale "même couleur" vs "changement" avec delta WR/PnL |
+| Pattern 8 : Durée × candle | Croisement scalps rapides (<2min) × cohérence couleur |
+| Suggestion 15 | Si reversed_against WR < 35% → réduire `stale_negative_exit_minutes` |
+| Suggestion 16 | Si entrée contre-tendance nettement pire → relever `min_micro_trend_long` |
+
+### Frontend — Pastilles enrichies
+
+| Changement | Détail |
+|-----------|--------|
+| Fallback sortie | Pastille S calculée client-side via `exit_price vs entry_price` si champ null |
+| Mini-labels | "E" / "S" en blanc dans chaque pastille (20px) |
+| Séparateur | `→` entre les deux pastilles |
+| Tooltip enrichi | Type de sortie (✅ TP, ❌ SL, ⚠️ Signal...) + PnL sur la pastille S |
 
 ## Ce qui n'a PAS été touché
 
-- Logique d'ouverture de position inchangée
-- `entry_candle_direction` existant inchangé (rétrocompat)
-- Aucun autre service modifié
-- Pas de changement d'endpoint API
+- Logique d'ouverture/fermeture de position inchangée
+- `record_sample()` inchangé (v2.0.16 le faisait déjà)
+- Aucun changement de modèle DB (pas de migration)
+- Aucun changement d'endpoint API
 
 ## Validations
 
-- ✅ **1709 tests** backend passent (0 régression, +8 nouveaux)
+- ✅ **1718 tests** backend passent (0 régression, +9 nouveaux)
 - ✅ `tsc --noEmit` sans erreur frontend
-- ✅ Migration DB PostgreSQL réussie (3 colonnes ajoutées)
+- ✅ Import `LearningService` OK
 
 ## Documentation mise à jour
 
 | Document | Mis à jour |
 |----------|-----------|
-| `docs/CURRENT_STATE.md` | ✅ Version, tests, dernier commit |
-| `CHANGELOG.md` | ✅ Nouvelle section v2.0.16 complète |
+| `docs/CURRENT_STATE.md` | ✅ Version 2.0.17, tests 1718, dernier commit |
+| `CHANGELOG.md` | ✅ Nouvelle section v2.0.17 complète |
 | `docs/HANDOFF_GPT.md` | ✅ Ce fichier |
 
 ## État actuel
 
 | Élément | Valeur |
 |---------|--------|
-| Version | v2.0.16 |
-| Tests | 1709 passing |
+| Version | v2.0.17 |
+| Tests | 1718 passing |
 | Frontend | tsc clean |
 
 ## Commandes de relance

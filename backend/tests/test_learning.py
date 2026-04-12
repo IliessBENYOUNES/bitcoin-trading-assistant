@@ -54,6 +54,32 @@ def _make_closed_trade(db, account_id, pnl=5.0, direction="long",
     return trade
 
 
+# Helper enrichi pour créer des trades avec candle directions
+def _make_candle_trade(db, account_id, pnl, direction, entry_candle, exit_candle,
+                       status="closed_signal", duration_hours=0.01, score=30):
+    """Crée un trade fermé avec candle directions renseignées."""
+    now = datetime.now(timezone.utc)
+    trade = PaperTrade(
+        account_id=account_id, status=status, direction=direction,
+        entry_price=85000.0, exit_price=85000.0 + pnl,
+        stop_loss_price=84700, take_profit_price=85300,
+        position_size_usd=1000.0, leverage=1.5,
+        profile_type="scalping", slot="scalping",
+        pnl=pnl, pnl_pct=round(pnl / 1500 * 100, 4),
+        entry_reason="test", exit_reason="test",
+        decision_score=score,
+        entry_ts=now - timedelta(hours=duration_hours),
+        exit_ts=now,
+        duration_hours=duration_hours,
+        entry_candle_direction=entry_candle,
+        exit_candle_direction=exit_candle,
+    )
+    db.add(trade)
+    db.commit()
+    db.refresh(trade)
+    return trade
+
+
 # ================================================================
 # Tests record_sample
 # ================================================================
@@ -176,6 +202,115 @@ class TestLearningPatterns:
         patterns = svc.analyze_patterns()
         assert len(patterns) > 0
 
+    def test_candle_pattern_same_aligned_detected(self, db_session):
+        """Le pattern 'same_aligned' est détecté (long + green→green)."""
+        account = _make_account(db_session)
+        svc = LearningService(db_session)
+        # Créer 12 trades : 6 long green→green (gagnants) + 6 longs red→green (perdants)
+        for _ in range(6):
+            t = _make_candle_trade(db_session, account.id, pnl=2.0, direction="long",
+                                   entry_candle="green", exit_candle="green")
+            svc.record_sample(t)
+        for _ in range(6):
+            t = _make_candle_trade(db_session, account.id, pnl=-1.5, direction="long",
+                                   entry_candle="green", exit_candle="red")
+            svc.record_sample(t)
+        patterns = svc.analyze_patterns()
+        names = [p.pattern_name for p in patterns]
+        assert "candle_same_aligned" in names
+
+    def test_candle_pattern_reversed_against_detected(self, db_session):
+        """Le pattern 'reversed_against' est détecté (long + green→red = momentum perdu)."""
+        account = _make_account(db_session)
+        svc = LearningService(db_session)
+        for _ in range(6):
+            t = _make_candle_trade(db_session, account.id, pnl=2.0, direction="long",
+                                   entry_candle="green", exit_candle="green")
+            svc.record_sample(t)
+        for _ in range(6):
+            t = _make_candle_trade(db_session, account.id, pnl=-1.0, direction="long",
+                                   entry_candle="green", exit_candle="red")
+            svc.record_sample(t)
+        patterns = svc.analyze_patterns()
+        names = [p.pattern_name for p in patterns]
+        assert "candle_reversed_against" in names
+
+    def test_candle_meta_pattern_consistency_vs_reversal(self, db_session):
+        """Le méta-pattern same vs reversed est calculé."""
+        account = _make_account(db_session)
+        svc = LearningService(db_session)
+        for _ in range(6):
+            t = _make_candle_trade(db_session, account.id, pnl=3.0, direction="long",
+                                   entry_candle="green", exit_candle="green")
+            svc.record_sample(t)
+        for _ in range(6):
+            t = _make_candle_trade(db_session, account.id, pnl=-2.0, direction="long",
+                                   entry_candle="green", exit_candle="red")
+            svc.record_sample(t)
+        patterns = svc.analyze_patterns()
+        meta = [p for p in patterns if p.pattern_name == "candle_consistency_vs_reversal"]
+        assert len(meta) == 1
+        # same color wins (3.0 avg) vs reversed loses (-2.0 avg)
+        assert meta[0].avg_pnl > 0  # delta favorable
+
+    def test_candle_duration_cross_analysis(self, db_session):
+        """Le croisement durée × candle est détecté (pattern 8)."""
+        account = _make_account(db_session)
+        svc = LearningService(db_session)
+        # Trades rapides (<2min = 0.03h) avec même couleur = bons
+        for _ in range(5):
+            t = _make_candle_trade(db_session, account.id, pnl=1.5, direction="long",
+                                   entry_candle="green", exit_candle="green",
+                                   duration_hours=0.01)
+            svc.record_sample(t)
+        # Trades rapides (<2min) avec changement de couleur = mauvais
+        for _ in range(5):
+            t = _make_candle_trade(db_session, account.id, pnl=-1.0, direction="long",
+                                   entry_candle="green", exit_candle="red",
+                                   duration_hours=0.01)
+            svc.record_sample(t)
+        # On a besoin de 10 minimum pour analyze_patterns
+        patterns = svc.analyze_patterns()
+        names = [p.pattern_name for p in patterns]
+        assert "duration_candle_fast_same_candle" in names
+        assert "duration_candle_fast_reversed_candle" in names
+
+    def test_candle_short_direction_patterns(self, db_session):
+        """Les patterns candle fonctionnent aussi pour les shorts."""
+        account = _make_account(db_session)
+        svc = LearningService(db_session)
+        # Short + red→red = same_aligned (favorable pour un short)
+        for _ in range(5):
+            t = _make_candle_trade(db_session, account.id, pnl=2.0, direction="short",
+                                   entry_candle="red", exit_candle="red")
+            svc.record_sample(t)
+        # Short + red→green = reversed_against (défavorable pour un short)
+        for _ in range(5):
+            t = _make_candle_trade(db_session, account.id, pnl=-1.5, direction="short",
+                                   entry_candle="red", exit_candle="green")
+            svc.record_sample(t)
+        patterns = svc.analyze_patterns()
+        names = [p.pattern_name for p in patterns]
+        assert "candle_same_aligned" in names
+        assert "candle_reversed_against" in names
+
+    def test_candle_pattern_impact_correct(self, db_session):
+        """Le pattern same_aligned gagnant a un impact positif, reversed_against perdant a un impact négatif."""
+        account = _make_account(db_session)
+        svc = LearningService(db_session)
+        for _ in range(6):
+            t = _make_candle_trade(db_session, account.id, pnl=3.0, direction="long",
+                                   entry_candle="green", exit_candle="green")
+            svc.record_sample(t)
+        for _ in range(6):
+            t = _make_candle_trade(db_session, account.id, pnl=-2.0, direction="long",
+                                   entry_candle="green", exit_candle="red")
+            svc.record_sample(t)
+        patterns = svc.analyze_patterns()
+        by_name = {p.pattern_name: p for p in patterns}
+        assert by_name["candle_same_aligned"].impact == "positif"
+        assert by_name["candle_reversed_against"].impact == "négatif"
+
 
 # ================================================================
 # Tests suggest_adjustments
@@ -205,6 +340,64 @@ class TestLearningSuggestions:
             if bounds:
                 assert s.suggested_value >= bounds[0]
                 assert s.suggested_value <= bounds[1]
+
+    def test_suggestion_candle_reversal_destructive(self, db_session):
+        """Si les trades avec changement de couleur défavorable sont perdants → suggestion stale_negative."""
+        account = _make_account(db_session)
+        svc = LearningService(db_session)
+        # 5 trades "same color" gagnants + 5 trades "reversed_against" très perdants
+        for _ in range(5):
+            t = _make_candle_trade(db_session, account.id, pnl=2.0, direction="long",
+                                   entry_candle="green", exit_candle="green")
+            svc.record_sample(t)
+        for _ in range(5):
+            t = _make_candle_trade(db_session, account.id, pnl=-3.0, direction="long",
+                                   entry_candle="green", exit_candle="red")
+            svc.record_sample(t)
+        suggestions = svc.suggest_adjustments("scalping")
+        candle_sugg = [s for s in suggestions if "CANDLE" in (s.reason or "")]
+        assert len(candle_sugg) >= 1
+        # La suggestion doit toucher stale_negative_exit_minutes
+        params = [s.parameter_name for s in candle_sugg]
+        assert "stale_negative_exit_minutes" in params
+
+    def test_suggestion_entry_counter_trend(self, db_session):
+        """Si entrer contre le momentum est nettement pire → suggestion min_micro_trend_long."""
+        account = _make_account(db_session)
+        svc = LearningService(db_session)
+        # 5 trades entrée alignée (long + green entry) → gagnants
+        for _ in range(5):
+            t = _make_candle_trade(db_session, account.id, pnl=3.0, direction="long",
+                                   entry_candle="green", exit_candle="green")
+            svc.record_sample(t)
+        # 5 trades entrée contre-tendance (long + red entry) → très perdants
+        for _ in range(5):
+            t = _make_candle_trade(db_session, account.id, pnl=-4.0, direction="long",
+                                   entry_candle="red", exit_candle="red")
+            svc.record_sample(t)
+        suggestions = svc.suggest_adjustments("scalping")
+        trend_sugg = [s for s in suggestions if "CONTRE-TENDANCE" in (s.reason or "")]
+        assert len(trend_sugg) >= 1
+        params = [s.parameter_name for s in trend_sugg]
+        assert "min_micro_trend_long" in params
+
+    def test_no_candle_suggestion_with_mixed_results(self, db_session):
+        """Si les reversals ne sont pas nettement perdants, pas de suggestion candle."""
+        account = _make_account(db_session)
+        svc = LearningService(db_session)
+        # 5 trades same color gagnants
+        for _ in range(5):
+            t = _make_candle_trade(db_session, account.id, pnl=1.0, direction="long",
+                                   entry_candle="green", exit_candle="green")
+            svc.record_sample(t)
+        # 5 trades reversed AUSSI gagnants → pas de problème → pas de suggestion
+        for _ in range(5):
+            t = _make_candle_trade(db_session, account.id, pnl=0.5, direction="long",
+                                   entry_candle="green", exit_candle="red")
+            svc.record_sample(t)
+        suggestions = svc.suggest_adjustments("scalping")
+        candle_sugg = [s for s in suggestions if "CANDLE CRITIQUE" in (s.reason or "")]
+        assert len(candle_sugg) == 0  # Pas de suggestion si pas de problème
 
 
 # ================================================================

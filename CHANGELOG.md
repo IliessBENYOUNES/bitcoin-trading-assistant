@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.17] - 2026-04-12
+
+### Added
+- **CANDLE DIRECTION LEARNING PATTERNS** — Le `LearningService.analyze_patterns()` analyse désormais la cohérence entrée→sortie des bougies comme **pattern d'apprentissage prioritaire**. 4 catégories : `same_aligned` (momentum conservé ✅), `same_counter` (piégé contre-courant), `reversed_favor` (reversal gagnant), `reversed_against` (momentum perdu ❌).
+- **MÉTA-PATTERN CONSISTENCY vs REVERSAL** — Comparaison globale des trades "même couleur" vs "changement de couleur" avec delta WR et delta PnL. Permet de quantifier l'avantage de rester dans le momentum.
+- **CROISEMENT DURÉE × CANDLE** — Analyse croisée : scalps rapides (<2min) à même couleur vs changement, trades lents (≥2min) avec reversal. Identifie les configurations optimales (court + même couleur = bon scalp).
+- **SUGGESTION CANDLE REVERSAL** — Si les trades avec changement de couleur défavorable sont massivement perdants (WR < 35%), le learning suggère de réduire `stale_negative_exit_minutes` pour couper plus vite quand le momentum se retourne.
+- **SUGGESTION ENTRÉE CONTRE-TENDANCE** — Si entrer contre le momentum micro (long sur bougie rouge) est nettement pire qu'entrer aligné, le learning suggère de relever `min_micro_trend_long`.
+- **PASTILLE SORTIE FALLBACK** — Dans le journal, la pastille de sortie (S) s'affiche même pour les anciens trades sans `exit_candle_direction` en déduisant la couleur de `exit_price` vs `entry_price`.
+- **PASTILLES ENRICHIES** — Chaque pastille contient un mini-label "E"/"S", séparateur →, tooltip avec type de sortie (✅ TP, ❌ SL, ⚠️ Signal...) et PnL sur la pastille de sortie.
+- **9 nouveaux tests** : candle patterns (same_aligned, reversed_against, meta, durée×candle, shorts, impact), suggestions candle (reversal destructive, contre-tendance, mixed results).
+
+### Changed
+- `CandleDirectionDot` : pastille agrandie 14→20px, mini-label "E"/"S" intégré, props `exitType` et `pnl` pour tooltip enrichi.
+- `TradeRow` : fallback `exitCandle` calculé client-side, séparateur → entre pastilles, `exitType` + `pnl` passés au tooltip sortie.
+- `EXIT_TYPE_LABELS` : mapping lisible des statuts de sortie pour le tooltip.
+
+### Technical
+- Modifié : `backend/app/services/learning_service.py` — Pattern 7 (candle consistency), Pattern 8 (durée×candle), Suggestion 15 (reversal destructive), Suggestion 16 (contre-tendance)
+- Modifié : `backend/tests/test_learning.py` — +9 tests (classes TestCandleDirectionPatterns + TestCandleDirectionSuggestions)
+- Modifié : `frontend/src/components/PaperTradingPanel.tsx` — Pastilles enrichies + fallback sortie
+- Tests : 1709 → 1718 (+9)
+
 ## [2.0.16] - 2026-04-12
 
 ### Added
