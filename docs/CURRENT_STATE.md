@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 12 avril 2026
 > **Version :** v2.0.6
 > **Branche :** `master`
-> **Dernier commit :** (en cours) — feat(scalping): désactivation gate micro-trend + timer position UI + certification profil
+> **Dernier commit :** `f2592a4` — feat(scalping): disable micro-trend gate (1→0) + position timer UI + profile certification banner
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Date :** 12 avril 2026  
 **Version :** v2.0.6  
-**Commit :** (en cours)
+**Commit :** `f2592a4` — feat(scalping): disable micro-trend gate (1→0) + position timer UI + profile certification banner
 
 ---
 
