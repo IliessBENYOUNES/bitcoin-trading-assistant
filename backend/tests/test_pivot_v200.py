@@ -13,7 +13,7 @@ Tests couvrant :
 """
 
 import pytest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from app.services.trading_cost_service import (
     TradingCostModel, COST_REALISTIC, COST_OPTIMISTIC, get_cost_model,
@@ -2187,11 +2187,11 @@ class TestTickMomentumIntegrationV2013:
 
         # Créer un compte scalping
         account = PaperAccount(
-            initial_capital=10000.0, current_capital=10000.0,
-            peak_capital=10000.0, is_active=True, active_profile="scalping",
+            initial_capital=10000, current_capital=10000,
+            peak_capital=10000, is_active=True, active_profile="scalping",
         )
         db_session.add(account)
-        db_session.flush()
+        db_session.commit()
 
         svc = PaperTradingService(db_session)
         now = datetime.now(timezone.utc)
@@ -2251,12 +2251,16 @@ class TestTickMomentumIntegrationV2013:
             ],
         }
 
+        # mq_data avec micro_trend BEARISH (-5) → aurait bloqué le LONG via structural proofs
+        mq_data = {
+            "market_quality_score": 60, "volume_ratio": 0.7,
+            "price_position_pct": 0.6, "range_width_atr": 1.0,
+            "micro_trend_score": -5,  # Bearish ! 0 structural proofs for LONG
+            "vwap_distance_pct": 0.1,
+        }
+
         with patch.object(svc, "_get_decision", return_value=decision), \
-             patch.object(svc, "_check_market_quality", return_value=(None, {
-                 "market_quality_score": 60, "volume_ratio": 1.2,
-                 "price_position_pct": 0.7, "range_width_atr": 2.5,
-                 "micro_trend_score": -3, "vwap_distance_pct": 0.5,
-             })), \
+             patch.object(svc, "_check_market_quality", return_value=(None, mq_data)), \
              patch.object(svc, "_check_cooldown", return_value=None), \
              patch.object(svc, "_check_max_trades_per_day", return_value=None):
             result = svc._tick_single_slot(
@@ -2473,4 +2477,165 @@ class TestScalpingV2020:
         assert scalp.min_structural_proofs == 2
         # L'override est activé pour le scalping
         assert scalp.tick_momentum_override_direction is True
+
+
+# ================================================================
+# v2.0.21 -- Vérification de la stabilité du momentum
+# ================================================================
+
+class TestMomentumStabilityV2021:
+    """[v2.0.21] Tests pour check_momentum_stability — détection de fin de bougie."""
+
+    def setup_method(self):
+        TickMomentumService.clear_buffer()
+
+    def test_stable_long_momentum(self):
+        """Un LONG est stable si les ticks récents vont tous vers le haut."""
+        base = datetime(2026, 4, 13, 12, 0, 0, tzinfo=timezone.utc)
+        # Créer des ticks en hausse constante sur 30 secondes
+        for i in range(20):
+            ts = base + timedelta(seconds=i * 1.5)
+            TickMomentumService.record_tick("scalping", 83000 + i * 5, ts)
+
+        is_stable, reason = TickMomentumService.check_momentum_stability(
+            slot="scalping", direction="long", long_window=30, short_window=10
+        )
+        assert is_stable is True, f"Momentum devrait être stable: {reason}"
+        assert "stable" in reason.lower() or "✅" in reason
+
+    def test_unstable_long_price_receding(self):
+        """Un LONG est instable si les ticks récents descendent (fin de bougie verte)."""
+        base = datetime(2026, 4, 13, 12, 0, 0, tzinfo=timezone.utc)
+        # D'abord une hausse pendant 20s
+        for i in range(14):
+            ts = base + timedelta(seconds=i * 1.5)
+            TickMomentumService.record_tick("scalping", 83000 + i * 8, ts)
+        # Puis une baisse dans les 10 dernières secondes
+        peak = 83000 + 13 * 8
+        for i in range(8):
+            ts = base + timedelta(seconds=21 + i * 1.2)
+            TickMomentumService.record_tick("scalping", peak - i * 6, ts)
+
+        is_stable, reason = TickMomentumService.check_momentum_stability(
+            slot="scalping", direction="long", long_window=30, short_window=10
+        )
+        assert is_stable is False, f"Momentum devrait être instable pour LONG: {reason}"
+        assert "instable" in reason.lower() or "⚠️" in reason
+
+    def test_stable_short_momentum(self):
+        """Un SHORT est stable si les ticks récents vont tous vers le bas."""
+        base = datetime(2026, 4, 13, 12, 0, 0, tzinfo=timezone.utc)
+        for i in range(20):
+            ts = base + timedelta(seconds=i * 1.5)
+            TickMomentumService.record_tick("scalping", 83000 - i * 5, ts)
+
+        is_stable, reason = TickMomentumService.check_momentum_stability(
+            slot="scalping", direction="short", long_window=30, short_window=10
+        )
+        assert is_stable is True, f"Momentum devrait être stable: {reason}"
+
+    def test_unstable_short_price_rebounding(self):
+        """Un SHORT est instable si les ticks récents remontent (fin de bougie rouge)."""
+        base = datetime(2026, 4, 13, 12, 0, 0, tzinfo=timezone.utc)
+        # Baisse pendant 20s
+        for i in range(14):
+            ts = base + timedelta(seconds=i * 1.5)
+            TickMomentumService.record_tick("scalping", 83000 - i * 8, ts)
+        # Puis rebond dans les 10 dernières secondes
+        trough = 83000 - 13 * 8
+        for i in range(8):
+            ts = base + timedelta(seconds=21 + i * 1.2)
+            TickMomentumService.record_tick("scalping", trough + i * 6, ts)
+
+        is_stable, reason = TickMomentumService.check_momentum_stability(
+            slot="scalping", direction="short", long_window=30, short_window=10
+        )
+        assert is_stable is False, f"Momentum devrait être instable pour SHORT: {reason}"
+
+    def test_insufficient_data_allows_entry(self):
+        """Avec peu de données, l'entrée est autorisée (pas de blocage au démarrage)."""
+        TickMomentumService.record_tick("scalping", 83000.0,
+                                         datetime(2026, 4, 13, 12, 0, 0, tzinfo=timezone.utc))
+        is_stable, reason = TickMomentumService.check_momentum_stability(
+            slot="scalping", direction="long"
+        )
+        assert is_stable is True
+
+    def test_tick_ratio_unstable_long(self):
+        """Un LONG est bloqué si >65% des ticks récents sont baissiers."""
+        base = datetime(2026, 4, 13, 12, 0, 0, tzinfo=timezone.utc)
+        # 15 ticks en hausse (anciens) + 10 ticks récents dont 8 baissiers
+        for i in range(15):
+            ts = base + timedelta(seconds=i)
+            TickMomentumService.record_tick("scalping", 83000 + i * 3, ts)
+        peak = 83000 + 14 * 3
+        # 10 ticks récents : 2 up + 8 down
+        for i in range(10):
+            ts = base + timedelta(seconds=22 + i)
+            if i < 2:
+                TickMomentumService.record_tick("scalping", peak + (i + 1) * 0.5, ts)
+            else:
+                TickMomentumService.record_tick("scalping", peak - (i - 1) * 2, ts)
+
+        is_stable, reason = TickMomentumService.check_momentum_stability(
+            slot="scalping", direction="long", long_window=35, short_window=12
+        )
+        assert is_stable is False, f"Devrait bloquer le LONG avec ratio baissier: {reason}"
+
+    def test_momentum_stability_integration_blocks_entry(self, db_session):
+        """[v2.0.21] Intégration : le momentum instable bloque l'entrée via override."""
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models import PaperAccount
+        from unittest.mock import patch, MagicMock
+
+        svc = PaperTradingService(db_session)
+        account = PaperAccount(
+            id=1, initial_capital=10000, current_capital=10000,
+            is_active=True, active_profile="scalping", max_open_positions=3,
+        )
+        db_session.add(account)
+        db_session.commit()
+
+        base = datetime(2026, 4, 13, 14, 0, 0, tzinfo=timezone.utc)
+        TickMomentumService.clear_buffer()
+
+        # Simuler une hausse 30s MAIS fin de bougie en baisse (derniers 10s)
+        for i in range(14):
+            ts = base + timedelta(seconds=i * 1.5)
+            TickMomentumService.record_tick("scalping", 83000 + i * 8, ts)
+        peak = 83000 + 13 * 8
+        for i in range(8):
+            ts = base + timedelta(seconds=21 + i * 1.2)
+            TickMomentumService.record_tick("scalping", peak - i * 6, ts)
+
+        # Le detect_direction (30s) dira "long" (hausse globale)
+        # Mais check_momentum_stability (10s) dira "instable"
+        decision = MagicMock()
+        decision.action = "acheter"
+        decision.score = 50
+        decision.confidence = "medium"
+        decision.summary = "test"
+        decision.rules = []
+
+        mq_data = {
+            "market_quality_score": 60, "volume_ratio": 1.0,
+            "price_position_pct": 0.3, "range_width_atr": 2.0,
+            "micro_trend_score": 3, "vwap_distance_pct": 0.1,
+        }
+
+        with patch.object(svc, "_get_decision", return_value=decision), \
+             patch.object(svc, "_check_market_quality", return_value=(None, mq_data)), \
+             patch.object(svc, "_check_cooldown", return_value=None), \
+             patch.object(svc, "_check_max_trades_per_day", return_value=None):
+            result = svc._tick_single_slot(
+                account=account, slot_name="scalping",
+                current_price=peak - 7 * 6, now=base + timedelta(seconds=30),
+                is_multi=True,
+            )
+
+        # Le trade NE devrait PAS s'ouvrir — momentum instable
+        assert result.non_trade_reason == "momentum_unstable", (
+            f"Le momentum instable aurait dû bloquer l'entrée. Got: action={result.action_taken}, "
+            f"reason={result.non_trade_reason or 'none'}, detail={result.detail}"
+        )
 

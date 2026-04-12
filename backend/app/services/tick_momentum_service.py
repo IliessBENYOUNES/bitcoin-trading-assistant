@@ -403,6 +403,133 @@ class TickMomentumService:
         return len(cls._buffers.get(slot, []))
 
     # ================================================================
+    # [v2.0.21] MOMENTUM STABILITY CHECK — Prédiction de retournement
+    # ================================================================
+
+    @classmethod
+    def check_momentum_stability(
+        cls,
+        slot: str,
+        direction: str,
+        long_window: float = 30.0,
+        short_window: float = 10.0,
+        min_ticks: int = 3,
+    ) -> tuple[bool, str]:
+        """
+        Vérifie que le momentum est STABLE avant d'entrer en position.
+
+        L'idée : comparer la direction sur 2 fenêtres (longue ~30s et courte ~10s).
+        Si la fenêtre longue dit "up" mais la fenêtre courte dit "down" ou "flat",
+        ça signifie que le mouvement est en train de s'essouffler → la bougie va
+        probablement changer de couleur dans les prochaines secondes.
+
+        On vérifie aussi le ratio de ticks récents : si les derniers ticks vont
+        majoritairement contre la direction, le momentum s'inverse.
+
+        Args:
+            slot: Nom du slot
+            direction: Direction envisagée ("long" ou "short")
+            long_window: Fenêtre longue en secondes (tendance globale)
+            short_window: Fenêtre courte en secondes (micro-tendance récente)
+            min_ticks: Minimum de ticks requis par fenêtre
+
+        Returns:
+            (is_stable, reason):
+            - is_stable: True si le momentum est stable dans la direction
+            - reason: Explication textuelle
+        """
+        buffer = cls._buffers.get(slot, [])
+
+        if len(buffer) < min_ticks * 2:
+            return True, "Données insuffisantes pour évaluer la stabilité, entrée autorisée"
+
+        now = buffer[-1][0]
+
+        # Fenêtre courte (dernières ~10s) — la micro-tendance immédiate
+        short_cutoff = now.timestamp() - short_window
+        short_ticks = [(ts, p) for ts, p in buffer if ts.timestamp() >= short_cutoff]
+
+        if len(short_ticks) < min_ticks:
+            return True, f"Ticks courts insuffisants ({len(short_ticks)}/{min_ticks}), entrée autorisée"
+
+        # Calculer la direction de la fenêtre courte
+        short_start = short_ticks[0][1]
+        short_end = short_ticks[-1][1]
+        short_change_pct = (short_end - short_start) / short_start * 100 if short_start > 0 else 0
+
+        # Compter les ticks montants/descendants dans la fenêtre courte
+        short_up = 0
+        short_down = 0
+        for i in range(1, len(short_ticks)):
+            if short_ticks[i][1] > short_ticks[i-1][1]:
+                short_up += 1
+            elif short_ticks[i][1] < short_ticks[i-1][1]:
+                short_down += 1
+
+        short_total = short_up + short_down
+        short_up_ratio = short_up / short_total if short_total > 0 else 0.5
+
+        # Fenêtre longue (dernières ~30s) — la tendance globale
+        long_cutoff = now.timestamp() - long_window
+        long_ticks = [(ts, p) for ts, p in buffer if ts.timestamp() >= long_cutoff]
+
+        if len(long_ticks) < min_ticks:
+            return True, f"Ticks longs insuffisants ({len(long_ticks)}/{min_ticks}), entrée autorisée"
+
+        long_start = long_ticks[0][1]
+        long_end = long_ticks[-1][1]
+        long_change_pct = (long_end - long_start) / long_start * 100 if long_start > 0 else 0
+
+        # ── Vérification de stabilité ──
+
+        if direction == "long":
+            # Pour un LONG, le prix doit monter sur les deux fenêtres
+
+            # 1. La fenêtre courte ne doit pas être négative (prix en train de baisser)
+            if short_change_pct < -cls.MIN_MOVE_PCT:
+                return False, (
+                    f"⚠️ Momentum instable pour LONG : prix en recul "
+                    f"sur les {short_window:.0f}s récentes ({short_change_pct:+.4f}%), "
+                    f"risque de changement de bougie imminent"
+                )
+
+            # 2. Le ratio de ticks récents ne doit pas être majoritairement baissier
+            if short_total >= 3 and short_up_ratio < 0.35:
+                return False, (
+                    f"⚠️ Momentum en perte de vitesse pour LONG : "
+                    f"seulement {short_up_ratio:.0%} ticks haussiers "
+                    f"sur {short_total} ticks récents ({short_window:.0f}s), "
+                    f"bougie en train de tourner au rouge"
+                )
+
+        elif direction == "short":
+            # Pour un SHORT, le prix doit baisser sur les deux fenêtres
+
+            # 1. La fenêtre courte ne doit pas être positive (prix en train de monter)
+            if short_change_pct > cls.MIN_MOVE_PCT:
+                return False, (
+                    f"⚠️ Momentum instable pour SHORT : prix en rebond "
+                    f"sur les {short_window:.0f}s récentes ({short_change_pct:+.4f}%), "
+                    f"risque de changement de bougie imminent"
+                )
+
+            # 2. Le ratio de ticks récents ne doit pas être majoritairement haussier
+            if short_total >= 3 and short_up_ratio > 0.65:
+                return False, (
+                    f"⚠️ Momentum en perte de vitesse pour SHORT : "
+                    f"{short_up_ratio:.0%} ticks haussiers "
+                    f"sur {short_total} ticks récents ({short_window:.0f}s), "
+                    f"bougie en train de tourner au vert"
+                )
+
+        return True, (
+            f"✅ Momentum stable pour {direction.upper()} : "
+            f"fenêtre courte {short_change_pct:+.4f}% ({len(short_ticks)} ticks), "
+            f"fenêtre longue {long_change_pct:+.4f}% ({len(long_ticks)} ticks), "
+            f"ratio haussier {short_up_ratio:.0%}"
+        )
+
+    # ================================================================
     # [v2.0.18] CANDLE REVERSAL DETECTION
     # ================================================================
 

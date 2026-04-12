@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.21] - 2026-04-13
+
+### Added
+- **MOMENTUM STABILITY CHECK** — Nouveau gate d'entrée `check_momentum_stability()` dans `TickMomentumService`. Compare la direction du prix sur 2 fenêtres temporelles : longue (~30s, tendance globale) et courte (~10s, micro-tendance immédiate). Si la fenêtre longue dit "up" mais la courte dit "down", ça signifie que la bougie est en fin de vie et va probablement changer de couleur → l'entrée est bloquée avec raison `momentum_unstable`. Élimine les entrées juste avant un retournement de bougie (pastille qui change de couleur immédiatement après l'entrée).
+- **JOURNAL FILTERS (frontend)** — Barre de filtres complète sur le journal des trades dans PaperTradingPanel : direction (Long/Short), résultat (Gagnant/Perdant), cohérence bougie entrée→sortie (Même couleur / Changée), slot (Scalping/Aggressive), type de sortie (TP/SL/Trail/etc.). Stats dynamiques affichées sous les filtres (nombre, wins, losses, win rate, PnL). Bouton reset. Permet d'observer instantanément les patterns de trades gagnants vs perdants.
+
+### Changed
+- `_tick_single_slot` : le momentum stability check est exécuté APRÈS la détection de direction override et AVANT l'ouverture de position. Bloque les entrées en fin de bougie.
+- `PaperTradingPanel.tsx` : le journal utilise `filteredTrades` au lieu de `trades` directement. Les filtres sont appliqués côté client avec `useMemo`.
+
+### Technical
+- Ajouté : `TickMomentumService.check_momentum_stability()` — compare fenêtre courte vs longue + ratio de ticks
+- Modifié : `paper_trading_service.py` — 20 lignes : momentum stability check après override direction
+- Modifié : `PaperTradingPanel.tsx` — ~150 lignes : filtres état + UI + filteredTrades + stats
+- Ajouté : 7 tests dans `TestMomentumStabilityV2021` (stable long, unstable long receding, stable short, unstable short rebounding, insufficient data, tick ratio, integration)
+- Tests : 1739 (+7)
+
 ## [2.0.20] - 2026-04-13
 
 ### Fixed

@@ -1044,6 +1044,36 @@ class PaperTradingService:
                         f"({tm_result.detail})"
                     )
 
+                    # [v2.0.21] MOMENTUM STABILITY CHECK — Ne pas entrer si la bougie
+                    # est sur le point de changer de couleur. Quand le momentum 30s dit "up"
+                    # mais les 10 dernières secondes disent "down", on est en fin de bougie
+                    # verte → si on entre LONG maintenant, on va changer de pastille
+                    # immédiatement → trade perdant. On attend la prochaine bougie stable.
+                    is_stable, stability_detail = TickMomentumService.check_momentum_stability(
+                        slot=slot_name,
+                        direction=tm_direction,
+                        long_window=tm_window,
+                        short_window=max(tm_window / 3, 8.0),
+                        min_ticks=tm_min_ticks,
+                    )
+                    if not is_stable:
+                        logger.info(f"⏸️ Momentum instable [{slot_name}]: {stability_detail}")
+                        _log_tick(action_taken="hold", btc_price=current_price,
+                                  decision_score=score, decision_action=action,
+                                  decision_confidence=confidence,
+                                  reason_no_trade="momentum_unstable",
+                                  reason_detail=stability_detail[:500])
+                        return PaperTickResult(
+                            action_taken="hold",
+                            detail=f"Momentum instable, bougie en fin de vie : {stability_detail}",
+                            current_price=current_price,
+                            timestamp=now.isoformat(),
+                            decision_score=score,
+                            decision_action=action,
+                            profile_type=profile_name,
+                            non_trade_reason="momentum_unstable",
+                        )
+
             # [v1.6.2] Scalping bidirectionnel — mean reversion
             # En scalping, on ne suit pas aveuglément la tendance. Quand les
             # oscillateurs (RSI, StochRSI) montrent un surachat/survente extrême,

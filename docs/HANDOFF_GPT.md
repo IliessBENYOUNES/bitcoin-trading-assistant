@@ -1,87 +1,113 @@
-# 🔄 HANDOFF GPT — v2.0.20
+# 🔄 Handoff GPT — Dernière intervention
 
 > **Date :** 13 avril 2026
-> **Intervention :** Fix biais 100% SHORT sur slot scalping
+> **Version :** v2.0.21
+> **Titre :** Momentum Stability Check + Journal Filters
 
 ---
 
 ## Problème
 
-Le système de paper trading ne produisait **aucun trade LONG** sur le slot scalping depuis plusieurs heures. Tous les trades étaient des SHORTs (`mean_reversion_short` ou `tick_override_short`). Un trade aggressive a dérivé 3h en perte (-$10.32) avant d'être fermé en stale.
+L'utilisateur a observé un pattern clair dans le journal des trades : **les trades gagnants conservent la même couleur de pastille** (bougie entrée = bougie sortie), tandis que les trades perdants changent de couleur immédiatement après l'entrée. Cela signifie que le robot entre en fin de bougie, juste avant un retournement.
+
+Deux besoins :
+1. **Filtres journal** — Pour analyser visuellement les trades par direction, résultat, cohérence de bougie, slot, type de sortie
+2. **Prédiction retournement** — Ne pas entrer si la bougie est sur le point de changer de couleur
+
+---
 
 ## Diagnostic
 
-Analyse du flux d'entrée dans `_tick_single_slot()` :
+Le tick momentum override (v2.0.14) détecte la direction sur 30 secondes. Mais il ne vérifie pas si le mouvement est en train de **s'essouffler**. Exemple : sur 30s le prix monte (→ LONG), mais les 10 dernières secondes montrent un recul → la bougie va devenir rouge → si on entre LONG maintenant, on perd.
 
-1. Le **tick momentum override** (v2.0.14) détecte la direction réelle du prix sur 30 sec
-2. Quand prix monte → `action = "acheter"` (LONG), `tm_override_active = True`
-3. Le code BYPASS correctement : bearish_veto, scalping_reversal, tick_momentum_confirmation
-4. **MAIS** le gate **structural proofs** (ligne ~1172) n'était PAS bypassé
+---
 
 ## Cause racine
 
-Le gate structural proofs vérifie 4 preuves pour valider une entrée :
-- `micro_trend_score ≥ 3` pour LONG, `≤ -3` pour SHORT
-- `price_position < 0.35` pour LONG, `> 0.65` pour SHORT
-- `volume_ratio ≥ 1.0`
-- `range_width_atr ≥ 1.5`
+Absence de vérification de la **stabilité** du momentum avant l'entrée. Le `detect_direction()` regarde la tendance globale (30s) mais ignore la micro-tendance récente (10s).
 
-Le `micro_trend_score` vient des **indicateurs 15 min** (lagging). En marché bearish/ranging, il est **négatif**. Conséquence :
-- **SHORT** : micro_trend négatif = 1 preuve (+ éventuellement volume) → **PASSE** (2/4 requis)
-- **LONG** : micro_trend négatif = 0 preuves pour ce critère → **BLOQUÉ** (0-1/4, < 2 requis)
-
-Le tick momentum override était conçu pour bypasser les indicateurs lagging. Mais le structural proofs gate réintroduisait ce même biais via micro_trend_score → **100% SHORT**.
+---
 
 ## Correction appliquée
 
-| Fichier | Ligne | Avant | Après |
-|---------|-------|-------|-------|
-| `paper_trading_service.py` | ~1180 | `if min_proofs > 0 and mq_data:` | `if min_proofs > 0 and mq_data and not tm_override_active:` |
+### Backend : `tick_momentum_service.py`
+- **Nouvelle méthode** `check_momentum_stability(slot, direction, long_window=30, short_window=10)` :
+  - Compare la direction sur la fenêtre longue (30s) vs courte (10s)
+  - Si la fenêtre courte va CONTRE la direction, bloque l'entrée
+  - Si le ratio de ticks récents est > 65% contre la direction, bloque
+  - Si données insuffisantes, laisse passer (pas de blocage au démarrage)
 
-1 seule ligne modifiée. Commentaire v2.0.20 ajouté avec justification.
+### Backend : `paper_trading_service.py`
+- **Après le tick momentum override** (qui détecte la direction), appel à `check_momentum_stability()`
+- Si instable → retourne `hold` avec `non_trade_reason="momentum_unstable"`
+
+### Frontend : `PaperTradingPanel.tsx`
+- **5 filtres** dans le journal : direction, résultat, cohérence bougie, slot, type de sortie
+- **Stats dynamiques** sous les filtres : total, wins, losses, WR, PnL
+- Bouton reset pour effacer tous les filtres
+- Le journal affiche `filteredTrades` au lieu de `trades`
+
+---
 
 ## Ce qui n'a PAS été touché
 
-- Profils (aucun paramètre changé)
-- Tick momentum service (inchangé)
-- Candle reversal (inchangé)
-- Slot aggressive (les protections v2.0.19 sont déjà en place)
-- Frontend (aucun changement)
-- Toutes les autres gates (economic, market quality, min_score, risk engine)
+- ✅ Profils trading (aucun paramètre changé)
+- ✅ Trailing stop / gain erosion / breakeven / stale exit
+- ✅ Candle reversal exit (v2.0.18)
+- ✅ Mode autonome backend
+- ✅ Slot aggressive (sanctuarisé)
+- ✅ JournalPanel (séparé du PaperTradingPanel)
+
+---
 
 ## Validations
 
-| Check | Résultat |
-|-------|----------|
-| Tests backend | **1732 passed** ✅ (+2 nouveaux) |
-| TypeScript | `tsc --noEmit` clean ✅ |
-| Test override LONG | `opened_long` avec micro_trend=-5 ✅ |
-| Non-régression structural proofs | `min_structural_proofs=2` toujours actif sans override ✅ |
+- ✅ **1739 tests** backend passent (dont 7 nouveaux)
+- ✅ `tsc --noEmit` sans erreur
+- ✅ Backend relancé et mode autonome actif
+- ✅ Endpoint `/health` OK
+
+---
 
 ## Documentation mise à jour
 
 | Document | Changement |
-|----------|------------|
-| `docs/CURRENT_STATE.md` | Version 2.0.20, tests 1732, description fix v2.0.20 |
-| `CHANGELOG.md` | Nouvelle entrée [2.0.20] Fixed + Changed + Technical |
-| `docs/ROADMAP.md` | (pas de changement de phase) |
-| `docs/requirements_traceability.md` | (pas de nouvelles exigences) |
+|----------|-----------|
+| `docs/CURRENT_STATE.md` | Version 2.0.21, tests 1739, features |
+| `CHANGELOG.md` | Entrée v2.0.21 complète |
 | `docs/HANDOFF_GPT.md` | Ce fichier |
+| `docs/ROADMAP.md` | Pas modifié (pas de changement de phase) |
+| `docs/requirements_traceability.md` | Pas modifié (pas de nouvelle exigence formelle) |
+
+---
 
 ## Commit
 
 ```
-fix(scalping): bypass structural proofs when tick momentum override active — fixes 100% SHORT bias v2.0.20
+feat(scalping): momentum stability check + journal filters v2.0.21
 ```
+
+---
 
 ## État actuel
 
 | Élément | Valeur |
 |---------|--------|
-| Version | v2.0.20 |
-| Tests | 1732 passing |
-| Frontend | tsc clean |
-| Prochaine action | Observer le runtime : vérifier que des LONGs apparaissent sur le slot scalping |
+| Version | v2.0.21 |
+| Tests | 1739 ✅ |
+| TSC | 0 erreur ✅ |
+| Backend | Running (port 8000) |
+| Autonome | Running (scalping, 10s) |
+
+---
+
+## Prochaine action recommandée
+
+1. **Observer** les trades avec le nouveau filtre de stabilité pour valider que les entrées en fin de bougie sont bien bloquées
+2. **Filtrer** dans le journal pour comparer : même couleur (gagnants) vs changée (perdants) et confirmer le pattern
+3. Si le filtre `momentum_unstable` bloque trop souvent, **ajuster** les paramètres (fenêtre courte, ratio seuil)
+
+---
 
 ## Commandes de relance
 
@@ -92,25 +118,9 @@ cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 80
 # Frontend
 cd frontend && npm run dev
 
+# Mode autonome
+curl -X POST http://localhost:8000/paper/autonomous/start -H "Content-Type: application/json" -d '{"interval_seconds": 10, "profile": "scalping"}'
+
 # Tests
 cd backend && python -m pytest tests/ -v
-cd frontend && npx tsc --noEmit
 ```
-
-## Explication technique détaillée
-
-### Pourquoi le bypass est sûr
-
-Quand `tm_override_active=True`, la direction vient de la **direction réelle du prix** sur les 30 dernières secondes (6+ ticks). C'est une preuve structurelle EN SOI — plus fiable que le micro_trend_score 15 min qui est en retard.
-
-Les protections restantes sans structural proofs :
-1. **Economic gate** : vérifie la viabilité financière (coût RT vs capture attendue)
-2. **Market quality gate** : quality_score ≥ 50, volume_ratio ≥ 0.8
-3. **Min score** : |score| ≥ 10 (réduit en override, filtre les marchés morts)
-4. **Cooldown** : 1 min minimum entre trades
-5. **Risk engine** : SL/TP, kill switch, daily loss limit
-6. **Max trades/jour** : 30 max
-
-### Pourquoi le trade aggressive de 3h
-
-Le slot aggressive n'a **pas** de tick momentum override (by design — c'est un swing intraday). Il suit les indicateurs 1h. En marché bearish sur le 1h, il ne produit que des SHORTs. Le trade #597 a dérivé 3h car l'ancien profil aggressive n'avait aucun trailing stop ni stale négatif raccourci. **C'est déjà corrigé** par v2.0.19 (`stale_negative=60 min`, `trailing 0.15%+30%`, `gain_erosion 50%`).

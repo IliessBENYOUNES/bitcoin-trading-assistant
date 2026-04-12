@@ -9,7 +9,7 @@
  * - Mode AUTO : exécute des ticks automatiquement à intervalle régulier
  * - 🤖 Bouton unique "Lancer le Robot" : choisit le profil, active, et démarre l'auto
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -440,6 +440,63 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
   const [activeProfile, setActiveProfile] = useState<TradingProfileType | null>(null);
   const [launching, setLaunching] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // ── [v2.0.21] Filtres Journal ──────────────────────────────────────────────
+  const [filterDirection, setFilterDirection] = useState<'all' | 'long' | 'short'>('all');
+  const [filterResult, setFilterResult] = useState<'all' | 'win' | 'loss'>('all');
+  const [filterCandle, setFilterCandle] = useState<'all' | 'same' | 'changed'>('all');
+  const [filterSlot, setFilterSlot] = useState<'all' | 'scalping' | 'aggressive'>('all');
+  const [filterExitType, setFilterExitType] = useState<string>('all');
+
+  // Trades filtrés (fermés seulement)
+  const filteredTrades = useMemo(() => {
+    return trades.filter((t) => {
+      // Direction
+      if (filterDirection !== 'all' && t.direction !== filterDirection) return false;
+      // Résultat
+      if (filterResult === 'win' && (t.pnl == null || t.pnl < 0)) return false;
+      if (filterResult === 'loss' && (t.pnl == null || t.pnl >= 0)) return false;
+      // Cohérence bougie entrée→sortie
+      if (filterCandle !== 'all') {
+        const exitDir = t.exit_candle_direction
+          ?? (t.exit_price != null ? (t.exit_price >= t.entry_price ? 'green' : 'red') : null);
+        if (!t.entry_candle_direction || !exitDir) return true; // pas de données → inclus
+        const same = t.entry_candle_direction === exitDir;
+        if (filterCandle === 'same' && !same) return false;
+        if (filterCandle === 'changed' && same) return false;
+      }
+      // Slot
+      if (filterSlot !== 'all' && t.slot !== filterSlot) return false;
+      // Type de sortie
+      if (filterExitType !== 'all' && t.status !== filterExitType) return false;
+      return true;
+    });
+  }, [trades, filterDirection, filterResult, filterCandle, filterSlot, filterExitType]);
+
+  // Stats rapides sur les trades filtrés
+  const filterStats = useMemo(() => {
+    const wins = filteredTrades.filter(t => t.pnl != null && t.pnl >= 0).length;
+    const losses = filteredTrades.filter(t => t.pnl != null && t.pnl < 0).length;
+    const totalPnl = filteredTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+    const wr = filteredTrades.length > 0 ? (wins / filteredTrades.length * 100) : 0;
+    return { wins, losses, totalPnl, wr, total: filteredTrades.length };
+  }, [filteredTrades]);
+
+  // Types de sortie uniques (pour le select)
+  const exitTypes = useMemo(() => {
+    const types = new Set(trades.map(t => t.status).filter(s => s !== 'open'));
+    return Array.from(types).sort();
+  }, [trades]);
+
+  const hasActiveFilters = filterDirection !== 'all' || filterResult !== 'all' || filterCandle !== 'all' || filterSlot !== 'all' || filterExitType !== 'all';
+
+  const resetFilters = () => {
+    setFilterDirection('all');
+    setFilterResult('all');
+    setFilterCandle('all');
+    setFilterSlot('all');
+    setFilterExitType('all');
+  };
 
   // ── Mode Headless (autonome backend) ──────────────────────────────────────
   const [headlessStatus, setHeadlessStatus] = useState<AutonomousStatus | null>(null);
@@ -1346,10 +1403,119 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
         📖 Journal des trades ({trades.length})
       </Typography>
 
+      {/* ── [v2.0.21] Barre de filtres ── */}
+      {trades.length > 0 && (
+        <Box sx={{ mb: 1.5, p: 1.5, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.06)' }}>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+            {/* Direction */}
+            <ToggleButtonGroup
+              value={filterDirection}
+              exclusive
+              onChange={(_, v) => v && setFilterDirection(v)}
+              size="small"
+              sx={{ '& .MuiToggleButton-root': { fontSize: '0.7rem', px: 1, py: 0.3 } }}
+            >
+              <ToggleButton value="all">Tous</ToggleButton>
+              <ToggleButton value="long" sx={{ color: '#4caf50' }}>📈 Long</ToggleButton>
+              <ToggleButton value="short" sx={{ color: '#f44336' }}>📉 Short</ToggleButton>
+            </ToggleButtonGroup>
+
+            {/* Résultat */}
+            <ToggleButtonGroup
+              value={filterResult}
+              exclusive
+              onChange={(_, v) => v && setFilterResult(v)}
+              size="small"
+              sx={{ '& .MuiToggleButton-root': { fontSize: '0.7rem', px: 1, py: 0.3 } }}
+            >
+              <ToggleButton value="all">Tous</ToggleButton>
+              <ToggleButton value="win" sx={{ color: '#4caf50' }}>✅ Gagnant</ToggleButton>
+              <ToggleButton value="loss" sx={{ color: '#f44336' }}>❌ Perdant</ToggleButton>
+            </ToggleButtonGroup>
+
+            {/* Cohérence bougie */}
+            <ToggleButtonGroup
+              value={filterCandle}
+              exclusive
+              onChange={(_, v) => v && setFilterCandle(v)}
+              size="small"
+              sx={{ '& .MuiToggleButton-root': { fontSize: '0.7rem', px: 1, py: 0.3 } }}
+            >
+              <ToggleButton value="all">🕯️ Tous</ToggleButton>
+              <ToggleButton value="same" sx={{ color: '#4caf50' }}>🟰 Même couleur</ToggleButton>
+              <ToggleButton value="changed" sx={{ color: '#ff9800' }}>🔄 Changée</ToggleButton>
+            </ToggleButtonGroup>
+
+            {/* Slot */}
+            <ToggleButtonGroup
+              value={filterSlot}
+              exclusive
+              onChange={(_, v) => v && setFilterSlot(v)}
+              size="small"
+              sx={{ '& .MuiToggleButton-root': { fontSize: '0.7rem', px: 1, py: 0.3 } }}
+            >
+              <ToggleButton value="all">Slots</ToggleButton>
+              <ToggleButton value="scalping">⚡ Scalp</ToggleButton>
+              <ToggleButton value="aggressive">🔥 Aggr</ToggleButton>
+            </ToggleButtonGroup>
+
+            {/* Type de sortie */}
+            {exitTypes.length > 0 && (
+              <TextField
+                select
+                size="small"
+                value={filterExitType}
+                onChange={(e) => setFilterExitType(e.target.value)}
+                sx={{ minWidth: 120, '& .MuiInputBase-root': { fontSize: '0.75rem', height: 30 } }}
+                label="Sortie"
+              >
+                <MenuItem value="all" sx={{ fontSize: '0.75rem' }}>Toutes</MenuItem>
+                {exitTypes.map(t => (
+                  <MenuItem key={t} value={t} sx={{ fontSize: '0.75rem' }}>
+                    {(statusChip(t) as any)?.props?.label || t}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+
+            {/* Reset filtres */}
+            {hasActiveFilters && (
+              <Chip
+                label="✕ Reset"
+                size="small"
+                onClick={resetFilters}
+                sx={{ fontSize: '0.7rem', cursor: 'pointer', bgcolor: 'rgba(255,255,255,0.08)' }}
+              />
+            )}
+          </Stack>
+
+          {/* Stats filtrées */}
+          {hasActiveFilters && (
+            <Stack direction="row" spacing={2} mt={1} alignItems="center">
+              <Typography variant="caption" color="text.secondary">
+                {filterStats.total} trades filtrés
+              </Typography>
+              <Chip size="small" label={`✅ ${filterStats.wins} wins`} sx={{ fontSize: '0.65rem', color: '#4caf50', bgcolor: '#4caf5018' }} />
+              <Chip size="small" label={`❌ ${filterStats.losses} losses`} sx={{ fontSize: '0.65rem', color: '#f44336', bgcolor: '#f4433618' }} />
+              <Chip size="small" label={`WR ${filterStats.wr.toFixed(0)}%`} sx={{ fontSize: '0.65rem', fontWeight: 700, color: filterStats.wr >= 50 ? '#4caf50' : '#f44336' }} />
+              <Chip
+                size="small"
+                label={`PnL ${filterStats.totalPnl >= 0 ? '+' : ''}${filterStats.totalPnl.toFixed(2)} $`}
+                sx={{ fontSize: '0.65rem', fontWeight: 700, color: filterStats.totalPnl >= 0 ? '#4caf50' : '#f44336', bgcolor: filterStats.totalPnl >= 0 ? '#4caf5018' : '#f4433618' }}
+              />
+            </Stack>
+          )}
+        </Box>
+      )}
+
       {trades.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
           Aucun trade clôturé pour le moment.
         </Typography>
+      ) : filteredTrades.length === 0 ? (
+        <Alert severity="info" sx={{ mt: 1 }}>
+          Aucun trade ne correspond aux filtres actifs. <Chip label="Reset" size="small" onClick={resetFilters} sx={{ ml: 1, cursor: 'pointer' }} />
+        </Alert>
       ) : (
         <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 400 }}>
           <Table size="small" stickyHeader>
@@ -1367,7 +1533,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
               </TableRow>
             </TableHead>
             <TableBody>
-              {trades.map((trade) => (
+              {filteredTrades.map((trade) => (
                 <TradeRow key={trade.id} trade={trade} />
               ))}
             </TableBody>

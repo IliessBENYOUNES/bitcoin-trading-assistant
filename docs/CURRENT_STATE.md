@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 13 avril 2026
-> **Version :** v2.0.20
+> **Version :** v2.0.21
 > **Branche :** `master`
-> **Dernier commit :** fix(scalping): bypass structural proofs when tick momentum override active — fixes 100% SHORT bias v2.0.20
+> **Dernier commit :** feat(scalping): momentum stability check + journal filters v2.0.21
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.20** |
+| Version courante | **v2.0.21** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1732 tests**, tous passing ✅ |
+| Tests backend | **1739 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.20 livré** — Fix biais 100% SHORT sur scalping via bypass structural proofs |
+| Phase courante | **v2.0.21 livré** — Momentum stability + filtres journal |
 
 ### ⚠️ État de maturité honnête
 
