@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.11] - 2026-04-12
+
+### Fixed
+- **BOUCLE REVERSAL-CHURN — 30 trades identiques en boucle** — Les shorts `mean_reversion_short` étaient fermés par signal contraire après ~50 secondes car le même score bullish (+66) qui déclenchait le reversal fermait aussi le trade (seuil signal contraire = 30, score = 66 ≥ 30 → fermeture → cooldown → réouverture → boucle infinie). Corrigé : pour les reversals, le signal contraire ne ferme que si le score a **augmenté au-delà du score d'entrée +1**. Un short ouvert à score=66 ne ferme plus par signal contraire tant que le score reste ≤ 66. Les autres mécanismes de sortie (trailing, stale, SL/TP) restent inchangés.
+- **COOLDOWN TROP LONG — Rate manquée après renversement de tendance** — Le cooldown de 2 minutes empêchait de capter le prochain signal après un renversement de tendance. En 2 minutes, la tendance peut déjà s'inverser entre 2 bougies. Le `bearish_veto` (v2.0.10) protège maintenant en amont, rendant les longs cooldowns anti-churn redondants.
+  - `cooldown_minutes` : 2 → **1** minute
+  - `max_cooldown_minutes` : 10.0 → **5.0** minutes
+  - `STALE_NEGATIVE_FLOOR` : 4.0 → **2.0** minutes
+
+### Added
+- **Protection reversal signal contraire (SHORT)** — Pour les trades `mean_reversion_short`, le seuil de signal contraire est relevé à `max(short_exit_th, abs(entry_score) + 1)`. Un reversal entré à score=66 ne ferme que si score ≥ 67.
+- **Protection reversal signal contraire (LONG)** — Pour les trades `mean_reversion_long`, le signal contraire ne ferme que si `abs(current_score) > abs(entry_score)` (la pression bearish a augmenté depuis l'entrée).
+- **12 tests `TestReversalSignalContraireProtection`** :
+  - `test_reversal_short_not_closed_by_same_score` — score=66 à l'entrée, score=66 au tick → pas de fermeture
+  - `test_reversal_short_closed_by_higher_score` — score=66 à l'entrée, score=67 au tick → fermeture signal contraire
+  - `test_non_reversal_short_still_uses_standard_threshold` — trade non-reversal → seuil standard 30
+  - `test_reversal_short_closed_by_trailing_stop` — le trailing fonctionne toujours indépendamment
+  - `test_reversal_short_closed_by_stale` — le stale exit fonctionne toujours indépendamment
+  - `test_reversal_long_not_closed_by_same_score` — long reversal protégé symétriquement
+  - `test_reversal_long_closed_by_stronger_bearish` — long reversal fermé si bearish augmente
+  - `test_non_reversal_long_still_uses_standard_threshold` — long non-reversal → seuil standard
+  - `test_cooldown_reduced_to_1_minute` — cooldown scalping = 1 min
+  - `test_max_cooldown_reduced_to_5` — max cooldown scalping = 5.0 min
+  - `test_stale_negative_floor_reduced_to_2` — plancher stale négatif = 2.0 min
+  - `test_bearish_veto_still_active` — le veto v2.0.10 fonctionne toujours
+
+### Technical
+- Modifié : `backend/app/services/paper_trading_service.py` — Protection reversal dans la logique signal contraire (SHORT et LONG)
+- Modifié : `backend/app/services/trading_profile_service.py` — `cooldown_minutes` 2→1, `max_cooldown_minutes` 10→5
+- Modifié : `backend/app/services/smart_cooldown_service.py` — `STALE_NEGATIVE_FLOOR` 4→2
+- Modifié : 7 fichiers de tests — assertions adaptées aux nouvelles valeurs de cooldown
+- **1647 tests** backend, tous passing ✅
+
 ## [2.0.10] - 2026-04-12
 
 ### Fixed
