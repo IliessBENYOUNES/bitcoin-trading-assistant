@@ -260,9 +260,11 @@ class TestScalpingProfileV200:
         assert scalp.profit_take_pct >= 0.8
 
     def test_trailing_activation_raised(self):
-        """[v2.0.6] Trailing stop activation abaissé à 0.10% pour marchés en range."""
+        """[v2.0.9] Trailing activation abaissé à 0.02% — protège les gains dès ~$0.50."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct >= 0.10
+        assert scalp.trailing_stop_activation_pct == 0.02
+        # [v2.0.9] drop_ratio doit être configuré
+        assert scalp.trailing_stop_drop_ratio == 0.03, "drop_ratio 3% pour protéger les gains"
 
     def test_max_trades_reduced(self):
         """Moins de trades par jour (≤ 30)."""
@@ -425,16 +427,21 @@ class TestScalpingV203MiniLot:
         assert scalp.min_score == 30, f"Attendu 30, obtenu {scalp.min_score}"
 
     def test_trailing_activation_lowered_to_010(self):
-        """[v2.0.6] trailing_stop_activation_pct abaissé de 0.15 à 0.10 pour marchés en range."""
+        """[v2.0.9] trailing_stop_activation_pct abaissé de 0.10 à 0.02 — protège dès ~$0.50."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct == 0.10, (
-            f"Attendu 0.10, obtenu {scalp.trailing_stop_activation_pct}"
+        assert scalp.trailing_stop_activation_pct == 0.02, (
+            f"Attendu 0.02, obtenu {scalp.trailing_stop_activation_pct}"
         )
 
     def test_trailing_pct_tightened(self):
-        """[v2.0.6] trailing_stop_pct resserré de 0.10 à 0.06 — moins de give-back."""
+        """[v2.0.6] trailing_stop_pct resserré de 0.10 à 0.06 — fallback absolu."""
         scalp = PROFILE_PRESETS["scalping"]
         assert scalp.trailing_stop_pct == 0.06
+
+    def test_trailing_drop_ratio_configured(self):
+        """[v2.0.9] trailing_stop_drop_ratio = 0.03 — exit dès que gain baisse de 3% du pic."""
+        scalp = PROFILE_PRESETS["scalping"]
+        assert scalp.trailing_stop_drop_ratio == 0.03
 
     def test_min_micro_trend_long_is_0(self):
         """[v2.0.6] Gate micro-tendance désactivé : min_micro_trend_long = 0 (le code skip si <= 0)."""
@@ -455,13 +462,15 @@ class TestScalpingV203MiniLot:
 
     def test_min_capture_still_covers_costs(self):
         """
-        Avec trailing activation à 0.15% et trail à 0.10%,
-        la capture minimum est 0.05%. C'est faible mais meilleur que stale (0%).
-        Le gate économique (expected_capture_pct=0.50%) reste inchangé et valide.
+        [v2.0.9] Avec trailing relatif (drop_ratio=0.03), la capture minimum
+        est 97% du peak gain (activation=0.02%). Soit 0.02% * 0.97 = 0.0194%.
+        C'est un micro-gain mais le but est de protéger les gains, pas de capturer gros.
+        Le gate économique (expected_capture_pct=0.50%) reste le vrai garde-fou à l'entrée.
         """
         scalp = PROFILE_PRESETS["scalping"]
-        min_capture = scalp.trailing_stop_activation_pct - scalp.trailing_stop_pct
-        assert min_capture >= 0.04, f"Min capture trop faible: {min_capture}"
+        # En mode relatif, la capture minimum = activation * (1 - drop_ratio)
+        min_capture_relative = scalp.trailing_stop_activation_pct * (1 - scalp.trailing_stop_drop_ratio)
+        assert min_capture_relative > 0, f"Min capture relative doit être > 0: {min_capture_relative}"
         # Le gate économique utilise expected_capture_pct, pas trailing
         assert scalp.expected_capture_pct == 0.50
 
@@ -564,9 +573,10 @@ class TestScalpingV206MicroTrendDisable:
     def test_all_other_scalping_params_unchanged(self):
         """Aucun autre paramètre scalping n'a bougé (correction chirurgicale)."""
         scalp = PROFILE_PRESETS["scalping"]
-        # [v2.0.6] Trailing et stale recalibrés pour marchés en range
-        assert scalp.trailing_stop_activation_pct == 0.10
+        # [v2.0.9] Trailing recalibré : activation basse + drop ratio 3%
+        assert scalp.trailing_stop_activation_pct == 0.02
         assert scalp.trailing_stop_pct == 0.06
+        assert scalp.trailing_stop_drop_ratio == 0.03
         assert scalp.profit_take_pct == 0.8
         assert scalp.loss_cut_pct == 0.20
         assert scalp.min_market_quality == 50
@@ -599,9 +609,9 @@ class TestScalpingV207FastExit:
         assert scalp.stale_negative_exit_minutes == 2
 
     def test_trailing_activation_lowered_to_010(self):
-        """Trailing activation abaissé de 0.15→0.10% : protège les petits gains."""
+        """[v2.0.9] Trailing activation abaissé à 0.02% : protège dès ~$0.50."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct == 0.10
+        assert scalp.trailing_stop_activation_pct == 0.02
 
     def test_trailing_trail_tightened_to_006(self):
         """Trail resserré de 0.10→0.06% : moins de give-back depuis le peak."""
@@ -609,10 +619,11 @@ class TestScalpingV207FastExit:
         assert scalp.trailing_stop_pct == 0.06
 
     def test_min_capture_positive(self):
-        """Capture minimale = activation - trail = 0.10 - 0.06 = 0.04%."""
+        """[v2.0.9] Capture minimale en mode relatif = activation * (1-drop_ratio) = 0.02 * 0.97 > 0."""
         scalp = PROFILE_PRESETS["scalping"]
-        min_capture = scalp.trailing_stop_activation_pct - scalp.trailing_stop_pct
-        assert min_capture >= 0.03, f"Capture min trop faible: {min_capture}%"
+        # En mode relatif, la capture min = activation * (1 - drop_ratio)
+        min_capture_relative = scalp.trailing_stop_activation_pct * (1 - scalp.trailing_stop_drop_ratio)
+        assert min_capture_relative > 0, f"Capture min relative doit être > 0: {min_capture_relative}%"
 
     def test_aggressive_not_affected(self):
         """L'aggressive est sanctuarisé — aucun changement."""
@@ -695,8 +706,9 @@ class TestTrailingStopPriorityV208:
 
     def test_breakeven_stop_protects_small_gains(self, db_session):
         """
-        Position dont le peak est entre activation/2 et activation
-        (ex: peak 0.06%) et qui retombe à 0% : breakeven stop ferme.
+        Position dont le peak est entre activation/2 (0.01%) et activation (0.02%)
+        et qui retombe à 0% : breakeven stop ferme.
+        [v2.0.9] Activation abaissée à 0.02%, le breakeven protège les gains 0.01-0.02%.
         """
         from app.services.paper_trading_service import PaperTradingService
         from app.models.paper_account import PaperAccount, PaperTrade
@@ -713,7 +725,7 @@ class TestTrailingStopPriorityV208:
 
         entry_time = datetime.now(timezone.utc) - timedelta(minutes=3)
         entry_price = 73000.0
-        # Peak à 73044 (+0.060%, > activation/2 = 0.05% mais < activation 0.10%)
+        # Peak à 73011 (+0.015%, > activation/2=0.01% mais < activation 0.02%)
         trade = PaperTrade(
             account_id=account.id,
             direction="long",
@@ -723,7 +735,7 @@ class TestTrailingStopPriorityV208:
             take_profit_price=entry_price * 1.008,
             status="open",
             entry_ts=entry_time,
-            highest_price_since_entry=73044.0,  # peak +0.060%
+            highest_price_since_entry=73011.0,  # peak +0.015%
             lowest_price_since_entry=entry_price,
             leverage=1.0,
             entry_reason="Test breakeven protection",
@@ -943,9 +955,10 @@ class TestTrailingStopRelativeV209:
         db_session.add(trade)
         db_session.flush()
 
-        # Prix à 83085 → current_pct = 85/83000 = 0.1024%
-        # 0.1024% > 0.0843% (70% du peak) → PAS de trailing
-        current_price = 83085.0
+        # Prix à 83098 → current_pct = 98/83000 = 0.1181%
+        # Peak = 0.1205%, seuil 97% = 0.1169%
+        # 0.1181% > 0.1169% → PAS de trailing (gain encore dans les 97%)
+        current_price = 83098.0
         now = datetime.now(timezone.utc)
 
         result = svc._tick_single_slot(
@@ -954,14 +967,13 @@ class TestTrailingStopRelativeV209:
         )
 
         assert result.action_taken != "closed_trailing_stop", (
-            f"Le trailing ne devrait pas fire : gain {0.1024:.3f}% > seuil {0.0843:.3f}%"
+            f"Le trailing ne devrait pas fire : gain encore dans les 97% du pic"
         )
 
     def test_relative_trailing_big_gain_more_room(self, db_session):
         """
-        Peak important (0.40%) : le trailing relatif tolère un recul plus large
-        (0.12% absolu) que l'ancien système (0.06% fixe).
-        Cela permet aux gros gains de respirer sans être coupés trop tôt.
+        Peak important (0.40%) avec gain actuel à 0.39% (recul 2.5%) :
+        Le trailing relatif à 3% ne fire PAS car le recul est < 3%.
         """
         from app.services.paper_trading_service import PaperTradingService
         from app.models.paper_account import PaperAccount, PaperTrade
@@ -979,7 +991,7 @@ class TestTrailingStopRelativeV209:
         entry_time = datetime.now(timezone.utc) - timedelta(minutes=2)
         entry_price = 83000.0
         # Peak à 83332 → peak_pct = 332/83000 = 0.40%
-        # Seuil relatif = 0.40% * 0.70 = 0.28%
+        # Seuil 3% = 0.40% * 0.97 = 0.388%
         trade = PaperTrade(
             account_id=account.id,
             direction="long",
@@ -992,16 +1004,15 @@ class TestTrailingStopRelativeV209:
             highest_price_since_entry=83332.0,  # peak +0.40%
             lowest_price_since_entry=entry_price,
             leverage=1.0,
-            entry_reason="Test big gain more room",
+            entry_reason="Test big gain no fire",
             slot="scalping",
         )
         db_session.add(trade)
         db_session.flush()
 
-        # Prix à 83260 → current_pct = 260/83000 = 0.313%
-        # 0.313% > 0.28% (seuil) → PAS de trailing
-        # Ancien système : drop = 0.40 - 0.313 = 0.087% > 0.06% → aurait fermé !
-        current_price = 83260.0
+        # Prix à 83325 → current_pct = 325/83000 = 0.3916%
+        # 0.3916% > 0.388% (seuil 97%) → PAS de trailing (recul ~2%)
+        current_price = 83325.0
         now = datetime.now(timezone.utc)
 
         result = svc._tick_single_slot(
@@ -1010,7 +1021,7 @@ class TestTrailingStopRelativeV209:
         )
 
         assert result.action_taken != "closed_trailing_stop", (
-            f"Gros gain : le trailing relatif ne devrait PAS fire (gain 0.313% > seuil 0.28%)"
+            f"Gros gain : le trailing ne devrait PAS fire (recul < 3%)"
         )
 
     def test_relative_trailing_short_symmetric(self, db_session):
@@ -1069,28 +1080,31 @@ class TestTrailingStopRelativeV209:
 
     def test_relative_trailing_preserves_more_than_absolute(self):
         """
-        Test mathématique : le trailing relatif (30% drop) préserve toujours
-        un pourcentage plus élevé du gain que le trailing absolu (0.06%).
-        Pour des peaks entre 0.10% et 0.20% (cas le plus fréquent en scalping).
+        Test mathématique : le trailing relatif à 3% garde toujours 97% du gain.
+        L'ancien absolu (0.06%) gardait entre 40% et 94% selon la taille du peak.
+        Le relatif est TOUJOURS meilleur pour les petits peaks.
         """
-        drop_ratio = 0.30
+        drop_ratio = 0.03
         ts_pct_absolute = 0.06  # ancien seuil
 
-        # Pour des peaks entre 0.10% et 0.19%, le relatif garde strictement plus.
-        # À 0.20% exactement, ils convergent (70% = 70%). Au-delà, l'absolu garde plus
-        # (ce qui est normal : le relatif donne plus d'espace aux gros gains).
-        for peak_pct in [0.10, 0.12, 0.14, 0.16, 0.18]:
-            # Relatif : garde (1 - drop_ratio) * peak
+        # Le relatif à 3% garde TOUJOURS 97% du peak
+        for peak_pct in [0.05, 0.08, 0.10, 0.15, 0.20, 0.50]:
             relative_exit = peak_pct * (1 - drop_ratio)
             relative_kept_pct = relative_exit / peak_pct * 100
+            assert abs(relative_kept_pct - 97.0) < 0.01, (
+                f"Peak {peak_pct}%: relatif devrait garder 97%, garde {relative_kept_pct:.1f}%"
+            )
 
-            # Absolu : garde peak - ts_pct
+        # Pour les petits peaks (< 0.062%), l'absolu donnerait un exit négatif !
+        # Le relatif reste toujours positif
+        for peak_pct in [0.03, 0.05]:
             absolute_exit = peak_pct - ts_pct_absolute
-            absolute_kept_pct = absolute_exit / peak_pct * 100
-
-            assert relative_kept_pct > absolute_kept_pct, (
-                f"Peak {peak_pct}%: relatif garde {relative_kept_pct:.1f}% "
-                f"vs absolu {absolute_kept_pct:.1f}% — le relatif devrait garder plus"
+            assert absolute_exit < 0, (
+                f"Peak {peak_pct}%: l'absolu donnerait un exit négatif ({absolute_exit}%)"
+            )
+            relative_exit = peak_pct * (1 - drop_ratio)
+            assert relative_exit > 0, (
+                f"Peak {peak_pct}%: le relatif garde un exit positif ({relative_exit}%)"
             )
 
 

@@ -148,17 +148,14 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         stale_exit_minutes=5,
         # [v2.0.6] Stale négatif raccourci : 5→2 min. Couper les pertes encore plus vite.
         stale_negative_exit_minutes=2,
-        # [v2.0.6] Trailing stop recalibré pour marchés en range.
-        # L'audit montre que le peak atteint 0.14% — juste sous l'ancien seuil de 0.15%.
-        # Le trailing ne s'activait JAMAIS, la position dérivait jusqu'au stale à 15 min.
-        # Activation 0.15%→0.10% : le trailing s'active dès +0.10%, protège les petits gains.
-        # [v2.0.9] TRAILING RELATIF — On ne perd plus une proportion fixe mais un % du gain.
-        # Ancien système (absolu) : trail 0.06% → peak 0.12% → exit à 0.06% (50% du gain perdu !)
-        # Nouveau système (relatif) : drop_ratio 0.30 → peak 0.12% → exit à 0.084% (30% perdu max)
-        # trailing_stop_pct conservé comme fallback mais trailing_stop_drop_ratio a priorité.
-        trailing_stop_activation_pct=0.10,
+        # [v2.0.9] TRAILING RELATIF basé sur le GAIN (pas sur le prix BTC).
+        # Le trailing surveille le gain ($) seconde par seconde.
+        # Dès que le gain baisse de X% par rapport à son pic, on sort.
+        # Ex: drop_ratio=0.03, peak gain=$1.00 → exit dès que gain < $0.97.
+        # Activation très basse (0.02%) : protège dès ~$0.50 de gain au lieu d'attendre $2.50.
+        trailing_stop_activation_pct=0.02,  # [v2.0.9] 0.10→0.02 : protéger dès ~$0.50 de gain
         trailing_stop_pct=0.06,  # fallback absolu (utilisé si drop_ratio est None)
-        trailing_stop_drop_ratio=0.30,  # [v2.0.9] Relatif : max 30% de recul, garde 70% du pic
+        trailing_stop_drop_ratio=0.03,  # [v2.0.9] 3% : gain $1.00 → exit sous $0.97
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
         max_cooldown_minutes=10.0,

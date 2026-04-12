@@ -90,12 +90,16 @@ class TestScalpingParamsV195:
         assert PROFILE_PRESETS["scalping"].profit_take_pct == 0.8
 
     def test_trailing_stop_activation(self):
-        """[v2.0.3] Activation trailing abaissée de 0.20% → 0.15%."""
-        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.10
+        """[v2.0.9] Activation trailing abaissée à 0.02% — protège dès ~$0.50."""
+        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.02
 
     def test_trailing_stop_pct(self):
-        """Trail resserré de 0.12% → 0.10%."""
+        """Trail fallback absolu à 0.06%."""
         assert PROFILE_PRESETS["scalping"].trailing_stop_pct == 0.06
+
+    def test_trailing_drop_ratio(self):
+        """[v2.0.9] Drop ratio relatif à 3% — exit dès que gain baisse de 3% du pic."""
+        assert PROFILE_PRESETS["scalping"].trailing_stop_drop_ratio == 0.03
 
     def test_buy_threshold(self):
         """[v2.0.3] Buy threshold relevé de 25 → 30."""
