@@ -91,11 +91,11 @@ class TestScalpingParamsV195:
 
     def test_trailing_stop_activation(self):
         """[v2.0.3] Activation trailing abaissée de 0.20% → 0.15%."""
-        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.15
+        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.10
 
     def test_trailing_stop_pct(self):
         """Trail resserré de 0.12% → 0.10%."""
-        assert PROFILE_PRESETS["scalping"].trailing_stop_pct == 0.10
+        assert PROFILE_PRESETS["scalping"].trailing_stop_pct == 0.06
 
     def test_buy_threshold(self):
         """[v2.0.3] Buy threshold relevé de 25 → 30."""
@@ -127,7 +127,7 @@ class TestScalpingParamsV195:
 
     def test_stale_negative_exit_minutes(self):
         """Stale négatif = 5 min (v1.9.6)."""
-        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 5
+        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 2
 
     def test_rr_ratio_theoretical(self):
         """[v2.0.0] Ratio R:R théorique = TP/SL = 0.8/0.20 = 4.0."""
@@ -438,7 +438,7 @@ class TestStaleNegativeExit:
     def test_param_exists(self):
         """Le paramètre stale_negative_exit_minutes existe."""
         assert hasattr(PROFILE_PRESETS["scalping"], "stale_negative_exit_minutes")
-        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 5
+        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 2
 
     def test_param_default_none_other_profiles(self):
         """Les autres profils n'ont pas ce paramètre (None)."""
@@ -850,7 +850,7 @@ class TestStaleExitV196:
     def test_stale_negative_exit_minutes_reduced(self):
         """Le stale_negative_exit_minutes est à 5 (au lieu de 8)."""
         params = PROFILE_PRESETS["scalping"]
-        assert params.stale_negative_exit_minutes == 5
+        assert params.stale_negative_exit_minutes == 2
 
     def test_sl_tighter_at_020(self):
         """Le SL est à 0.20% pour limiter les grosses pertes."""

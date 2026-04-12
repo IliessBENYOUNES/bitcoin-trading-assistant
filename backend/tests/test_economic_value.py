@@ -388,7 +388,7 @@ class TestScalpingRecalibratedV191:
     def test_stale_exit_increased(self):
         """Stale exit augmenté de 12→15 min pour laisser les trades respirer."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 15
+        assert p.stale_exit_minutes == 5
 
     def test_risk_reward_ratio(self):
         """Le ratio R/R après coûts doit être > 1."""

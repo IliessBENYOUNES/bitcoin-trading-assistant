@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.7] - 2026-04-12
+
+### Changed
+- **Sorties scalping recalibrées pour marchés en range** — L'audit runtime du premier trade scalping débloqué (ID #448) révèle le problème : peak à +0.14% (< activation trailing 0.15%), le trailing ne s'activait JAMAIS. La position dérivait pendant 15 min (stale) en perdant tous les gains accumulés (+$3.51 au pic, retombé à +$2.23).
+  - `stale_exit_minutes` 15→**5** : rotation 3× plus rapide, libère le slot pour de meilleures opportunités
+  - `stale_negative_exit_minutes` 5→**2** : couper les pertes encore plus vite
+  - `trailing_stop_activation_pct` 0.15%→**0.10%** : protège les gains dès +0.10% (le peak à 0.14% aurait activé)
+  - `trailing_stop_pct` 0.10%→**0.06%** : trail plus serré, recul max 0.06% depuis le peak avant fermeture
+  - Capture minimale garantie : 0.10% - 0.06% = 0.04% ($1 sur $2500)
+
+### Added
+- **6 tests `TestScalpingV207FastExit`** : validation des 4 paramètres recalibrés + capture minimum + isolation aggressive
+
+### Technical
+- Modifié : `backend/app/services/trading_profile_service.py` — 4 paramètres scalping recalibrés
+- Modifié : 8 fichiers de test — assertions mises à jour pour les nouvelles valeurs
+- Nombre total de tests : 1598→1604 (6 ajoutés, 0 supprimé).
+
 ## [2.0.6] - 2026-04-12
 
 ### Changed

@@ -260,9 +260,9 @@ class TestScalpingProfileV200:
         assert scalp.profit_take_pct >= 0.8
 
     def test_trailing_activation_raised(self):
-        """Trailing stop activation ≥ 0.15% (v2.0.3: abaissé de 0.20% pour être plus atteignable)."""
+        """[v2.0.6] Trailing stop activation abaissé à 0.10% pour marchés en range."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct >= 0.15
+        assert scalp.trailing_stop_activation_pct >= 0.10
 
     def test_max_trades_reduced(self):
         """Moins de trades par jour (≤ 30)."""
@@ -424,17 +424,17 @@ class TestScalpingV203MiniLot:
         scalp = PROFILE_PRESETS["scalping"]
         assert scalp.min_score == 30, f"Attendu 30, obtenu {scalp.min_score}"
 
-    def test_trailing_activation_lowered_to_015(self):
-        """trailing_stop_activation_pct abaissé de 0.20 à 0.15 pour être plus atteignable."""
+    def test_trailing_activation_lowered_to_010(self):
+        """[v2.0.6] trailing_stop_activation_pct abaissé de 0.15 à 0.10 pour marchés en range."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct == 0.15, (
-            f"Attendu 0.15, obtenu {scalp.trailing_stop_activation_pct}"
+        assert scalp.trailing_stop_activation_pct == 0.10, (
+            f"Attendu 0.10, obtenu {scalp.trailing_stop_activation_pct}"
         )
 
-    def test_trailing_pct_unchanged(self):
-        """trailing_stop_pct reste à 0.10 — pas de changement du trail width."""
+    def test_trailing_pct_tightened(self):
+        """[v2.0.6] trailing_stop_pct resserré de 0.10 à 0.06 — moins de give-back."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_pct == 0.10
+        assert scalp.trailing_stop_pct == 0.06
 
     def test_min_micro_trend_long_is_0(self):
         """[v2.0.6] Gate micro-tendance désactivé : min_micro_trend_long = 0 (le code skip si <= 0)."""
@@ -493,8 +493,8 @@ class TestScalpingV203MiniLot:
         assert scalp.min_market_quality == 50, "market quality ne doit pas changer"
         assert scalp.min_volume_ratio == 0.8, "volume ratio ne doit pas changer"
         assert scalp.min_structural_proofs == 2, "structural proofs ne doit pas changer"
-        assert scalp.stale_exit_minutes == 15, "stale exit ne doit pas changer"
-        assert scalp.stale_negative_exit_minutes == 5, "stale negative ne doit pas changer"
+        assert scalp.stale_exit_minutes == 5, "stale exit doit être 5 (v2.0.6)"
+        assert scalp.stale_negative_exit_minutes == 2, "stale negative doit être 2 (v2.0.6)"
         assert scalp.momentum_fade_mode == "restricted", "momentum fade mode ne doit pas changer"
 
     def test_aggressive_not_touched(self):
@@ -564,8 +564,9 @@ class TestScalpingV206MicroTrendDisable:
     def test_all_other_scalping_params_unchanged(self):
         """Aucun autre paramètre scalping n'a bougé (correction chirurgicale)."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct == 0.15
-        assert scalp.trailing_stop_pct == 0.10
+        # [v2.0.6] Trailing et stale recalibrés pour marchés en range
+        assert scalp.trailing_stop_activation_pct == 0.10
+        assert scalp.trailing_stop_pct == 0.06
         assert scalp.profit_take_pct == 0.8
         assert scalp.loss_cut_pct == 0.20
         assert scalp.min_market_quality == 50
@@ -574,7 +575,48 @@ class TestScalpingV206MicroTrendDisable:
         assert scalp.economic_gate_enabled is True
         assert scalp.expected_capture_pct == 0.50
         assert scalp.min_ev_multiple == 1.5
-        assert scalp.stale_exit_minutes == 15
+        assert scalp.stale_exit_minutes == 5
         assert scalp.cooldown_minutes == 2
         assert scalp.max_trades_per_day == 30
+
+
+class TestScalpingV207FastExit:
+    """[v2.0.7] Recalibration des sorties scalping pour marchés en range.
+
+    Diagnostic runtime : le peak atteint 0.14% (< activation trailing 0.15%).
+    Le trailing ne s'activait JAMAIS. Le stale à 15 min laissait fondre les gains.
+    Fix : activation abaissée, trail resserré, stale raccourci.
+    """
+
+    def test_stale_exit_reduced_to_5(self):
+        """Stale exit raccourci de 15→5 min : rotation 3× plus rapide."""
+        scalp = PROFILE_PRESETS["scalping"]
+        assert scalp.stale_exit_minutes == 5
+
+    def test_stale_negative_reduced_to_2(self):
+        """Stale négatif raccourci de 5→2 min : couper les pertes plus vite."""
+        scalp = PROFILE_PRESETS["scalping"]
+        assert scalp.stale_negative_exit_minutes == 2
+
+    def test_trailing_activation_lowered_to_010(self):
+        """Trailing activation abaissé de 0.15→0.10% : protège les petits gains."""
+        scalp = PROFILE_PRESETS["scalping"]
+        assert scalp.trailing_stop_activation_pct == 0.10
+
+    def test_trailing_trail_tightened_to_006(self):
+        """Trail resserré de 0.10→0.06% : moins de give-back depuis le peak."""
+        scalp = PROFILE_PRESETS["scalping"]
+        assert scalp.trailing_stop_pct == 0.06
+
+    def test_min_capture_positive(self):
+        """Capture minimale = activation - trail = 0.10 - 0.06 = 0.04%."""
+        scalp = PROFILE_PRESETS["scalping"]
+        min_capture = scalp.trailing_stop_activation_pct - scalp.trailing_stop_pct
+        assert min_capture >= 0.03, f"Capture min trop faible: {min_capture}%"
+
+    def test_aggressive_not_affected(self):
+        """L'aggressive est sanctuarisé — aucun changement."""
+        agg = PROFILE_PRESETS["aggressive"]
+        assert agg.stale_exit_minutes == 180
+        assert agg.trailing_stop_activation_pct is None
 

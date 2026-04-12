@@ -1523,7 +1523,7 @@ class TestStaleVsTrailingThreshold:
         )
         # La logique dans _tick_single_slot doit utiliser ts_act, pas profit_take_pct
         # Vérifié via le code : stale_pnl_threshold = ts_act si disponible
-        assert ts_act == 0.15, f"Expected 0.15, got {ts_act}"  # [v2.0.3] 0.20→0.15
+        assert ts_act == 0.10, f"Expected 0.15, got {ts_act}"  # [v2.0.3] 0.20→0.15
 
     def test_profitable_position_above_trailing_activation_not_stale(self, db_session):
         """Un trade à +0.46% ne doit PAS être fermé stale si au-dessus du seuil trailing."""
@@ -1799,7 +1799,7 @@ class TestAggressiveSlotCalibration:
         agg = PROFILE_PRESETS["aggressive"]
         scl = PROFILE_PRESETS["scalping"]
         assert agg.stale_exit_minutes == 180
-        assert scl.stale_exit_minutes == 15
+        assert scl.stale_exit_minutes == 5
         assert agg.stale_exit_minutes > scl.stale_exit_minutes * 5
 
     def test_aggressive_uses_1h_in_tick(self, db_session):

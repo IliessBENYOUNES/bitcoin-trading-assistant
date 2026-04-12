@@ -632,8 +632,8 @@ class TestScalpingPresetNonRegression:
     def test_scalping_trailing_stop(self):
         """[v2.0.3] Les paramètres trailing stop recalibrés."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.15  # [v2.0.3] 0.20→0.15
-        assert p.trailing_stop_pct == 0.10             # unchanged
+        assert p.trailing_stop_activation_pct == 0.10  # [v2.0.3] 0.20→0.15
+        assert p.trailing_stop_pct == 0.06             # unchanged
 
     def test_scalping_leverageééévalues(self):
         """Le levier scalping est inchangé."""

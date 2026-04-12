@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 12 avril 2026
-> **Version :** v2.0.6
+> **Version :** v2.0.7
 > **Branche :** `master`
-> **Dernier commit :** `f2592a4` — feat(scalping): disable micro-trend gate (1→0) + position timer UI + profile certification banner
+> **Dernier commit :** (pending) — feat(scalping): fast exit recalibration — stale 15→5min, trailing activation 0.15→0.10%, trail 0.10→0.06%
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.6** |
+| Version courante | **v2.0.7** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1598 tests**, tous passing ✅ |
+| Tests backend | **1604 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.6 livré** — Scalping débloqué, timer position, certification profil UI |
+| Phase courante | **v2.0.7 livré** — Sorties scalping recalibrées pour marchés en range |
 
 ### ⚠️ État de maturité honnête
 
@@ -40,6 +40,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.6] Gate micro-tendance DÉSACTIVÉ** — `min_micro_trend_long` abaissé de 1→0. L'audit post-v2.0.4 montre 135/135 ticks scalping (100%) encore bloqués par `micro_trend_insufficient` (mt_score=-2, decision_score=65, market_quality=59). Le gate à mt≥1 restait trop restrictif dans les phases latérales/baissières. Désactivé (0 = code skip), la protection micro-trend reste via structural_proofs (mt≥3 = 1 preuve sur 4).
 - **[v2.0.6] Certification profil UI** — Bandeau vert `🔒 Profil certifié par le serveur` affichant le profil réellement actif côté backend (synchronisé via `status.account.active_profile` à chaque poll). Alerte orange clignotante si désynchronisation détectée.
 - **[v2.0.6] Timer de position UI** — Chronomètre live `hh:mm:ss` sur chaque position ouverte, basé sur `entry_ts`, rafraîchi chaque seconde.
+- **[v2.0.7] Sorties scalping recalibrées pour marchés en range** — L'audit runtime du premier trade scalping débloqué révèle que le peak atteint 0.14% (juste sous l'activation trailing à 0.15%), le trailing ne s'active JAMAIS, et le stale exit à 15 min laisse fondre les gains. Corrections : stale 15→5 min (3× plus rapide), stale négatif 5→2 min, trailing activation 0.15→0.10% (protège les petits gains), trail 0.10→0.06% (moins de give-back). 6 tests dédiés.
 - **[v2.0.4] Export enrichi** — Service `EnrichedExportService` + endpoint `GET /audit/enriched-export`. Export tick-par-tick avec : prix BTC, variation %, décision moteur, score, raison de non-trade, position ouverte/fermée, PnL, market quality. Inclut ventilation des refus par gate + détection des tendances BTC ratées.
 - **[v2.0.4] Learning runtime** — Nouvelle méthode `LearningService.learn_from_runtime()` + endpoint `POST /learning/learn-runtime`. Analyse les TickActivityLog (pas les trades fermés) pour identifier les gates sur-bloquants et proposer des assouplissements en mode shadow. Suggestions 15 (micro-trend dominant) et 16 (gate unique > 70%).
 - **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.

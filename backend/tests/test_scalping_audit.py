@@ -280,12 +280,12 @@ class TestScalpingRecalibration:
     def test_trailing_stop_activation_increased(self):
         """[v2.0.3] Trailing stop activation abaissé de 0.20% à 0.15% (plus atteignable)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.15
+        assert p.trailing_stop_activation_pct == 0.10
 
     def test_trailing_stop_trail_increased(self):
         """[v1.9.5] Trailing stop trail resserré de 0.12% à 0.10%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_pct == 0.10
+        assert p.trailing_stop_pct == 0.06
 
     def test_buy_threshold_increased(self):
         """[v2.0.3] Buy threshold augmenté de 25 à 30 pour filtrer le bruit."""
@@ -310,7 +310,7 @@ class TestScalpingRecalibration:
     def test_stale_exit_increased(self):
         """Stale exit augmenté de 10 à 15 min."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 15
+        assert p.stale_exit_minutes == 5
 
     def test_max_leverage_reduced(self):
         """Max leverage réduit de 2.0 à 1.5."""

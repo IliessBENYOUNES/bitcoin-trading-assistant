@@ -293,7 +293,7 @@ class TestScalpingProfile:
         assert p.buy_threshold == 30       # [v2.0.3] recalibré 25→30
         assert p.sell_threshold == 20      # [v1.9.5] recalibré 15→20
         assert p.momentum_fade_enabled is True
-        assert p.stale_exit_minutes == 15
+        assert p.stale_exit_minutes == 5
         # [v1.9.1] min_hold et min_economic_pnl
         assert p.min_hold_seconds == 30
         assert p.min_economic_pnl_pct == 0.15
@@ -336,7 +336,7 @@ class TestScalpingProfile:
     def test_scalping_stale_exit(self):
         """Scalping a un stale exit à 12 minutes (recalibré)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 15
+        assert p.stale_exit_minutes == 5
 
     def test_conservative_no_new_fields(self):
         """Conservative n'a pas les nouveaux champs activés."""
@@ -560,7 +560,7 @@ class TestFasterExits:
     def test_stale_exit_configured_for_scalping(self):
         """Scalping a stale_exit_minutes = 12 (recalibré v1.8.1)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 15
+        assert p.stale_exit_minutes == 5
 
     def test_momentum_fade_not_on_conservative(self):
         """Conservative n'active pas momentum_fade."""

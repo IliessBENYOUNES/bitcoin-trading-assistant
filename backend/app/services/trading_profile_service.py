@@ -141,16 +141,20 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         momentum_fade_mode="restricted",
         momentum_fade_min_amplitude_pct=0.35,
         momentum_fade_retention=0.55,
-        stale_exit_minutes=15,
-        stale_negative_exit_minutes=5,
-        # [v2.0.3] Trailing stop activation abaissée pour capturer plus de trades.
-        # L'audit montre que 91% des trades meurent stale sans jamais atteindre 0.20%.
-        # En abaissant à 0.15%, plus de trades activent le trailing stop.
-        # Les 4 trailing stops du run portaient l'essentiel de la valeur.
-        # Trail maintenu à 0.10% — minimum capture = 0.15% - 0.10% = 0.05%.
-        # Même un trailing à 0.05% est meilleur qu'un stale à 0.00%.
-        trailing_stop_activation_pct=0.15,
-        trailing_stop_pct=0.10,
+        # [v2.0.6] Stale exit raccourci : 15→5 min. L'audit runtime montre que les positions
+        # scalping oscillent dans un range serré (peak +0.14%) sans jamais atteindre le trailing
+        # activation (0.15%). Avec 15 min de stale, le slot est bloqué et les gains fondent.
+        # 5 min = rotation 3× plus rapide, libère le slot pour de meilleures opportunités.
+        stale_exit_minutes=5,
+        # [v2.0.6] Stale négatif raccourci : 5→2 min. Couper les pertes encore plus vite.
+        stale_negative_exit_minutes=2,
+        # [v2.0.6] Trailing stop recalibré pour marchés en range.
+        # L'audit montre que le peak atteint 0.14% — juste sous l'ancien seuil de 0.15%.
+        # Le trailing ne s'activait JAMAIS, la position dérivait jusqu'au stale à 15 min.
+        # Activation 0.15%→0.10% : le trailing s'active dès +0.10%, protège les petits gains.
+        # Trail 0.10%→0.06% : recul max depuis le peak avant fermeture. Min capture = 0.04%.
+        trailing_stop_activation_pct=0.10,
+        trailing_stop_pct=0.06,
         smart_cooldown_enabled=True,
         min_cooldown_minutes=0.5,
         max_cooldown_minutes=10.0,
