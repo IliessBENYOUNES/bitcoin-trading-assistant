@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.10] - 2026-04-12
+
+### Fixed
+- **DOWNTREND PROTECTION — 7 trades LONG perdants (-$10.44) pendant que le BTC descend** — Le score technique de 65 est basé sur des indicateurs 15min en retard (RSI, SMA, EMA) qui restent bullish pendant un pullback. Le robot entrait LONG à répétition, perdant à chaque fois via stale_negative_exit en 2 min. Le problème est à l'**entrée**, pas à la **sortie**.
+
+### Added
+- **Veto bearish micro-trend** — Bloque les LONG quand `micro_trend_score < 0` (tendance baissière objective sur les dernières candles). Les shorts et les reversals ne sont PAS bloqués. Raison de non-trade : `bearish_veto`.
+- **Reversal enrichi avec micro-trend (Source 4)** — Le reversal check reçoit maintenant `mq_data`. Si `micro_trend_score ≤ -2`, un signal overbought est injecté → favorise les SHORT contrarians au lieu d'entrer LONG en downtrend. Symétriquement, `micro_trend ≥ 3` injecte un signal oversold → favorise LONG.
+- **Market quality calculé AVANT le reversal** — Réordonnancement de `_tick_single_slot()` : le mq_data est maintenant calculé en premier pour alimenter le reversal check et le veto bearish.
+- **11 tests `TestDowntrendProtectionV2010`** :
+  - `test_reversal_fires_with_bearish_micro_trend` — micro_trend=-3 → short reversal
+  - `test_reversal_fires_with_bullish_micro_trend` — micro_trend=+3 → long reversal
+  - `test_reversal_no_fire_with_neutral_micro_trend` — micro_trend=-1 → pas de signal
+  - `test_reversal_backward_compatible_without_mq_data` — sans mq_data → reversal classique
+  - `test_reversal_micro_trend_plus_bearish_majority_cumulates` — double signal bearish
+  - `test_veto_bearish_blocks_long_when_micro_trend_negative` — veto activé
+  - `test_veto_bearish_does_not_block_short` — shorts non affectés
+  - `test_veto_bearish_does_not_block_reversal` — reversals non affectés
+  - `test_veto_bearish_allows_long_when_micro_trend_positive` — long autorisé si mt ≥ 0
+  - `test_veto_bearish_allows_long_when_micro_trend_zero` — neutre = OK
+  - `test_market_quality_computed_before_reversal` — ordre vérifié par introspection
+
+### Technical
+- Modifié : `backend/app/services/paper_trading_service.py` — Réordonnancement mq_data avant reversal, veto bearish, reversal Source 4 micro-trend, signature `_scalping_reversal_check(decision, mq_data=None)`
+- Modifié : `backend/app/services/journal_service.py` — Nouveau label `bearish_veto` dans `REASON_LABELS`
+- Modifié : `backend/tests/test_pivot_v200.py` — 11 nouveaux tests downtrend protection
+- **1635 tests** backend, tous passing ✅
+
 ## [2.0.9] - 2026-04-12
 
 ### Fixed

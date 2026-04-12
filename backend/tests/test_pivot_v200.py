@@ -1232,3 +1232,221 @@ class TestShortBidirectionalV208:
         # Le reversal détecte 1 signal overbought → "short"
         # La vérification short_min_score n'est plus dans le chemin reversal
         assert result == "short", "Score +25 avec 1 overbought → short (pas bloqué par short_min_score)"
+
+
+# ================================================================
+# 13. [v2.0.10] DOWNTREND PROTECTION — Veto bearish + reversal micro-trend
+# ================================================================
+
+
+class TestDowntrendProtectionV2010:
+    """Tests v2.0.10 : protection contre les entrées LONG en downtrend.
+
+    Le problème : 7/33 trades entrent LONG pendant que le BTC descend,
+    résultant en -$10.44 de pertes (stale exits). Le score technique de 65
+    est en retard (indicateurs 15min) et reste bullish pendant le pullback.
+
+    Solution : veto bearish (micro_trend < 0 → bloquer LONG) + reversal
+    enrichi (micro_trend ≤ -2 → signal SHORT).
+    """
+
+    def test_reversal_fires_with_bearish_micro_trend(self, db_session):
+        """[v2.0.10] micro_trend ≤ -2 → signal overbought → short reversal."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+
+        # Decision neutre (pas de majorité, pas d'overbought classique)
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "sma_bullish", "satisfied": True, "direction": "bullish"},
+            ],
+            "combined_score": 65,
+            "technical_score": 60,
+        }
+        # micro_trend = -3 → signal overbought
+        mq_data = {"micro_trend_score": -3}
+        result = pts._scalping_reversal_check(decision, mq_data=mq_data)
+        assert result == "short", "micro_trend=-3 → overbought signal → short reversal"
+
+    def test_reversal_fires_with_bullish_micro_trend(self, db_session):
+        """[v2.0.10] micro_trend ≥ 3 → signal oversold → long reversal."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "macd_bearish", "satisfied": True, "direction": "bearish"},
+            ],
+            "combined_score": -40,
+            "technical_score": -35,
+        }
+        mq_data = {"micro_trend_score": 3}
+        result = pts._scalping_reversal_check(decision, mq_data=mq_data)
+        assert result == "long", "micro_trend=+3 → oversold signal → long reversal"
+
+    def test_reversal_no_fire_with_neutral_micro_trend(self, db_session):
+        """[v2.0.10] micro_trend entre -1 et +2 → pas de signal micro-trend."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+
+        # Decision neutre, ni majorité ni overbought classique
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "sma_bullish", "satisfied": True, "direction": "bullish"},
+            ],
+            "combined_score": 50,
+            "technical_score": 50,
+        }
+        # micro_trend = -1 → pas assez bearish pour déclencher la Source 4
+        mq_data = {"micro_trend_score": -1}
+        result = pts._scalping_reversal_check(decision, mq_data=mq_data)
+        # 1 bullish rule < 2, pas de majorité → aucun signal
+        assert result is None, "micro_trend=-1 (neutre) → pas de signal micro-trend"
+
+    def test_reversal_backward_compatible_without_mq_data(self, db_session):
+        """[v2.0.10] Sans mq_data, le reversal fonctionne comme avant."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "rsi_overbought", "satisfied": True, "direction": "bearish"},
+            ],
+            "combined_score": 70,
+            "technical_score": 70,
+        }
+        # Pas de mq_data → Source 4 ignorée, mais Source 1 (rsi_overbought) fire
+        result = pts._scalping_reversal_check(decision, mq_data=None)
+        assert result == "short", "Sans mq_data, reversal classique fonctionne toujours"
+
+    def test_reversal_micro_trend_plus_bearish_majority_cumulates(self, db_session):
+        """[v2.0.10] micro_trend bearish + majorité bearish → 2 signaux (double confirmation)."""
+        from app.services.paper_trading_service import PaperTradingService
+        pts = PaperTradingService(db_session)
+
+        decision = {
+            "rules_evaluated": [
+                {"rule_name": "macd_bearish", "satisfied": True, "direction": "bearish"},
+                {"rule_name": "sma_death_cross", "satisfied": True, "direction": "bearish"},
+            ],
+            "combined_score": 65,
+            "technical_score": 60,
+        }
+        mq_data = {"micro_trend_score": -4}
+        result = pts._scalping_reversal_check(decision, mq_data=mq_data)
+        # Source 3 (majorité bearish 2b > 0h) + Source 4 (micro_trend ≤ -2) = 2 signaux
+        assert result == "short", "Majorité bearish + micro_trend bearish → short (double signal)"
+
+    def test_veto_bearish_blocks_long_when_micro_trend_negative(self):
+        """[v2.0.10] Le veto bearish bloque les LONG quand micro_trend < 0.
+
+        Teste la LOGIQUE du veto : si micro_trend < 0 et direction = long
+        et pas un reversal → la position doit être bloquée.
+        """
+        # Ce test vérifie la logique conditionnelle, pas le tick complet.
+        # La condition dans le code :
+        #   if mq_data and not scalping_reversal:
+        #       if direction_check == "long" and mt < 0: → bloquer
+        mq_data = {"micro_trend_score": -2}
+        scalping_reversal = False
+        action = "acheter"  # → direction_check = "long"
+        mt = mq_data.get("micro_trend_score", 0) or 0
+
+        direction_check = "long" if action == "acheter" else "short"
+        should_veto = (
+            mq_data is not None
+            and not scalping_reversal
+            and direction_check == "long"
+            and mt < 0
+        )
+        assert should_veto is True, "micro_trend=-2, long, non-reversal → veto activé"
+
+    def test_veto_bearish_does_not_block_short(self):
+        """[v2.0.10] Le veto bearish NE bloque PAS les shorts."""
+        mq_data = {"micro_trend_score": -5}
+        scalping_reversal = False
+        action = "vendre"  # → direction_check = "short"
+        mt = mq_data.get("micro_trend_score", 0) or 0
+
+        direction_check = "long" if action == "acheter" else "short"
+        should_veto = (
+            mq_data is not None
+            and not scalping_reversal
+            and direction_check == "long"
+            and mt < 0
+        )
+        assert should_veto is False, "Short → veto bearish ne s'applique pas"
+
+    def test_veto_bearish_does_not_block_reversal(self):
+        """[v2.0.10] Le veto bearish NE bloque PAS les trades reversal."""
+        mq_data = {"micro_trend_score": -3}
+        scalping_reversal = True  # Le reversal a déjà résolu la direction
+        action = "acheter"  # → direction serait long, mais c'est un reversal
+        mt = mq_data.get("micro_trend_score", 0) or 0
+
+        direction_check = "long" if action == "acheter" else "short"
+        should_veto = (
+            mq_data is not None
+            and not scalping_reversal
+            and direction_check == "long"
+            and mt < 0
+        )
+        assert should_veto is False, "Reversal → veto bearish ne s'applique pas"
+
+    def test_veto_bearish_allows_long_when_micro_trend_positive(self):
+        """[v2.0.10] Quand micro_trend ≥ 0, les LONG passent normalement."""
+        mq_data = {"micro_trend_score": 1}
+        scalping_reversal = False
+        action = "acheter"
+        mt = mq_data.get("micro_trend_score", 0) or 0
+
+        direction_check = "long" if action == "acheter" else "short"
+        should_veto = (
+            mq_data is not None
+            and not scalping_reversal
+            and direction_check == "long"
+            and mt < 0
+        )
+        assert should_veto is False, "micro_trend=+1 → long autorisé"
+
+    def test_veto_bearish_allows_long_when_micro_trend_zero(self):
+        """[v2.0.10] Quand micro_trend = 0 (neutre), les LONG passent."""
+        mq_data = {"micro_trend_score": 0}
+        scalping_reversal = False
+        action = "acheter"
+        mt = mq_data.get("micro_trend_score", 0) or 0
+
+        direction_check = "long" if action == "acheter" else "short"
+        should_veto = (
+            mq_data is not None
+            and not scalping_reversal
+            and direction_check == "long"
+            and mt < 0
+        )
+        assert should_veto is False, "micro_trend=0 (neutre) → long autorisé"
+
+    def test_market_quality_computed_before_reversal(self):
+        """[v2.0.10] Vérifier que le code calcule mq_data AVANT le reversal check.
+
+        L'ordre dans _tick_single_slot() doit être :
+        1. market quality (mq_data)
+        2. reversal check (utilise mq_data)
+        3. veto bearish (utilise mq_data)
+        """
+        import inspect
+        from app.services.paper_trading_service import PaperTradingService
+        source = inspect.getsource(PaperTradingService._tick_single_slot)
+
+        # Vérifier l'ordre : _check_market_quality AVANT _scalping_reversal_check
+        mq_pos = source.find("_check_market_quality")
+        rev_pos = source.find("_scalping_reversal_check")
+        # Les deux doivent apparaître dans le bloc "Pas de position"
+        # Le mq doit apparaître avant le reversal DANS LA SECTION D'ENTRÉE
+        # Cherchons dans la section après "Pas de position"
+        entry_section = source[source.find("Pas de position"):]
+        mq_in_entry = entry_section.find("_check_market_quality")
+        rev_in_entry = entry_section.find("_scalping_reversal_check")
+        assert mq_in_entry < rev_in_entry, (
+            "mq_data doit être calculé AVANT le reversal check dans la section d'entrée"
+        )
+

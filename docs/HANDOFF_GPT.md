@@ -1,82 +1,103 @@
-# HANDOFF GPT — Trailing stop relatif v2.0.9
+# HANDOFF GPT — Downtrend protection v2.0.10
 
 **Date :** 12 avril 2026  
-**Version :** v2.0.9  
+**Version :** v2.0.10  
 **Commit :** *en cours*
 
 ---
 
 ## Problème
 
-Le trailing stop **perdait 50-60% des gains** sur les petits peaks (typiques en scalping). Avec un recul fixe de 0.06%, une position ayant atteint un peak de +0.12% sortait à +0.06% — la moitié du gain gaspillée. L'utilisateur a identifié que le trailing devait être basé sur la **valeur du gain**, pas sur un pourcentage fixe du prix BTC.
+7/33 trades entrent **LONG pendant que le BTC descend**, résultant en **-$10.44 de pertes** (tous fermés par stale_negative_exit en 2 min). Le score technique de 65 est en retard (basé sur des indicateurs 15min lagging : RSI ~55, SMA bullish, EMA9>EMA21) et reste bullish pendant le pullback. Le trailing stop ne peut rien y faire — c'est un problème d'**entrée**, pas de **sortie**.
 
 ## Diagnostic
 
-Le trailing stop utilisait un **recul absolu** :
-```
-if (peak_pct - current_pct) >= 0.06%:  → exit
-```
+| Tick | Score | Action | micro_trend | Résultat |
+|------|-------|--------|-------------|----------|
+| 1-7 | 65 | acheter | -2 | LONG → stale_negative → -$1.49 chacun |
 
-Exemples de perte :
-| Peak PnL | Exit absolu (0.06%) | % du gain perdu |
-|----------|---------------------|-----------------|
-| 0.10% | 0.04% | **60%** |
-| 0.12% | 0.06% | **50%** |
-| 0.15% | 0.09% | **40%** |
-| 0.50% | 0.44% | **12%** |
-
-Le seuil fixe pénalise les petits gains (les plus fréquents en scalping) et favorise les gros gains (rares).
+Le score 65 > buy_threshold 30 → entrée systématique. Le `micro_trend_score = -2` (bearish) était ignoré pour les entrées LONG (le gate était désactivé à 0). Le reversal check ne détectait pas non plus la tendance baissière car il ne recevait pas les données de micro-trend.
 
 ## Cause racine
 
-Le `trailing_stop_pct` (0.06%) était conçu comme un delta absolu. Pour les peaks proches de l'activation (0.10%), 0.06% de recul représente la majorité du gain. Le ratio gain-perdu/gain-total était inversement proportionnel à la taille du peak.
+1. **Score technique en retard** : les indicateurs 15min (RSI, SMA, EMA) sont lagging et restent bullish pendant un pullback court
+2. **micro_trend ignoré** : le gate `min_micro_trend_long=0` était désactivé, donc `micro_trend_score=-2` ne bloquait pas les LONG
+3. **Reversal aveugle** : le reversal check ne recevait pas `mq_data`, donc ne voyait pas la micro-tendance baissière
+4. **mq_data calculé trop tard** : le market quality était évalué APRÈS le reversal check, donc les données n'étaient pas disponibles
 
 ## Correction appliquée
 
-**Nouveau paramètre : `trailing_stop_drop_ratio = 0.30`**
-
-Le trailing est maintenant **proportionnel au pic de gain** :
+### 1. Veto bearish (NOUVEAU)
 ```python
-retention = 1.0 - 0.30  # = 0.70 → garder 70% du pic
-min_gain_pct = peak_pct * retention
-if unrealized_pct_now <= min_gain_pct:  → exit
+# AVANT : rien ne bloquait un LONG quand micro_trend < 0
+# APRÈS : veto si micro_trend < 0 ET direction = long ET pas un reversal
+if mq_data and not scalping_reversal:
+    mt = mq_data.get("micro_trend_score", 0) or 0
+    if direction_check == "long" and mt < 0:
+        return "bearish_veto"  # LONG bloqué
 ```
 
-Résultats :
-| Peak PnL | Exit relatif (30%) | % du gain perdu | vs absolu |
-|----------|-------------------|-----------------|-----------|
-| 0.10% | 0.07% | **30%** | +30pp mieux |
-| 0.12% | 0.084% | **30%** | +20pp mieux |
-| 0.15% | 0.105% | **30%** | +10pp mieux |
-| 0.50% | 0.35% | **30%** | gros gains respirent |
+### 2. Reversal enrichi (Source 4 micro-trend)
+```python
+# AVANT : _scalping_reversal_check(decision_result)
+# APRÈS : _scalping_reversal_check(decision_result, mq_data=mq_data)
+# + Source 4 : micro_trend ≤ -2 → signal overbought → SHORT
+# + Source 4 : micro_trend ≥ 3 → signal oversold → LONG
+```
+
+### 3. Réordonnancement mq_data AVANT reversal
+```
+# AVANT : reversal → action_wait → market_quality → gates → entrée
+# APRÈS : market_quality → reversal (enrichi) → action_wait → gates → veto bearish → entrée
+```
 
 ### Fichiers modifiés
 
 | Fichier | Changement |
 |---------|-----------|
-| `schemas/journal.py` | Nouveau champ `trailing_stop_drop_ratio: Optional[float]` |
-| `services/trading_profile_service.py` | Scalping preset : `trailing_stop_drop_ratio=0.30` |
-| `services/paper_trading_service.py` | Logique trailing : mode relatif (prioritaire) + fallback absolu |
-| `tests/test_pivot_v200.py` | 5 nouveaux tests `TestTrailingStopRelativeV209` |
+| `services/paper_trading_service.py` | Réordonnancement mq_data, veto bearish, reversal Source 4, signature `_scalping_reversal_check(decision, mq_data=None)` |
+| `services/journal_service.py` | Nouveau label `bearish_veto` dans `REASON_LABELS` |
+| `tests/test_pivot_v200.py` | 11 nouveaux tests `TestDowntrendProtectionV2010` |
 
 ## Ce qui n'a PAS été touché
 
+- ❌ Trailing stop (v2.0.9 — déjà corrigé)
 - ❌ Breakeven stop, stale exit, SL/TP, momentum fade
-- ❌ Reversal check, shorts bidirectionnels
+- ❌ Profils aggressive/conservative/balanced
 - ❌ Frontend
+- ❌ Paramètres du profil scalping (buy_threshold, min_score, etc.)
 
 ## Validations
 
-- ✅ **1622 tests** backend passent (5 ajoutés)
+- ✅ **1635 tests** backend passent (11 ajoutés)
 - ✅ `tsc --noEmit` clean
+- ✅ Zéro régression sur les 1622 tests existants
 
 ## Documentation mise à jour
 
 | Document | Mis à jour |
 |----------|-----------|
-| `docs/CURRENT_STATE.md` | ✅ v2.0.9, 1622 tests, feature trailing relatif |
-| `CHANGELOG.md` | ✅ Section v2.0.9 |
+| `docs/CURRENT_STATE.md` | ✅ v2.0.10, 1635 tests, feature downtrend protection |
+| `CHANGELOG.md` | ✅ Section v2.0.10 (Fixed + Added + Technical) |
 | `docs/HANDOFF_GPT.md` | ✅ Ce fichier |
+
+## État actuel
+
+| Élément | Valeur |
+|---------|--------|
+| Version | v2.0.10 |
+| Tests | 1635 passing |
+| tsc | Clean |
+| Phase | Downtrend protection livré |
+
+## Prochaine action recommandée
+
+1. **Déployer et observer** : faire tourner le robot en scalping pendant 1-2h, vérifier que :
+   - Les LONG sont bloqués quand `micro_trend < 0` (raison = `bearish_veto`)
+   - Les SHORT reversal se déclenchent quand `micro_trend ≤ -2`
+   - Les LONG passent quand `micro_trend ≥ 0`
+2. **Audit runtime** : utiliser `GET /audit/enriched-export` pour vérifier la répartition des raisons de non-trade
+3. **Calibration possible** : si le veto est trop restrictif (bloque trop de trades), on pourrait ajuster le seuil à `micro_trend < -1` au lieu de `< 0`
 
 ## Commandes de relance
 
@@ -84,5 +105,5 @@ Résultats :
 cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 8000
 cd frontend && npm run dev
 cd backend && python -m pytest tests/ -v
-cd backend && python -m pytest tests/test_pivot_v200.py::TestTrailingStopRelativeV209 -v
+cd backend && python -m pytest tests/test_pivot_v200.py::TestDowntrendProtectionV2010 -v
 ```

@@ -54,6 +54,7 @@ REASON_LABELS = {
     "economic_viability_low": "Non-viable économiquement (coûts > capture)",
     "structural_proof_insufficient": "Preuve structurelle insuffisante",
     "micro_trend_insufficient": "Micro-tendance insuffisante pour long",
+    "bearish_veto": "Veto bearish : marché en baisse → LONG bloqué",
     "other": "Autre",
 }
 

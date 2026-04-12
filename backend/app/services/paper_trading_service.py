@@ -837,14 +837,43 @@ class PaperTradingService:
                 profile_name = f"auto→{resolved_profile}"
                 logger.info(f"🤖 Auto-profil résolu : {resolved_profile} (score={score}, conf={confidence})")
 
+            # [v2.0.10] MARKET QUALITY — Calculé AVANT le reversal pour enrichir les signaux.
+            # Le mq_data (micro_trend, volume, price_position) est utilisé par :
+            # 1. Le reversal check (micro_trend ≤ -2 → signal SHORT)
+            # 2. Le veto bearish (micro_trend < 0 → bloquer les LONG)
+            # 3. Le market quality gate (quality_score minimum)
+            # 4. Les structural proofs
+            min_mq = getattr(profile_params, "min_market_quality", None) if profile_params else None
+            min_vr = getattr(profile_params, "min_volume_ratio", None) if profile_params else None
+            long_qf = getattr(profile_params, "long_quality_filter", False) if profile_params else False
+
+            mq_reason = None
+            mq_data = None
+            # Toujours calculer mq_data pour le tracing et les gates
+            if min_mq is not None and min_mq > 0:
+                mq_reason, mq_data = self._check_market_quality(
+                    decision_result=decision_result,
+                    direction="long" if action == "acheter" else "short",
+                    min_quality=min_mq,
+                    min_volume_ratio=min_vr or 0.0,
+                    long_quality_filter=long_qf,
+                )
+            else:
+                # Compute quality data for tracing even without gating
+                _, mq_data = self._check_market_quality(
+                    decision_result=decision_result,
+                    direction="long" if action == "acheter" else "short",
+                )
+
             # [v1.6.2] Scalping bidirectionnel — mean reversion
             # En scalping, on ne suit pas aveuglément la tendance. Quand les
             # oscillateurs (RSI, StochRSI) montrent un surachat/survente extrême,
             # on ouvre une position contrariante pour capter le pullback.
             # Cela permet d'ouvrir des SHORT même en tendance haussière.
+            # [v2.0.10] Le reversal reçoit maintenant mq_data pour exploiter le micro_trend.
             scalping_reversal = False
             if profile_params and profile_params.loss_cut_pct <= 0.5:
-                reversal_dir = self._scalping_reversal_check(decision_result)
+                reversal_dir = self._scalping_reversal_check(decision_result, mq_data=mq_data)
                 if reversal_dir:
                     new_action = "acheter" if reversal_dir == "long" else "vendre"
                     if new_action != action:
@@ -881,29 +910,8 @@ class PaperTradingService:
                     non_trade_reason="decision_wait",
                 )
 
-            # [v1.9.9] Market quality gating — no-trade zone + runtime trace
-            # Toujours compute la qualité marché pour le log, même si pas de gate.
-            # Cela permet l'audit runtime de CHAQUE tick.
-            min_mq = getattr(profile_params, "min_market_quality", None) if profile_params else None
-            min_vr = getattr(profile_params, "min_volume_ratio", None) if profile_params else None
-            long_qf = getattr(profile_params, "long_quality_filter", False) if profile_params else False
-
-            mq_reason = None
-            mq_data = None
-            if min_mq is not None and min_mq > 0:
-                mq_reason, mq_data = self._check_market_quality(
-                    decision_result=decision_result,
-                    direction="long" if action == "acheter" else "short",
-                    min_quality=min_mq,
-                    min_volume_ratio=min_vr or 0.0,
-                    long_quality_filter=long_qf,
-                )
-            else:
-                # Compute quality data for tracing even without gating
-                _, mq_data = self._check_market_quality(
-                    decision_result=decision_result,
-                    direction="long" if action == "acheter" else "short",
-                )
+            # [v2.0.10] Market quality gate — mq_data déjà calculé plus haut (avant reversal).
+            # Ici on fait juste le gating (rejet si qualité trop basse).
 
             # Helper pour injecter les données de qualité dans le log
             _qg_log = {}
@@ -1067,6 +1075,39 @@ class PaperTradingService:
                             profile_type=profile_name,
                             non_trade_reason="micro_trend_insufficient",
                         )
+
+            # [v2.0.10] VETO BEARISH — Bloquer les LONG quand le marché descend.
+            # Les données montrent que 7/33 trades perdent -$10.44 à cause d'entrées LONG
+            # pendant que le BTC descend. Le score technique de 65 est RETARDÉ (basé sur
+            # des indicateurs 15min) et reste bullish pendant un pullback.
+            # Ce veto vérifie le micro_trend_score TEMPS RÉEL : s'il est négatif (bearish),
+            # on bloque le LONG. Les reversals (shorts contrarians) ne sont PAS bloqués.
+            if mq_data and not scalping_reversal:
+                direction_check = "long" if action == "acheter" else "short"
+                mt = mq_data.get("micro_trend_score", 0) or 0
+                if direction_check == "long" and mt < 0:
+                    detail = (
+                        f"Veto bearish : micro_trend_score {mt:+d} < 0, "
+                        f"marché en baisse → LONG bloqué (score technique {score} en retard)"
+                    )
+                    _log_tick(action_taken="hold", btc_price=current_price,
+                              decision_score=score, decision_action=action,
+                              decision_confidence=confidence,
+                              reason_no_trade="bearish_veto",
+                              reason_detail=detail[:500],
+                              quality_gate_passed=True,
+                              rejection_category="structure",
+                              **_qg_log, **_econ_log)
+                    return PaperTickResult(
+                        action_taken="hold",
+                        detail=detail,
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        decision_score=score,
+                        decision_action=action,
+                        profile_type=profile_name,
+                        non_trade_reason="bearish_veto",
+                    )
 
             # [v1.5] Vérification profil — score minimum
             # Les trades de reversal (mean reversion) ne sont pas soumis au
@@ -1536,7 +1577,7 @@ class PaperTradingService:
             logger.debug(f"Market quality check error (non-blocking): {e}")
             return None, None  # En cas d'erreur, ne pas bloquer le trade
 
-    def _scalping_reversal_check(self, decision_result: dict) -> Optional[str]:
+    def _scalping_reversal_check(self, decision_result: dict, mq_data: dict = None) -> Optional[str]:
         """
         Vérifie si les conditions justifient une position contrariante (mean reversion).
 
@@ -1551,6 +1592,7 @@ class PaperTradingService:
         Nouveaux signaux ajoutés pour détecter les retournements en range :
         - Majorité bearish dans les règles satisfaites (plus de baissiers que haussiers)
         - Score négatif du moteur de décision (le marché penche vers le baissier)
+        - [v2.0.10] Micro-tendance baissière (micro_trend ≤ -2) → signal SHORT
 
         Seuil abaissé à 1 signal. Les sorties (trailing, breakeven, stale 2min)
         protègent suffisamment contre les faux signaux. Un mauvais short sort
@@ -1607,6 +1649,22 @@ class PaperTradingService:
                 f"⚡ Scalping reversal: majorité bullish ({bullish_rules}h vs {bearish_rules}b) → oversold signal"
             )
 
+        # [v2.0.10] Source 4 : Micro-tendance temps réel
+        # Quand le micro_trend_score ≤ -2, le marché est objectivement baissier
+        # sur les dernières candles → signal overbought → favorise un SHORT.
+        # Symétrique : micro_trend ≥ 3 → oversold → favorise un LONG.
+        if mq_data:
+            mt = mq_data.get("micro_trend_score", 0) or 0
+            if mt <= -2:
+                overbought += 1
+                logger.debug(
+                    f"⚡ Scalping reversal: micro_trend={mt} ≤ -2 → overbought signal (bearish trend)"
+                )
+            elif mt >= 3:
+                oversold += 1
+                logger.debug(
+                    f"⚡ Scalping reversal: micro_trend={mt} ≥ 3 → oversold signal (bullish trend)"
+                )
 
         # [v2.0.8] Seuil abaissé de 2 à 1 signal.
         # Les sorties (trailing stop, breakeven stop, stale 2min) protègent
