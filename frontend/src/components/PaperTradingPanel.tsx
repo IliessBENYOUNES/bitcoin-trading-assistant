@@ -95,6 +95,38 @@ function PositionTimer({ entryTs }: { entryTs: string }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// [v2.0.6] PnL temps réel par position — calcule le PnL latent à partir du prix BTC courant
+// ─────────────────────────────────────────────────────────────────────────────
+function PositionPnL({ pos, currentPrice }: { pos: PaperTradeItem; currentPrice: number | null }) {
+  if (!currentPrice) return null;
+  const entry = pos.entry_price;
+  const size = pos.position_size_usd;
+  // Calcul PnL selon direction
+  const priceDelta = pos.direction === 'long'
+    ? (currentPrice - entry) / entry
+    : (entry - currentPrice) / entry;
+  const pnlUsd = priceDelta * size;
+  const pnlPct = priceDelta * 100;
+  const color = pnlUsd >= 0 ? '#4caf50' : '#f44336';
+  const sign = pnlUsd >= 0 ? '+' : '';
+
+  return (
+    <Chip
+      size="small"
+      label={`${sign}${pnlUsd.toFixed(2)} $ (${sign}${pnlPct.toFixed(2)}%)`}
+      sx={{
+        fontFamily: 'monospace',
+        fontWeight: 800,
+        fontSize: '0.8rem',
+        color,
+        bgcolor: `${color}18`,
+        border: `1px solid ${color}44`,
+      }}
+    />
+  );
+}
+
 // Couleur selon PnL
 const pnlColor = (pnl: number | null): string => {
   if (pnl === null) return 'text.secondary';
@@ -977,6 +1009,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
                 </Typography>
                 {statusChip(pos.status)}
                 <PositionTimer entryTs={pos.entry_ts} />
+                <PositionPnL pos={pos} currentPrice={status?.current_btc_price ?? null} />
                 <Button
                   variant="outlined"
                   color="warning"
@@ -1014,6 +1047,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
             </Typography>
             {statusChip(openPos.status)}
             <PositionTimer entryTs={openPos.entry_ts} />
+            <PositionPnL pos={openPos} currentPrice={status?.current_btc_price ?? null} />
             <Button
               variant="outlined"
               color="warning"
