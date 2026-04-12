@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 12 avril 2026
 > **Version :** v2.0.13
 > **Branche :** `master`
-> **Dernier commit :** `pending` — feat(scalping): tick momentum confirmation v2.0.13
+> **Dernier commit :** `dea2018` — feat(scalping): tick momentum confirmation v2.0.13
 
 ---
 

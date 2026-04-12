@@ -2,7 +2,7 @@
 
 **Date :** 12 avril 2026  
 **Version :** v2.0.13  
-**Commit :** `pending`
+**Commit :** `dea2018`
 
 ---
 
