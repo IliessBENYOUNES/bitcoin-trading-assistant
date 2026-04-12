@@ -253,6 +253,17 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # La protection micro-trend reste via structural_proofs (1 des 4 preuves).
         # 0 = gate désactivé (le code vérifie min_mt_long > 0).
         min_micro_trend_long=0,
+        # [v2.0.22] SAS D'ENTRÉE SÉCURISÉ — Observation avant ouverture réelle.
+        # Au lieu d'ouvrir immédiatement, le système crée une entrée VIRTUELLE
+        # et observe le PnL pendant ~10-15 secondes. Si le PnL reste négatif,
+        # l'entrée est annulée → on ne perd JAMAIS d'argent dès le départ.
+        # Résout le problème catastrophique du trade #620 (-$15.27 en 36s) :
+        # le PnL virtuel serait resté négatif → jamais ouvert.
+        # Avec des ticks à 5s et un SAS de 15s, on obtient ~3 ticks d'observation.
+        entry_sas_enabled=True,
+        entry_sas_duration_seconds=15.0,   # Timeout max 15 sec
+        entry_sas_min_positive_seconds=10.0,  # PnL positif continu pendant 10s
+        entry_sas_range_caution=True,       # Extra prudent aux extrémités de range
     ),
 }
 

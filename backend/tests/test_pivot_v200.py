@@ -2464,10 +2464,18 @@ class TestScalpingV2020:
             f"structural proofs (basées sur micro_trend lagging). Got: {result.non_trade_reason}"
         )
         # Le trade devrait s'ouvrir comme un LONG (tick_override_long)
-        assert result.action_taken == "opened_long", (
-            f"Attendu opened_long via override, obtenu {result.action_taken} "
+        # [v2.0.22] Avec le SAS d'entrée activé sur scalping, le premier tick
+        # crée un SAS pending au lieu d'ouvrir directement. "sas_pending" prouve
+        # que TOUTES les gates ont été passées (y compris le bypass structural proofs)
+        # et que le seul blocage est l'observation SAS avant ouverture.
+        assert result.action_taken in ("opened_long", "hold"), (
+            f"Attendu opened_long ou sas_pending via override, obtenu {result.action_taken} "
             f"(reason: {result.non_trade_reason or result.detail})"
         )
+        if result.action_taken == "hold":
+            assert result.non_trade_reason == "sas_pending", (
+                f"Si hold, la raison doit être sas_pending (SAS actif). Got: {result.non_trade_reason}"
+            )
 
     def test_structural_proofs_still_apply_without_override(self, db_session):
         """[v2.0.20] Les structural proofs s'appliquent toujours sans override (non-régression)."""

@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.22] - 2026-04-13
+
+### Added
+- **SAS D'ENTRÉE SÉCURISÉ (ENTRY AIRLOCK)** — Nouveau mécanisme de validation pré-entrée. Quand tous les gates passent, au lieu d'ouvrir immédiatement, le système crée une entrée VIRTUELLE et observe le PnL pendant ~10-15 secondes. Si le PnL virtuel reste négatif → l'entrée est annulée (jamais de trade perdant dès le départ). Si le PnL virtuel devient positif et y reste ≥10s → l'entrée réelle est confirmée au prix courant. Résout le problème catastrophique du trade #620 (-$15.27 en 36s).
+- **RANGE CAUTION** — Le SAS est plus strict aux extrémités de range. LONG en haut de range (>70%) ou SHORT en bas de range (<30%) → rejet immédiat dès le premier tick négatif. Élimine les positions structurellement dangereuses (achat au plafond, vente au plancher).
+- Nouveau service `EntrySasService` (in-memory, pattern identique à `TickMomentumService`). Méthodes : `create_pending()`, `evaluate()`, `cancel()`, `clear()`.
+- 4 nouveaux paramètres sur `TradingProfileParams` : `entry_sas_enabled`, `entry_sas_duration_seconds`, `entry_sas_min_positive_seconds`, `entry_sas_range_caution`.
+- SAS activé sur profil scalping (15s max, 10s positif requis, range caution ON).
+- Cleanup global `EntrySasService.clear()` dans conftest.py (isolation inter-tests).
+
+### Changed
+- `_tick_single_slot` : avant d'évaluer une nouvelle entrée, vérifie si un SAS est en attente. Si oui, évalue le PnL virtuel avant d'ouvrir. Après les gates, crée un SAS au lieu d'ouvrir directement (quand entry_sas_enabled=True).
+- `reset_account()` : nettoie les SAS pending en mémoire via `EntrySasService.clear()`.
+- Test `test_override_long_bypasses_structural_proofs` adapté pour accepter `sas_pending` comme preuve du bypass.
+
+### Technical
+- Ajouté : `backend/app/services/entry_sas_service.py` — Service SAS complet (SasPendingEntry, SasVerdict, EntrySasService)
+- Modifié : `backend/app/schemas/journal.py` — 4 nouveaux champs TradingProfileParams
+- Modifié : `backend/app/services/trading_profile_service.py` — SAS activé sur preset scalping
+- Modifié : `backend/app/services/paper_trading_service.py` — ~100 lignes : SAS check + SAS creation
+- Modifié : `backend/tests/conftest.py` — Fixture globale autouse _clean_sas_state
+- Ajouté : `backend/tests/test_entry_sas.py` — 39 tests (création, évaluation, range caution, PnL, tracking, profils, scénarios réels)
+- Tests : 1778 (+39)
+
 ## [2.0.21] - 2026-04-13
 
 ### Added

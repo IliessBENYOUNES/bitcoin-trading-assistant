@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 13 avril 2026
-> **Version :** v2.0.21
+> **Version :** v2.0.22
 > **Branche :** `master`
-> **Dernier commit :** feat(scalping): momentum stability check + journal filters v2.0.21
+> **Dernier commit :** feat(scalping): SAS d'entrée sécurisé — observation avant ouverture v2.0.22
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.21** |
+| Version courante | **v2.0.22** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1739 tests**, tous passing ✅ |
+| Tests backend | **1778 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.21 livré** — Momentum stability + filtres journal |
+| Phase courante | **v2.0.22 livré** — SAS d'entrée sécurisé (entry airlock) |
 
 ### ⚠️ État de maturité honnête
 
@@ -59,6 +59,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.19] CANDLE REVERSAL FIX** — La feature v2.0.18 (candle reversal exit) n'a jamais déclenché en production (0/32 trades). Cause : `detect_direction()` utilisait `MIN_MOVE_PCT=0.002%` ($1.42) avec une fenêtre de 15s (~3 ticks), trop insensible pour les micro-mouvements scalping. Fix : (1) `detect_direction()` accepte maintenant un `min_move_pct` personnalisable, (2) `check_candle_reversal` utilise un seuil réduit de 0.001% ($0.71), (3) fenêtre élargie de 15→30 secondes pour capturer plus de ticks.
 - **[v2.0.19] OVERRIDE ANTI-CHURN** — Les trades ouverts via tick momentum override (entry_reason="vendre") étaient immédiatement fermés par signal contraire car le score bullish (+66) > seuil de sortie (30). Fix : (1) Entry reason préfixé `tick_override_{direction}`, (2) logique `is_reversal` étendue pour protéger les override trades comme les mean_reversion (seuil de sortie relevé à abs(score_entrée)+1).
 - **[v2.0.20] FIX BIAIS 100% SHORT SCALPING** — Le tick momentum override (v2.0.14) était censé éliminer le biais short en suivant la direction réelle du prix. Mais le gate **structural proofs** (v2.0.0) bloquait TOUS les LONGs de l'override car il vérifiait `micro_trend_score ≥ 3` — un indicateur **lagging 15 min** négatif en marché bearish. L'override détectait "prix monte → LONG" mais les structural proofs disaient "micro_trend bearish → pas de LONG". Résultat : seuls les SHORTs passaient (micro_trend négatif = proof pour short). Fix : bypass complet des structural proofs quand `tm_override_active=True`. La direction réelle du prix (30 sec) EST la preuve structurelle. Les protections restantes (economic gate, market quality, min_score, risk engine) suffisent. 2 tests dédiés.
+- **[v2.0.22] SAS D'ENTRÉE SÉCURISÉ (ENTRY AIRLOCK)** — Quand tous les gates passent, au lieu d'ouvrir immédiatement la position, le système entre dans un "SAS" (sas d'entrée). Pendant ~10-15 secondes, le prix est observé virtuellement (comme si on avait ouvert). Si le PnL virtuel reste négatif → l'entrée est annulée, on ne perd RIEN. Si le PnL virtuel devient positif et y reste → l'entrée réelle est confirmée au prix courant. **Range caution** : si le prix est en haut de range (>70%) et qu'on veut un LONG, ou en bas de range (<30%) et qu'on veut un SHORT, le SAS rejette immédiatement dès le premier tick négatif (position structurellement dangereuse). Nouveau service `EntrySasService` (in-memory, pattern identique à `TickMomentumService`). Résout le problème catastrophique du trade #620 (-$15.27 en 36s) : le PnL virtuel serait resté négatif → jamais ouvert. 39 tests dédiés.
 - **[v2.0.4] Export enrichi** — Service `EnrichedExportService` + endpoint `GET /audit/enriched-export`. Export tick-par-tick avec : prix BTC, variation %, décision moteur, score, raison de non-trade, position ouverte/fermée, PnL, market quality. Inclut ventilation des refus par gate + détection des tendances BTC ratées.
 - **[v2.0.4] Learning runtime** — Nouvelle méthode `LearningService.learn_from_runtime()` + endpoint `POST /learning/learn-runtime`. Analyse les TickActivityLog (pas les trades fermés) pour identifier les gates sur-bloquants et proposer des assouplissements en mode shadow. Suggestions 15 (micro-trend dominant) et 16 (gate unique > 70%).
 - **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.

@@ -1,113 +1,107 @@
-# 🔄 Handoff GPT — Dernière intervention
+# 🔄 HANDOFF GPT — Dernière intervention
 
 > **Date :** 13 avril 2026
-> **Version :** v2.0.21
-> **Titre :** Momentum Stability Check + Journal Filters
+> **Version :** v2.0.22
+> **Intervention :** SAS d'Entrée Sécurisé (Entry Airlock)
 
 ---
 
 ## Problème
 
-L'utilisateur a observé un pattern clair dans le journal des trades : **les trades gagnants conservent la même couleur de pastille** (bougie entrée = bougie sortie), tandis que les trades perdants changent de couleur immédiatement après l'entrée. Cela signifie que le robot entre en fin de bougie, juste avant un retournement.
+Les trades scalping s'ouvraient et perdaient immédiatement de l'argent à cause de changements de bougie destructeurs. Cas le plus grave : trade #620 (SHORT @ 70825.67), stop loss atteint en 36 secondes → -$15.27. Ce seul trade a effacé tous les gains de la session (+$7.27 PnL total passé à -$7.27).
 
-Deux besoins :
-1. **Filtres journal** — Pour analyser visuellement les trades par direction, résultat, cohérence de bougie, slot, type de sortie
-2. **Prédiction retournement** — Ne pas entrer si la bougie est sur le point de changer de couleur
-
----
+**Données clés du run :**
+- 22 trades, 12 gagnants, 10 perdants (win rate 54.55%)
+- Mais les pertes étaient disproportionnées (worst: -$15.27 vs best: +$25.58)
+- Les trades SL hit avaient tous un PnL immédiatement négatif dès l'ouverture
+- Le prix allait systématiquement contre la direction avant même que les protections ne puissent agir
 
 ## Diagnostic
 
-Le tick momentum override (v2.0.14) détecte la direction sur 30 secondes. Mais il ne vérifie pas si le mouvement est en train de **s'essouffler**. Exemple : sur 30s le prix monte (→ LONG), mais les 10 dernières secondes montrent un recul → la bougie va devenir rouge → si on entre LONG maintenant, on perd.
-
----
+Analyse des trades export JSON fourni par l'utilisateur :
+1. Les trades destructeurs entraient alors que le prix allait immédiatement en sens inverse
+2. Le momentum stability check (v2.0.21) filtrait les fins de bougie mais pas les entrées à contre-courant
+3. Aucune vérification post-gates ne validait que le prix allait réellement dans la bonne direction après décision d'ouverture
 
 ## Cause racine
 
-Absence de vérification de la **stabilité** du momentum avant l'entrée. Le `detect_direction()` regarde la tendance globale (30s) mais ignore la micro-tendance récente (10s).
-
----
+Le système passait tous les gates (market quality, economic, structural proofs, momentum stability) et ouvrait immédiatement. Mais entre la décision et le prochain tick (~5s), le prix pouvait se retourner drastiquement (changement de bougie). Le système n'avait aucun mécanisme pour "observer avant d'entrer".
 
 ## Correction appliquée
 
-### Backend : `tick_momentum_service.py`
-- **Nouvelle méthode** `check_momentum_stability(slot, direction, long_window=30, short_window=10)` :
-  - Compare la direction sur la fenêtre longue (30s) vs courte (10s)
-  - Si la fenêtre courte va CONTRE la direction, bloque l'entrée
-  - Si le ratio de ticks récents est > 65% contre la direction, bloque
-  - Si données insuffisantes, laisse passer (pas de blocage au démarrage)
+### Nouveau service : `EntrySasService` (in-memory)
+- **Fichier :** `backend/app/services/entry_sas_service.py`
+- Pattern identique à `TickMomentumService` (class-level dict par slot)
+- Stocke des `SasPendingEntry` avec tous les paramètres nécessaires à l'ouverture
+- `evaluate()` calcule le PnL virtuel et décide : approved / rejected / waiting
 
-### Backend : `paper_trading_service.py`
-- **Après le tick momentum override** (qui détecte la direction), appel à `check_momentum_stability()`
-- Si instable → retourne `hold` avec `non_trade_reason="momentum_unstable"`
+### Schéma : 4 nouveaux paramètres
+- **Fichier :** `backend/app/schemas/journal.py` (TradingProfileParams)
+- `entry_sas_enabled` (bool) : active le SAS
+- `entry_sas_duration_seconds` (float, 15.0) : timeout max
+- `entry_sas_min_positive_seconds` (float, 10.0) : durée min de PnL positif
+- `entry_sas_range_caution` (bool, True) : prudence aux extrémités de range
 
-### Frontend : `PaperTradingPanel.tsx`
-- **5 filtres** dans le journal : direction, résultat, cohérence bougie, slot, type de sortie
-- **Stats dynamiques** sous les filtres : total, wins, losses, WR, PnL
-- Bouton reset pour effacer tous les filtres
-- Le journal affiche `filteredTrades` au lieu de `trades`
+### Profil scalping configuré
+- **Fichier :** `backend/app/services/trading_profile_service.py`
+- SAS activé uniquement sur scalping (les autres profils gardent `entry_sas_enabled=False`)
 
----
+### Intégration dans le flux de tick
+- **Fichier :** `backend/app/services/paper_trading_service.py`
+- 2 points d'insertion :
+  1. **Avant évaluation** (~l.937) : si SAS pending → évaluer (approved/rejected/waiting)
+  2. **Après tous les gates** (~l.1660) : si SAS enabled → créer SAS pending au lieu d'ouvrir
+
+### Logique du SAS
+1. **Création** : quand tous les gates passent, stocker entrée virtuelle au prix courant
+2. **Évaluation** (ticks suivants) :
+   - PnL virtuel = (current - virtual_entry) / virtual_entry × 100 (long) ou inverse (short)
+   - Si positif continu ≥ min_positive_seconds → **approved**
+   - Si négatif après ½ temps (jamais positif) → **rejected (anticipé)**
+   - Si timeout atteint + positif maintenant → **approved (timeout+positif)**
+   - Si timeout atteint + négatif → **rejected (timeout)**
+3. **Range caution** : LONG en haut de range (>70%) ou SHORT en bas de range (<30%) + PnL négatif après 2 ticks → **rejected immédiat**
 
 ## Ce qui n'a PAS été touché
 
-- ✅ Profils trading (aucun paramètre changé)
-- ✅ Trailing stop / gain erosion / breakeven / stale exit
-- ✅ Candle reversal exit (v2.0.18)
-- ✅ Mode autonome backend
-- ✅ Slot aggressive (sanctuarisé)
-- ✅ JournalPanel (séparé du PaperTradingPanel)
-
----
+- Les profils conservative, balanced, aggressive → `entry_sas_enabled=False` par défaut
+- Le flux d'ouverture directe (sans SAS) → conservé pour les profils non-SAS
+- Les mécanismes de sortie (trailing, gain erosion, breakeven, stale, candle reversal)
+- Le TickMomentumService → aucune modification
+- Le frontend → aucune modification (le SAS apparaît comme "hold" avec detail explicite)
 
 ## Validations
 
-- ✅ **1739 tests** backend passent (dont 7 nouveaux)
+- ✅ **1778 tests** backend passent (1739 + 39 nouveaux)
 - ✅ `tsc --noEmit` sans erreur
-- ✅ Backend relancé et mode autonome actif
-- ✅ Endpoint `/health` OK
-
----
+- ✅ 39 tests dédiés couvrant : création, évaluation (approved/rejected/waiting), range caution, PnL calcul, tracking, profils, scénarios réels
+- ✅ 3 scénarios réels simulés : trade #620 (rejeté), trade #600 (approuvé), trade #605 (rejeté range caution)
 
 ## Documentation mise à jour
 
-| Document | Changement |
-|----------|-----------|
-| `docs/CURRENT_STATE.md` | Version 2.0.21, tests 1739, features |
-| `CHANGELOG.md` | Entrée v2.0.21 complète |
+| Document | Changements |
+|----------|-------------|
+| `docs/CURRENT_STATE.md` | Version v2.0.22, 1778 tests, nouvelle feature SAS |
+| `CHANGELOG.md` | Nouvelle section [2.0.22] complète |
+| `docs/ROADMAP.md` | (pas de changement de phase) |
+| `docs/requirements_traceability.md` | (pas de nouveau FR) |
 | `docs/HANDOFF_GPT.md` | Ce fichier |
-| `docs/ROADMAP.md` | Pas modifié (pas de changement de phase) |
-| `docs/requirements_traceability.md` | Pas modifié (pas de nouvelle exigence formelle) |
-
----
 
 ## Commit
 
 ```
-feat(scalping): momentum stability check + journal filters v2.0.21
+feat(scalping): SAS d'entrée sécurisé — observation avant ouverture v2.0.22
 ```
-
----
 
 ## État actuel
 
 | Élément | Valeur |
 |---------|--------|
-| Version | v2.0.21 |
-| Tests | 1739 ✅ |
-| TSC | 0 erreur ✅ |
-| Backend | Running (port 8000) |
-| Autonome | Running (scalping, 10s) |
-
----
-
-## Prochaine action recommandée
-
-1. **Observer** les trades avec le nouveau filtre de stabilité pour valider que les entrées en fin de bougie sont bien bloquées
-2. **Filtrer** dans le journal pour comparer : même couleur (gagnants) vs changée (perdants) et confirmer le pattern
-3. Si le filtre `momentum_unstable` bloque trop souvent, **ajuster** les paramètres (fenêtre courte, ratio seuil)
-
----
+| Version | v2.0.22 |
+| Tests | 1778 passing |
+| Frontend | tsc OK |
+| SAS activé | scalping (15s max, 10s positif, range caution ON) |
+| Prochaine action | Tester en runtime (paper trading live) pour mesurer l'impact |
 
 ## Commandes de relance
 
@@ -118,9 +112,9 @@ cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 80
 # Frontend
 cd frontend && npm run dev
 
-# Mode autonome
-curl -X POST http://localhost:8000/paper/autonomous/start -H "Content-Type: application/json" -d '{"interval_seconds": 10, "profile": "scalping"}'
-
 # Tests
 cd backend && python -m pytest tests/ -v
+
+# TypeScript check
+cd frontend && npx tsc --noEmit
 ```

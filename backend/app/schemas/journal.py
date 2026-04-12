@@ -175,6 +175,24 @@ class TradingProfileParams(BaseModel):
     candle_reversal_min_seconds: float = Field(default=3.0, description="Durée min (sec) de reversal avant exit (évite le bruit)")
     # Fenêtre d'analyse pour détecter le reversal (en secondes).
     candle_reversal_window_seconds: float = Field(default=15.0, description="Fenêtre d'analyse tick momentum pour détecter le reversal")
+    # [v2.0.22] SAS D'ENTRÉE SÉCURISÉ — Validation pré-entrée par observation.
+    # Quand tous les gates passent, au lieu d'ouvrir immédiatement, le système
+    # crée une entrée VIRTUELLE et observe le PnL pendant quelques secondes.
+    # Si le PnL virtuel reste négatif → l'entrée est annulée (jamais de trade perdant dès le départ).
+    # Si le PnL virtuel devient positif et le reste → l'entrée réelle est confirmée.
+    # Corrige le problème des entrées destructrices sur changement de bougie :
+    # ex. trade #620 qui perd $15.27 en 36 secondes.
+    entry_sas_enabled: bool = Field(default=False, description="Active le SAS d'entrée sécurisé (observation avant ouverture)")
+    # Durée maximale du SAS en secondes. Si le PnL n'est pas confirmé positif avant ce délai,
+    # l'entrée est annulée (timeout). Doit être > entry_sas_min_positive_seconds.
+    entry_sas_duration_seconds: float = Field(default=15.0, description="Durée max du SAS en secondes avant annulation (timeout)")
+    # Durée minimale de PnL positif continu avant confirmation de l'entrée.
+    # Le prix doit aller dans notre direction pendant au moins N secondes consécutives.
+    entry_sas_min_positive_seconds: float = Field(default=10.0, description="Durée min de PnL positif avant confirmation de l'entrée réelle")
+    # Prudence renforcée aux extrémités de range : si le prix est en haut de range (>70%)
+    # et qu'on veut un LONG, ou en bas de range (<30%) et qu'on veut un SHORT,
+    # le SAS est plus exigeant (annulation immédiate si PnL négatif sur un seul tick).
+    entry_sas_range_caution: bool = Field(default=True, description="Prudence renforcée aux extrémités de range (haut→pas de long, bas→pas de short)")
 
 
 class TradingProfileResponse(BaseModel):

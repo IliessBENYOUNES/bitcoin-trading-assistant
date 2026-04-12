@@ -50,3 +50,14 @@ def client(db_session):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _clean_sas_state():
+    """[v2.0.22] Nettoie l'état SAS entre chaque test pour éviter les fuites.
+    Le EntrySasService stocke l'état en class-level (in-memory), il faut le
+    nettoyer avant chaque test pour garantir l'isolation."""
+    from app.services.entry_sas_service import EntrySasService
+    EntrySasService.clear()
+    yield
+    EntrySasService.clear()

@@ -36,6 +36,7 @@ from app.services.trading_profile_service import TradingProfileService, PROFILE_
 from app.services.leverage_service import LeverageService
 from app.services.journal_service import JournalService
 from app.services.tick_momentum_service import TickMomentumService
+from app.services.entry_sas_service import EntrySasService
 from app.schemas.paper_trading import (
     PaperAccountResponse,
     PaperTradeResponse,
@@ -189,6 +190,10 @@ class PaperTradingService:
             f"🔥 FULL RESET : capital={initial_capital}, "
             f"btc_price_start={btc_price}, active_profile={saved_profile}, purged={purged}"
         )
+
+        # [v2.0.22] Nettoyer les SAS pending en mémoire (pas de trade fantôme)
+        EntrySasService.clear()
+
         return account, purged
 
     def get_open_position(self) -> Optional[PaperTrade]:
@@ -935,6 +940,111 @@ class PaperTradingService:
 
         else:
             # --- Pas de position : évaluer une nouvelle entrée ---
+
+            # [v2.0.22] SAS D'ENTRÉE SÉCURISÉ — Vérifier si un SAS est en attente.
+            # Si oui, évaluer le PnL virtuel avant de continuer.
+            sas_pending = EntrySasService.get_pending(slot_name)
+            if sas_pending is not None:
+                sas_verdict = EntrySasService.evaluate(slot_name, current_price, now)
+
+                if sas_verdict.action == "approved":
+                    # ✅ SAS confirmé → ouvrir la vraie position au prix courant
+                    # Recalculer SL/TP relatifs au prix d'entrée réel
+                    sas_dir = sas_pending.direction
+                    _sas_lc = profile_params.loss_cut_pct / 100 if profile_params and profile_params.loss_cut_pct <= 0.5 else 0.002
+                    _sas_pt = profile_params.profit_take_pct / 100 if profile_params and profile_params.loss_cut_pct <= 0.5 else 0.008
+                    if sas_dir == "long":
+                        sas_sl = current_price * (1 - _sas_lc)
+                        sas_tp = current_price * (1 + _sas_pt)
+                    else:
+                        sas_sl = current_price * (1 + _sas_lc)
+                        sas_tp = current_price * (1 - _sas_pt)
+
+                    position = self._open_position(
+                        account=account,
+                        price=current_price,
+                        sl=sas_sl,
+                        tp=sas_tp,
+                        size_usd=sas_pending.position_size_usd,
+                        reason=f"sas_confirmed_{sas_dir} | {sas_pending.reason}",
+                        score=sas_pending.score,
+                        direction=sas_dir,
+                        now=now,
+                        leverage=sas_pending.leverage,
+                        leverage_reason=sas_pending.leverage_reason,
+                        profile_type=sas_pending.profile_type,
+                        slot=slot_name if is_multi else None,
+                        entry_candle_direction=sas_pending.entry_candle_direction,
+                    )
+
+                    if position is None:
+                        _log_tick(action_taken="hold", btc_price=current_price,
+                                  decision_score=sas_pending.score,
+                                  reason_no_trade="slot_already_occupied",
+                                  reason_detail=f"SAS approuvé mais slot '{slot_name}' occupé")
+                        return PaperTickResult(
+                            action_taken="hold",
+                            detail=f"SAS approuvé mais slot '{slot_name}' déjà occupé.",
+                            current_price=current_price,
+                            timestamp=now.isoformat(),
+                            decision_score=sas_pending.score,
+                            profile_type=profile_name,
+                            non_trade_reason="slot_already_occupied",
+                        )
+
+                    _log_tick(action_taken=f"opened_{sas_dir}", btc_price=current_price,
+                              decision_score=sas_pending.score,
+                              trade_id=position.id,
+                              quality_gate_passed=True,
+                              quality_gate_reason="sas_approved")
+                    return PaperTickResult(
+                        action_taken=f"opened_{sas_dir}",
+                        detail=(
+                            f"Position {sas_dir} ouverte (SAS confirmé) @ {current_price:.2f} "
+                            f"| SL={sas_sl:.2f} | TP={sas_tp:.2f} | Levier x{sas_pending.leverage} "
+                            f"| {sas_verdict.reason}"
+                        ),
+                        position_opened=PaperTradeResponse.model_validate(position),
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        decision_score=sas_pending.score,
+                        risk_allowed=True,
+                        leverage_used=sas_pending.leverage,
+                        profile_type=profile_name,
+                    )
+
+                elif sas_verdict.action == "rejected":
+                    # 🚫 SAS rejeté → ne pas ouvrir
+                    _log_tick(action_taken="hold", btc_price=current_price,
+                              decision_score=sas_pending.score,
+                              reason_no_trade="sas_rejected",
+                              reason_detail=sas_verdict.reason[:500])
+                    return PaperTickResult(
+                        action_taken="hold",
+                        detail=f"SAS rejeté : {sas_verdict.reason}",
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        decision_score=sas_pending.score,
+                        profile_type=profile_name,
+                        non_trade_reason="sas_rejected",
+                    )
+
+                else:
+                    # ⏳ SAS en attente → ne rien faire ce tick
+                    _log_tick(action_taken="hold", btc_price=current_price,
+                              decision_score=sas_pending.score,
+                              reason_no_trade="sas_monitoring",
+                              reason_detail=sas_verdict.reason[:500])
+                    return PaperTickResult(
+                        action_taken="hold",
+                        detail=f"SAS en observation : {sas_verdict.reason}",
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        decision_score=sas_pending.score,
+                        profile_type=profile_name,
+                        non_trade_reason="sas_monitoring",
+                    )
+
             decision_result = self._get_decision(
                 timeframe=_analysis_tf, history_days=_analysis_days,
                 buy_threshold=_buy_th, sell_threshold=_sell_th,
@@ -1550,6 +1660,58 @@ class PaperTradingService:
             # n'ouvre un long que s'il détecte une tendance haussière, et inversement.
             if entry_candle_dir is None:
                 entry_candle_dir = "green" if direction == "long" else "red"
+
+            # [v2.0.22] SAS D'ENTRÉE SÉCURISÉ — Observer avant d'ouvrir.
+            # Si le SAS est activé pour ce profil, on crée une entrée VIRTUELLE
+            # au lieu d'ouvrir directement. L'entrée réelle sera confirmée ou
+            # annulée aux ticks suivants après observation du PnL virtuel.
+            sas_enabled = getattr(profile_params, "entry_sas_enabled", False) if profile_params else False
+            if sas_enabled:
+                sas_dur = getattr(profile_params, "entry_sas_duration_seconds", 15.0)
+                sas_min_pos = getattr(profile_params, "entry_sas_min_positive_seconds", 10.0)
+                sas_range = getattr(profile_params, "entry_sas_range_caution", True)
+                pp_pct = mq_data.get("price_position_pct", 0.5) if mq_data else 0.5
+
+                EntrySasService.create_pending(
+                    slot=slot_name,
+                    direction=direction,
+                    virtual_entry_price=current_price,
+                    sl_price=sl_price,
+                    tp_price=tp_price,
+                    position_size_usd=evaluation.max_position_size_usd or 1000.0,
+                    reason=reason,
+                    score=score,
+                    leverage=leverage_final,
+                    leverage_reason=leverage_reasons,
+                    profile_type=profile_name,
+                    entry_candle_direction=entry_candle_dir,
+                    price_position_pct=pp_pct,
+                    max_duration_seconds=sas_dur,
+                    min_positive_seconds=sas_min_pos,
+                    range_caution=sas_range,
+                    now=now,
+                )
+
+                _log_tick(action_taken="hold", btc_price=current_price,
+                          decision_score=score, decision_action=action,
+                          decision_confidence=confidence,
+                          reason_no_trade="sas_pending",
+                          reason_detail=f"SAS créé : {direction} virtuel @ {current_price:.2f}, observation {sas_dur}s",
+                          **_qg_log)
+                return PaperTickResult(
+                    action_taken="hold",
+                    detail=(
+                        f"🚪 SAS d'entrée créé : {direction.upper()} virtuel @ {current_price:.2f} "
+                        f"| Observation {sas_dur}s, besoin {sas_min_pos}s positif "
+                        f"| range_pos={pp_pct:.0%}"
+                    ),
+                    current_price=current_price,
+                    timestamp=now.isoformat(),
+                    decision_score=score,
+                    decision_action=action,
+                    profile_type=profile_name,
+                    non_trade_reason="sas_pending",
+                )
 
             position = self._open_position(
                 account=account,
