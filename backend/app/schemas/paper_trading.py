@@ -75,6 +75,8 @@ class PaperTradeResponse(BaseModel):
     position_size_usd: float
     pnl: Optional[float] = None
     pnl_pct: Optional[float] = None
+    gross_pnl: Optional[float] = None          # [EXPERIMENT] PnL brut avant frais
+    trading_fees: Optional[float] = None       # [EXPERIMENT] Frais RT déduits
     entry_reason: str
     exit_reason: Optional[str] = None
     decision_score: Optional[float] = None
@@ -88,6 +90,9 @@ class PaperTradeResponse(BaseModel):
     exit_candle_direction: Optional[str] = None  # v2.0.16 — "green"/"red"/null (à la fermeture)
     duration_seconds: Optional[float] = None  # v2.0.16 — durée exacte en secondes
     reversal_delay_seconds: Optional[float] = None  # v2.0.18 — délai reversal en secondes
+    strategy_type: Optional[str] = None  # [EXPERIMENT] multi-strategy: scalping, micro_scalping, mean_reversion, breakout, aggressive
+    market_context: Optional[str] = None  # [EXPERIMENT] regime: range, trend, breakout
+    market_zone: Optional[str] = None  # [EXPERIMENT] zone: low, mid, high
 
     model_config = {"from_attributes": True}
 
@@ -128,6 +133,8 @@ class PaperTradeExportItem(BaseModel):
     exit_candle_direction: Optional[str] = None  # v2.0.16 — "green"/"red"/null
     pnl: Optional[float] = None
     pnl_pct: Optional[float] = None
+    gross_pnl: Optional[float] = None          # [EXPERIMENT] PnL brut
+    trading_fees: Optional[float] = None       # [EXPERIMENT] Frais RT
     entry_reason: str
     exit_reason: Optional[str] = None
     decision_score: Optional[float] = None
@@ -136,6 +143,9 @@ class PaperTradeExportItem(BaseModel):
     duration_hours: Optional[float] = None
     duration_seconds: Optional[float] = None  # v2.0.16
     reversal_delay_seconds: Optional[float] = None  # v2.0.18
+    strategy_type: Optional[str] = None  # [EXPERIMENT] multi-strategy
+    market_context: Optional[str] = None  # [EXPERIMENT] regime
+    market_zone: Optional[str] = None  # [EXPERIMENT] zone
 
     model_config = {"from_attributes": True}
 
@@ -151,6 +161,7 @@ class PaperExportAccountSummary(BaseModel):
     current_capital: float
     total_pnl: float
     total_pnl_pct: float
+    total_fees: float = 0.0                    # [EXPERIMENT] Cumul frais
     peak_capital: float
     max_drawdown_pct: float
     btc_price_at_start: Optional[float] = None
@@ -171,6 +182,7 @@ class PaperAccountResponse(BaseModel):
     current_capital: float
     total_pnl: float
     total_pnl_pct: float
+    total_fees: float = 0.0                    # [EXPERIMENT] Cumul frais
     total_trades: int
     winning_trades: int
     losing_trades: int

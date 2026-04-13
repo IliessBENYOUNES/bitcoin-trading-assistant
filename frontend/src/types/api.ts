@@ -667,6 +667,8 @@ export interface PaperTradeItem {
   position_size_usd: number;
   pnl: number | null;
   pnl_pct: number | null;
+  gross_pnl?: number | null;      // [EXPERIMENT] PnL brut avant frais
+  trading_fees?: number | null;   // [EXPERIMENT] Frais RT déduits
   entry_reason: string;
   exit_reason: string | null;
   decision_score: number | null;
@@ -688,6 +690,7 @@ export interface PaperAccountItem {
   current_capital: number;
   total_pnl: number;
   total_pnl_pct: number;
+  total_fees?: number;             // [EXPERIMENT] Cumul frais
   total_trades: number;
   winning_trades: number;
   losing_trades: number;

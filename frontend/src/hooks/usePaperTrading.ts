@@ -74,7 +74,7 @@ export function usePaperTrading({
     try {
       const [statusData, tradesData] = await Promise.all([
         getPaperStatus(),
-        getPaperTrades({ limit: 50, status: 'closed' }),
+        getPaperTrades({ limit: 5000, status: 'closed' }),
       ]);
       setStatus(statusData);
       setTrades(tradesData.trades);

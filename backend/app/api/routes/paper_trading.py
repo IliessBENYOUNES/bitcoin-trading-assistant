@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.services.paper_trading_service import PaperTradingService
+from app.services.experimental_engine import ExperimentalPaperTradingService, get_engine_mode, set_engine_mode
 from app.services.journal_service import JournalService
 from app.services.trading_profile_service import TradingProfileService
 from app.services.diagnostic_service import DiagnosticService
@@ -185,10 +186,10 @@ def manual_tick(db: Session = Depends(get_db)):
             non_trade_reason="tick_in_progress",
         )
     try:
-        service = PaperTradingService(db)
+        # [EXPERIMENT] Utilise le moteur expérimental qui délègue au standard
+        # en mode "standard" ou intercepte en mode "experimental".
+        service = ExperimentalPaperTradingService(db)
         # [v2.0.3-fix] Auto-activation du compte si inactif.
-        # Quand le frontend appelle /paper/tick, c'est que l'utilisateur
-        # veut trader — pas besoin de lui demander d'activer manuellement.
         account = service.get_or_create_account()
         if not account.is_active:
             account.is_active = True
@@ -201,7 +202,7 @@ def manual_tick(db: Session = Depends(get_db)):
 
 @router.get("/trades", response_model=PaperTradeListResponse)
 def get_trades(
-    limit: int = Query(default=50, ge=1, le=500),
+    limit: int = Query(default=50, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
     status: str = Query(default=None, description="Filtre: open, closed, closed_tp, closed_sl, etc."),
     db: Session = Depends(get_db),
@@ -455,6 +456,83 @@ def get_autonomous_status():
     manager = AutonomousManager()
     status = manager.get_status()
     return AutonomousStatusResponse(**status)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# [EXPERIMENT] Engine Mode — switch standard ↔ experimental
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/engine-mode")
+def get_engine_mode_endpoint():
+    """
+    Retourne le mode moteur actuel.
+
+    - "standard" : moteur classique (profils + slots)
+    - "experimental" : multi-strategy engine (5 stratégies orchestrées)
+    """
+    return {"engine_mode": get_engine_mode()}
+
+
+@router.post("/engine-mode")
+def set_engine_mode_endpoint(
+    mode: str = Query(..., description="Mode: 'standard' ou 'experimental'"),
+):
+    """
+    Change le mode moteur.
+
+    En mode "experimental", le tick utilise le multi-strategy engine :
+    - Market context detection (range/trend/breakout)
+    - 5 stratégies orchestrées selon le contexte
+    - Risk layer global (anti-collision, exposition)
+    - Tracking enrichi (strategy_type, market_context, market_zone)
+
+    En mode "standard", le moteur classique est utilisé (zéro impact).
+    """
+    from fastapi import HTTPException
+    try:
+        new_mode = set_engine_mode(mode)
+        return {"engine_mode": new_mode, "message": f"Moteur changé → {new_mode}"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/market-context")
+def get_market_context(
+    timeframe: str = Query(default="5m", description="Timeframe d'analyse"),
+    db: Session = Depends(get_db),
+):
+    """
+    [EXPERIMENT] Retourne le contexte de marché actuel.
+
+    Utile pour comprendre ce que le multi-strategy engine voit :
+    - Régime (range / trend / breakout)
+    - Zone (low / mid / high)
+    - Volatilité, EMA slope, micro-trend
+    - Stratégies éligibles
+    """
+    from app.services.decision_service import DecisionService
+    from app.services.market_context_engine import MarketContextEngine
+    from app.services.multi_strategy_engine import MultiStrategyEngine, CONTEXT_STRATEGY_MAP
+    import dataclasses
+
+    decision_service = DecisionService(db)
+    decision = decision_service.analyze(
+        symbol="BTC/USD",
+        timeframe=timeframe,
+        history_days=2,
+    )
+    series = decision.get("_series", [])
+    context = MarketContextEngine.analyze(series)
+
+    # Stratégies éligibles
+    regime_map = CONTEXT_STRATEGY_MAP.get(context.regime, {})
+    eligible = regime_map.get(context.zone, regime_map.get("mid", ["scalping"]))
+
+    result = dataclasses.asdict(context)
+    result["eligible_strategies"] = eligible
+    result["combined_score"] = decision.get("combined_score", 0)
+    result["technical_score"] = decision.get("technical_score", 0)
+    return result
 
 
 

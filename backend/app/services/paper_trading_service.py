@@ -2029,6 +2029,8 @@ class PaperTradingService:
         trade.exit_price = exit_price
         trade.pnl = round(pnl, 2)
         trade.pnl_pct = round(pnl_pct, 4)
+        trade.gross_pnl = round(gross_pnl, 2)
+        trade.trading_fees = round(trading_fees, 2)
         trade.exit_reason = reason[:500]
         trade.status = status
         trade.exit_ts = now
@@ -2039,6 +2041,7 @@ class PaperTradingService:
         if account:
             account.current_capital += pnl
             account.total_pnl += pnl
+            account.total_fees = (account.total_fees or 0) + trading_fees
             account.total_trades += 1
             if pnl >= 0:
                 account.winning_trades += 1

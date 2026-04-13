@@ -27,6 +27,8 @@ class PaperAccount(Base):
     # --- Performance cumulée ---
     total_pnl: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     total_pnl_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # [EXPERIMENT] Cumul des frais de trading payés
+    total_fees: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     total_trades: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     winning_trades: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     losing_trades: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -139,9 +141,20 @@ class PaperTrade(Base):
     # None = pas de reversal détecté ou anciens trades.
     reversal_delay_seconds: Mapped[float] = mapped_column(Float, nullable=True)
 
+    # --- [EXPERIMENT] Multi-Strategy tracking ---
+    # Stratégie qui a ouvert ce trade (scalping, micro_scalping, mean_reversion, breakout, aggressive)
+    strategy_type: Mapped[str] = mapped_column(String(30), nullable=True)
+    # Contexte de marché au moment de l'entrée (range, trend, breakout, unknown)
+    market_context: Mapped[str] = mapped_column(String(20), nullable=True)
+    # Zone dans le range au moment de l'entrée (low, mid, high)
+    market_zone: Mapped[str] = mapped_column(String(10), nullable=True)
+
     # --- PnL ---
-    pnl: Mapped[float] = mapped_column(Float, nullable=True)
-    pnl_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    pnl: Mapped[float] = mapped_column(Float, nullable=True)       # PnL NET (après frais)
+    pnl_pct: Mapped[float] = mapped_column(Float, nullable=True)   # Variation % brute
+    # [EXPERIMENT] Frais de trading — stockés pour transparence
+    gross_pnl: Mapped[float] = mapped_column(Float, nullable=True)     # PnL brut (avant frais)
+    trading_fees: Mapped[float] = mapped_column(Float, nullable=True)  # Frais RT déduits
 
     # --- Raisons ---
     entry_reason: Mapped[str] = mapped_column(String(500), nullable=False)

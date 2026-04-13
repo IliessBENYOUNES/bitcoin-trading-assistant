@@ -196,10 +196,10 @@ class AutonomousManager:
         try:
             # Import tardif pour éviter les imports circulaires
             from app.database import SessionLocal
-            from app.services.paper_trading_service import PaperTradingService
+            from app.services.experimental_engine import ExperimentalPaperTradingService
 
             db = SessionLocal()
-            service = PaperTradingService(db)
+            service = ExperimentalPaperTradingService(db)
 
             tick_result = service.tick()
 
@@ -249,14 +249,14 @@ class AutonomousManager:
         try:
             from app.database import SessionLocal
             from app.services.trading_profile_service import TradingProfileService
-            from app.services.paper_trading_service import PaperTradingService
+            from app.services.experimental_engine import ExperimentalPaperTradingService
 
             db = SessionLocal()
 
             # S'assurer que le compte existe et est actif
             # [v2.0.5-fix] Passer le profil demandé pour que si le compte est créé,
             # il ait le bon profil dès le départ (pas le default "conservative")
-            service = PaperTradingService(db)
+            service = ExperimentalPaperTradingService(db)
             account = service.get_or_create_account(active_profile=profile)
             if not account.is_active:
                 account.is_active = True
