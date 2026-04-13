@@ -78,10 +78,10 @@ class TestMicroStopLossProfileParams:
         p = PROFILE_PRESETS["balanced"]
         assert p.micro_stop_loss_pct is None
 
-    def test_aggressive_has_no_micro_sl(self):
-        """Le profil aggressive n'a PAS de micro SL."""
+    def test_aggressive_has_micro_sl(self):
+        """[v2.0.28] Le profil aggressive a un micro SL à 0.15% (adapté pour swings)."""
         p = PROFILE_PRESETS["aggressive"]
-        assert p.micro_stop_loss_pct is None
+        assert p.micro_stop_loss_pct == 0.15
 
     def test_default_is_none(self):
         """Le défaut de micro_stop_loss_pct est None (désactivé)."""

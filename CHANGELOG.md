@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.28] - 2026-04-13
+
+### Added
+- **REFONTE PROTECTIONS AGGRESSIVE** — L'analyse du run v2.0.27 (58 trades) révèle que le slot aggressive opérait sans SAS, micro SL ni smart cooldown. Le trade #1108 a perdu 100% d'un pic de 0.705%, le trade #1102 a perdu -$6.60 sur un trailing tardif. Ajout de 3 protections :
+  - **SAS d'entrée** (10s observation, 5s positif requis) — filtre les mauvaises entrées aggressive
+  - **Micro SL à 0.15%** (-$3.75 max) — coupe les retournements post-entrée au lieu du SL swing -1.0% (-$25)
+  - **Smart cooldown** (min 1 min, max 5 min) — adaptatif selon le résultat du trade précédent
+
+### Changed
+- **Aggressive trailing recalibré** : activation 0.15%→0.25% (laisse les swings se développer), drop ratio 0.30→0.20 (protège 80% du gain au lieu de 70%)
+- **Aggressive gain erosion assoupli** : 0.50→0.70 (les swings oscillent naturellement, besoin de plus de respiration)
+- **Aggressive cooldown réduit** : 15→5 min (permet 3× plus d'opportunités intraday)
+- **Scalping cooldown optimisé** : `cooldown_minutes` 1.0→0.5 (30s), `min_cooldown` 0.5→0.25 (15s), `max_cooldown` 3.0→2.0 (2 min) — le micro SL à 0.05% casse les boucles churn, plus besoin du cooldown de 1 min
+- **Scalping gain erosion assoupli** : 0.30→0.40 — donne plus de marge aux petits gains pour se développer vers le trailing
+- **Gain erosion seuil min global relevé** : 0.01%→0.02% ($0.50) — les peaks < $0.50 sont du bruit de tick qui polluait le journal avec des exits à +$0.12-$0.18
+
+### Technical
+- Total tests backend : **1808** (assertions mises à jour, 0 test ajouté/supprimé)
+- Tests mis à jour : test_smart_cooldown.py (cooldown), test_pivot_v200.py (gain erosion + aggressive), test_scalping_audit.py, test_diagnostic.py, test_runtime_truth.py, test_entry_sas.py (aggressive SAS), test_micro_stop_loss.py (aggressive micro SL)
+- Frontend : `tsc --noEmit` sans erreur (aucun changement frontend)
+
 ## [2.0.27] - 2026-04-13
 
 ### Added

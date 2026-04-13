@@ -586,7 +586,7 @@ class TestScalpingV206MicroTrendDisable:
         assert scalp.expected_capture_pct == 0.50
         assert scalp.min_ev_multiple == 1.5
         assert scalp.stale_exit_minutes == 5
-        assert scalp.cooldown_minutes == 1.0  # [v2.0.24] 0.17→1.0 (anti-churn)
+        assert scalp.cooldown_minutes == 0.5  # [v2.0.28] 1.0→0.5 (cooldown réduit)
         assert scalp.max_trades_per_day == 999  # [v2.0.24] 30→999 (illimité)
 
 
@@ -626,16 +626,20 @@ class TestScalpingV207FastExit:
         assert min_capture_relative > 0, f"Capture min relative doit être > 0: {min_capture_relative}%"
 
     def test_aggressive_not_affected(self):
-        """[v2.0.19] L'aggressive a désormais trailing + stale négatif pour éviter les dérives."""
+        """[v2.0.28] L'aggressive a trailing recalibré + SAS + micro SL."""
         agg = PROFILE_PRESETS["aggressive"]
         assert agg.stale_exit_minutes == 180
-        # [v2.0.19] Trailing stop ajouté pour protéger les gains intraday
-        assert agg.trailing_stop_activation_pct == 0.15
-        assert agg.trailing_stop_drop_ratio == 0.30
+        # [v2.0.28] Trailing stop recalibré pour swings
+        assert agg.trailing_stop_activation_pct == 0.25  # [v2.0.28] 0.15→0.25
+        assert agg.trailing_stop_drop_ratio == 0.20      # [v2.0.28] 0.30→0.20
         # [v2.0.19] Stale négatif raccourci : 180→60 min
         assert agg.stale_negative_exit_minutes == 60
-        # [v2.0.19] Gain erosion pour les petits gains
-        assert agg.gain_erosion_ratio == 0.50
+        # [v2.0.28] Gain erosion plus permissif pour swings
+        assert agg.gain_erosion_ratio == 0.70  # [v2.0.28] 0.50→0.70
+        # [v2.0.28] SAS et micro SL ajoutés
+        assert agg.entry_sas_enabled is True
+        assert agg.micro_stop_loss_pct == 0.15
+        assert agg.smart_cooldown_enabled is True
 
 
 # ================================================================
@@ -1547,15 +1551,15 @@ class TestReversalSignalContraireProtection:
         assert "breakeven" in source.lower()
         assert "stale" in source.lower()
     def test_cooldown_reduced_for_scalping(self):
-        """[v2.0.24] Le cooldown scalping est reduit a 10 sec (0.17 min)."""
+        """[v2.0.28] Le cooldown scalping est reduit a 0.5 min (30 sec)."""
         from app.services.trading_profile_service import PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
-        assert p.cooldown_minutes == 1.0
+        assert p.cooldown_minutes == 0.5
     def test_max_cooldown_reduced_for_scalping(self):
-        """[v2.0.24] Le max cooldown scalping est reduit a 1 min."""
+        """[v2.0.28] Le max cooldown scalping est reduit a 2 min."""
         from app.services.trading_profile_service import PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 3.0
+        assert p.max_cooldown_minutes == 2.0
     def test_stale_negative_floor_reduced(self):
         """[v2.0.24] Le plancher stale negatif est reduit a 0.5 min (30 sec)."""
         from app.services.smart_cooldown_service import SmartCooldownService
@@ -1589,14 +1593,14 @@ class TestGainErosionStopV2012:
     """
 
     def test_scalping_has_gain_erosion_ratio(self):
-        """Le profil scalping a gain_erosion_ratio=0.30."""
+        """[v2.0.28] Le profil scalping a gain_erosion_ratio=0.40."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.gain_erosion_ratio == 0.30
+        assert p.gain_erosion_ratio == 0.40
 
     def test_aggressive_has_gain_erosion(self):
-        """[v2.0.19] Le profil aggressive a gain_erosion_ratio=0.50 (plus permissif que scalping)."""
+        """[v2.0.28] Le profil aggressive a gain_erosion_ratio=0.70 (plus permissif pour swings)."""
         p = PROFILE_PRESETS["aggressive"]
-        assert p.gain_erosion_ratio == 0.50
+        assert p.gain_erosion_ratio == 0.70
 
     def test_conservative_has_no_gain_erosion(self):
         """Le profil conservative n'a PAS de gain erosion."""
@@ -1604,33 +1608,33 @@ class TestGainErosionStopV2012:
         assert p.gain_erosion_ratio is None
 
     def test_gain_erosion_fires_when_gain_eroded_past_threshold(self):
-        """Peak 0.03%, gain actuel 0.01% → érosion 67% > 30% → EXIT."""
+        """Peak 0.03%, gain actuel 0.01% → érosion 67% > 40% → EXIT."""
         peak_pct = 0.03
         unrealized_pct_now = 0.01
-        ge_ratio = 0.30
+        ge_ratio = 0.40  # [v2.0.28] 0.30→0.40
         ts_activation = 0.04
-        ge_retention = 1.0 - ge_ratio  # 0.70
-        ge_min_pct = peak_pct * ge_retention  # 0.021
+        ge_retention = 1.0 - ge_ratio  # 0.60
+        ge_min_pct = peak_pct * ge_retention  # 0.018
 
-        # Conditions : peak >= 0.01, peak < ts_activation, unrealized <= ge_min
-        assert peak_pct >= 0.01
+        # Conditions : peak >= 0.02, peak < ts_activation, unrealized <= ge_min
+        assert peak_pct >= 0.02  # [v2.0.28] seuil relevé 0.01→0.02
         assert peak_pct < ts_activation
-        assert unrealized_pct_now <= ge_min_pct  # 0.01 <= 0.021 → FIRE
+        assert unrealized_pct_now <= ge_min_pct  # 0.01 <= 0.018 → FIRE
 
     def test_gain_erosion_does_not_fire_when_gain_above_retention(self):
-        """Peak 0.03%, gain actuel 0.025% → érosion 17% < 30% → NO EXIT."""
+        """Peak 0.03%, gain actuel 0.025% → érosion 17% < 40% → NO EXIT."""
         peak_pct = 0.03
         unrealized_pct_now = 0.025
-        ge_ratio = 0.30
-        ge_retention = 1.0 - ge_ratio  # 0.70
-        ge_min_pct = peak_pct * ge_retention  # 0.021
+        ge_ratio = 0.40  # [v2.0.28] 0.30→0.40
+        ge_retention = 1.0 - ge_ratio  # 0.60
+        ge_min_pct = peak_pct * ge_retention  # 0.018
 
-        assert unrealized_pct_now > ge_min_pct  # 0.025 > 0.021 → no fire
+        assert unrealized_pct_now > ge_min_pct  # 0.025 > 0.018 → no fire
 
     def test_gain_erosion_does_not_fire_if_peak_below_min(self):
-        """Peak 0.005% (< 0.01%) → trop petit, bruit, pas de gain erosion."""
-        peak_pct = 0.005
-        assert peak_pct < 0.01  # En dessous du seuil minimum → pas de fire
+        """[v2.0.28] Peak 0.015% (< 0.02%) → trop petit, bruit, pas de gain erosion."""
+        peak_pct = 0.015
+        assert peak_pct < 0.02  # [v2.0.28] Seuil relevé 0.01→0.02 → pas de fire
 
     def test_gain_erosion_does_not_fire_above_trailing_activation(self):
         """Peak 0.05% (>= ts_activation 0.04%) → trailing gère, gain erosion skip."""
@@ -1707,7 +1711,8 @@ class TestGainErosionStopV2012:
         """Test d'intégration : le gain erosion ferme une position via _tick_single_slot.
 
         Setup : position LONG avec peak 0.025% (< activation 0.04%), gain érodé à 0.005%.
-        Érosion = 80% > seuil 30% → devrait fermer en gain_erosion.
+        Érosion = 81% > seuil 40% → devrait fermer en gain_erosion.
+        [v2.0.28] peak 0.025% > min_peak 0.02% ✓, ratio 0.40.
         """
         from app.services.paper_trading_service import PaperTradingService
         from app.models.paper_account import PaperAccount, PaperTrade

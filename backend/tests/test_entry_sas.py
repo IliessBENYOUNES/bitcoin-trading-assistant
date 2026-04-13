@@ -488,11 +488,13 @@ class TestSasProfileParams:
         p = PROFILE_PRESETS["balanced"]
         assert p.entry_sas_enabled is False
 
-    def test_aggressive_sas_disabled(self):
-        """Le profil aggressive n'a PAS le SAS."""
+    def test_aggressive_sas_enabled(self):
+        """[v2.0.28] Le profil aggressive a le SAS activé (protection pré-entrée)."""
         from app.services.trading_profile_service import PROFILE_PRESETS
         p = PROFILE_PRESETS["aggressive"]
-        assert p.entry_sas_enabled is False
+        assert p.entry_sas_enabled is True
+        assert p.entry_sas_duration_seconds == 10.0  # Plus court que scalping (15s)
+        assert p.entry_sas_min_positive_seconds == 5.0  # Plus souple que scalping (10s)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

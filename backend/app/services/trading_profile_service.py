@@ -77,7 +77,11 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         min_confidence="low",
         min_scenario_dominance=0.38,
         max_trades_per_day=15,
-        cooldown_minutes=15,
+        # [v2.0.28] Cooldown 15→5 min : le run v2.0.27 montre que le slot aggressive
+        # trade à intervalles de ~15 min (strictement borné par le cooldown). Avec des
+        # trades de 36-144s, 15 min de cooldown est disproportionné. 5 min suffit pour
+        # que le signal 1h ait évolué, tout en permettant plus d'opportunités.
+        cooldown_minutes=5,
         max_position_duration_hours=48,
         profit_take_pct=1.0,
         loss_cut_pct=1.0,
@@ -101,19 +105,20 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # intraday ne fonctionne pas. Le stale normal (180 min) reste pour les
         # positions flat (stagnantes mais pas perdantes).
         stale_negative_exit_minutes=60,
-        # [v2.0.19] TRAILING STOP pour aggressive — protection des gains intraday.
-        # Avant, le slot aggressive n'avait AUCUN trailing stop. Les gains fondaient
-        # pendant 3h jusqu'au stale exit. Maintenant :
-        # - Activation à 0.15% ($3.75 sur $2500) → assez haut pour ne pas couper trop tôt
-        # - Drop ratio 30% → garde 70% du gain au pic
-        # Plus tolérant que le scalping (15%) car les swings sont plus longs.
-        trailing_stop_activation_pct=0.15,
-        trailing_stop_drop_ratio=0.30,
-        # [v2.0.19] GAIN EROSION pour aggressive — protection des petits gains.
-        # Comble le trou entre trailing (0.15%) et breakeven (PnL ≤ 0).
-        # Ratio 50% : coupe si le gain perd la moitié de son pic.
-        # Plus permissif que le scalping (30%) car les swings oscillent davantage.
-        gain_erosion_ratio=0.50,
+        # [v2.0.28] TRAILING STOP recalibré pour aggressive :
+        # - Activation 0.15→0.25% : le run v2.0.27 montre des peaks de 0.02-0.08%
+        #   qui activent le trailing trop tôt → sortie avec des miettes ($0.40).
+        #   0.25% ($6.25 sur $2500) laisse les swings se développer.
+        # - Drop ratio 0.30→0.20 : une fois activé, protéger 80% du gain au lieu
+        #   de 70%. Le trade #1108 a perdu 100% de son peak 0.705% → le trailing
+        #   a déclenché trop tard à cause du gap entre ticks.
+        trailing_stop_activation_pct=0.25,
+        trailing_stop_drop_ratio=0.20,
+        # [v2.0.28] GAIN EROSION recalibré 0.50→0.70 : l'analyse du run v2.0.27
+        # montre que le gain erosion à 50% sort sur des peaks de 0.02-0.03% avec
+        # des PnL de $0 à +$0.40 — du bruit. Les swings oscillent naturellement,
+        # 70% d'érosion tolère cette oscillation avant de couper.
+        gain_erosion_ratio=0.70,
         # [v1.9.9] Quality gate minimum pour le slot aggressive.
         min_market_quality=25,
         min_volume_ratio=0.5,
@@ -122,6 +127,26 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         economic_gate_enabled=False,
         # [v2.0.0] Momentum fade normal sur aggressive (trades longue durée, pas de poussière)
         momentum_fade_mode="enabled",
+        # [v2.0.28] SAS D'ENTRÉE pour aggressive — L'analyse du run v2.0.27 montre
+        # que le slot aggressive n'avait AUCUNE protection pré-entrée. Les trades
+        # #1102 (-$6.60) et #1097 (-$0.87) auraient été filtrés par le SAS.
+        # Params plus souples que le scalping (10s observation, 5s positif requis)
+        # car le timeframe 1h justifie un peu plus de patience.
+        entry_sas_enabled=True,
+        entry_sas_duration_seconds=10.0,
+        entry_sas_min_positive_seconds=5.0,
+        entry_sas_range_caution=True,
+        # [v2.0.28] MICRO STOP LOSS pour aggressive — Le SL classique est à -1.0%
+        # (-$25 sur $2500), beaucoup trop loin. Le micro SL à 0.15% (-$3.75) coupe
+        # les retournements post-entrée sans attendre le SL swing. Plus large que le
+        # scalping (0.05%) car les swings ont besoin de plus de respiration.
+        micro_stop_loss_pct=0.15,
+        # [v2.0.28] SMART COOLDOWN pour aggressive — Rend le slot plus adaptatif.
+        # Après un bon trade (trailing TP), réentrée rapide (1 min).
+        # Après une perte (SL/micro SL), patience accrue (jusqu'à 5 min).
+        smart_cooldown_enabled=True,
+        min_cooldown_minutes=1.0,
+        max_cooldown_minutes=5.0,
     ),
     "scalping": TradingProfileParams(
         profile_type=TradingProfileType.scalping,
@@ -143,11 +168,12 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # qui coupe à -0.01%, la qualité est contrôlée en amont. Pas besoin d'un plafond
         # arbitraire — le robot doit pouvoir trader toute la nuit sans limite.
         max_trades_per_day=999,
-        # [v2.0.24] Cooldown 0.17 min → 1 min : l'analyse de 345 trades montre que
-        # le gap médian entre trades est 64 sec. Avec un cooldown de 10 sec + SAS 15 sec,
-        # le bot re-entre en ~25 sec sur le MÊME signal → boucle de churn destructrice.
-        # 1 min = assez pour que le signal ait évolué avant de retenter.
-        cooldown_minutes=1.0,
+        # [v2.0.28] Cooldown 1.0→0.5 min (30s) : le cooldown à 1 min était justifié
+        # quand le micro SL était à 0.01% (boucles churn destructrices, v2.0.24).
+        # Avec le micro SL recalibré à 0.05% (v2.0.25), les boucles micro SL→re-entry
+        # sont cassées. Le SAS (15s) + micro SL (0.05%) suffisent comme protection.
+        # 30s = assez pour que le signal ait évolué, sans bloquer les opportunités.
+        cooldown_minutes=0.5,
         max_position_duration_hours=2,
         # [v2.0.0] TP élargi 0.6%→0.8% : le TP doit être atteignable et couvrir les frais.
         # Le trailing à 0.15%+0.10% capture en pratique 0.05-0.30%. Un TP à 0.8%
@@ -188,13 +214,12 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         trailing_stop_activation_pct=0.04,  # [v2.0.9] 0.02→0.04 : ~$1 de gain min
         trailing_stop_pct=0.06,  # fallback absolu (utilisé si drop_ratio est None)
         trailing_stop_drop_ratio=0.15,  # [v2.0.9] 15% : garde 85% du gain, réaliste pour 5sec ticks
-        # [v2.0.12] GAIN EROSION STOP — Protection des petits gains (sous le seuil trailing).
-        # Le trailing ne s'active qu'à 0.04% (~$1). Les gains entre $0 et $1 ne sont pas
-        # protégés : ils fondent jusqu'au stale négatif (2 min) qui ferme en perte.
-        # Avec gain_erosion_ratio=0.30, on sort dès que le gain a perdu 30% de son pic.
-        # Peak +$0.60 → exit si gain < $0.42 (érosion > 30%). Sauve $0.42 au lieu de -$1.20.
-        # S'active uniquement si peak ≥ 0.01% (~$0.25) pour éviter le bruit.
-        gain_erosion_ratio=0.30,
+        # [v2.0.28] GAIN EROSION STOP recalibré 0.30→0.40 : l'analyse du run v2.0.27
+        # montre que l'érosion à 30% sort sur des gains minuscules ($0.12-$0.50) qui
+        # ne couvrent même pas les frais. 40% laisse plus de marge aux petits gains
+        # pour se développer vers le trailing (0.04%), tout en coupant les pertes
+        # quand le gain a vraiment fondu (>40% du pic).
+        gain_erosion_ratio=0.40,
         # [v2.0.14] CANDLE DIRECTION OVERRIDE — La direction du trade vient de la
         # direction RÉELLE du prix (bougie verte → LONG, bougie rouge → SHORT),
         # pas du score technique lagging. Le score est gardé comme filtre de qualité
@@ -219,14 +244,14 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # 30s = ~6 ticks = même fenêtre que la détection d'entrée.
         candle_reversal_window_seconds=30.0,
         smart_cooldown_enabled=True,
-        # [v2.0.24] min_cooldown 0.17→0.5 min (30 sec) : le churn analysis montre que
-        # les re-entries < 30 sec sont systématiquement sur le même signal inchangé.
-        # 30 sec minimum même après un bon trade.
-        min_cooldown_minutes=0.5,
-        # [v2.0.24] max_cooldown 1→3 min : après une série de pertes, laisser plus
-        # de temps au marché pour évoluer avant de retenter. 3 min = ~36 ticks à 5 sec,
-        # suffisant pour un changement de micro-tendance.
-        max_cooldown_minutes=3.0,
+        # [v2.0.28] min_cooldown 0.5→0.25 min (15 sec) : maintenant que le micro SL
+        # est à 0.05% (pas 0.01%), les re-entries rapides après un bon trade sont sûres.
+        # Le SAS (15s) empêchera de rentrer si le marché est défavorable.
+        min_cooldown_minutes=0.25,
+        # [v2.0.28] max_cooldown 3→2 min : avec le micro SL + SAS comme protections,
+        # le cooldown punitif après pertes n'a pas besoin d'être aussi long.
+        # 2 min max = ~24 ticks, suffisant pour un changement de micro-tendance.
+        max_cooldown_minutes=2.0,
         min_hold_seconds=30,
         min_economic_pnl_pct=0.15,
         short_min_score=30,  # [v2.0.3] 25→30 : aligné avec min_score relevé

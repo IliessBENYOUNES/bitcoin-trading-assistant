@@ -558,9 +558,11 @@ class PaperTradingService:
                 # [v2.0.12] GAIN EROSION STOP — Protection des gains dès le premier dollar.
                 # Comble le trou entre trailing (seuil activation) et breakeven (attend PnL ≤ 0).
                 # Si le gain a existé et qu'il s'érode de plus de X% du pic → sortie immédiate.
-                # Seul pré-requis : peak ≥ 0.01% (~$0.25) pour éviter les exits sur bruit.
+                # [v2.0.28] Seuil min relevé 0.01→0.02% : les peaks < $0.50 sont du bruit de tick.
+                # L'analyse du run v2.0.27 montre des gain erosion exits à +$0.12-$0.18 sur des
+                # peaks de 0.01% — ces micro-gains ne couvrent pas les frais et polluent le journal.
                 ge_ratio = getattr(profile_params, "gain_erosion_ratio", None) if profile_params else None
-                if ge_ratio is not None and peak_pct >= 0.01 and peak_pct < ts_activation:
+                if ge_ratio is not None and peak_pct >= 0.02 and peak_pct < ts_activation:
                     # Le gain erosion ne s'applique que sous le seuil d'activation du trailing.
                     # Au-dessus, le trailing (15% drop) est plus serré et prend le relais.
                     ge_retention = 1.0 - ge_ratio

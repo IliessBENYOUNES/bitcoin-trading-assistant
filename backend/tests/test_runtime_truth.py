@@ -457,9 +457,9 @@ class TestAntiChurnStaleNegative:
         assert result > 2.0
 
     def test_scalping_max_cooldown_raised(self):
-        """[v2.0.24] Le max_cooldown scalping est relevé à 3 min (anti-churn)."""
+        """[v2.0.28] Le max_cooldown scalping est réduit à 2 min."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 3.0  # [v2.0.24] 1→3
+        assert p.max_cooldown_minutes == 2.0  # [v2.0.28] 3→2
 
     def test_stale_negative_heavy_loss_extra_penalty(self):
         """Un stale négatif avec grosse perte cumule les pénalités."""

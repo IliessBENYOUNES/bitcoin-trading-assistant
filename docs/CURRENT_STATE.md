@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 13 avril 2026
-> **Version :** v2.0.27
+> **Version :** v2.0.28
 > **Branche :** `master`
-> **Dernier commit :** feat(ui): mini chart BTC 1m temps réel sur onglet Trading v2.0.27
+> **Dernier commit :** feat(profiles): refonte protections aggressive + cooldown scalping réduit v2.0.28
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.27** |
+| Version courante | **v2.0.28** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
 | Tests backend | **1808 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.27 livré** — Trend alignment symétrique (shorts + longs contre-tendance bloqués) |
+| Phase courante | **v2.0.28 livré** — Refonte protections aggressive + cooldown scalping optimisé |
 
 ### ⚠️ État de maturité honnête
 
@@ -66,6 +66,9 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.26] TREND ALIGNMENT FILTER** — Bloque les SHORTs via tick_override quand le score technique est fortement bullish (score > 50). L'analyse de 92 trades (v2.0.25) montre que les shorts scalping perdent -$8.93 (47% WR) quand le score est à +64/+65 et BTC monte globalement. Le tick_override ouvre un short sur bougie rouge 30s, mais le marché bullish fait remonter le prix → le short est fermé en perte par "signal contraire". Le filtre ne bloque PAS les shorts non-override (mean_reversion). Seuil configurable via `trend_alignment_score_threshold` (default None, 50 pour scalping). 8 tests dédiés.
 - **[v2.0.27] TREND ALIGNMENT SYMÉTRIQUE** — Le filtre v2.0.26 ne bloquait que les SHORTs en marché bullish. Ajout du filtre miroir : les LONGs via tick_override sont maintenant aussi bloqués quand le score est fortement bearish (score < -threshold). Une bougie verte 30s en tendance baissière est un faux signal. Le filtre est bidirectionnel : SHORT bloqué quand score > +50, LONG bloqué quand score < -50. 5 tests supplémentaires (total 12).
 - **[v2.0.27] MINI CHART BTC 1M** — Nouveau graphique compact en chandeliers 1 minute sur l'onglet Trading. Affiche les 60 dernières bougies (1h) avec focus auto sur les 15 dernières minutes. Données directement depuis Binance REST (polling 30s), mise à jour en temps réel via WebSocket live price. Désactivé automatiquement en mode low-bandwidth ou hors de l'onglet Trading. Composant `MiniChart.tsx` + hook `useMiniCandles.ts`.
+- **[v2.0.28] REFONTE PROTECTIONS AGGRESSIVE** — L'analyse du run v2.0.27 (58 trades) révèle que le slot aggressive n'avait AUCUNE protection pré-entrée (pas de SAS, pas de micro SL, pas de smart cooldown). Le trade #1108 a perdu 100% d'un pic de 0.705%, le trade #1102 a perdu -$6.60. Corrections : (1) **SAS d'entrée** ajouté (10s observation, 5s positif requis) — filtre les mauvaises entrées. (2) **Micro SL à 0.15%** ($3.75 max) — coupe les retournements post-entrée au lieu d'attendre le SL swing à -1.0% ($25). (3) **Smart cooldown** (min 1 min, max 5 min) — adaptatif selon le résultat du trade précédent. (4) **Trailing recalibré** : activation 0.15→0.25% (laisse les swings se développer), drop ratio 0.30→0.20 (protège 80% au lieu de 70%). (5) **Gain erosion assoupli** 0.50→0.70 (les swings oscillent naturellement). (6) **Cooldown réduit** 15→5 min (plus d'opportunités intraday).
+- **[v2.0.28] COOLDOWN SCALPING OPTIMISÉ** — L'analyse des 3 runs montre que le cooldown de 1 min (v2.0.25) est devenu disproportionné maintenant que le micro SL est à 0.05% (plus 0.01%). Les boucles churn qui justifiaient le cooldown long sont cassées par le nouveau micro SL. Corrections : `cooldown_minutes` 1.0→0.5 (30s), `min_cooldown` 0.5→0.25 (15s), `max_cooldown` 3.0→2.0 (2 min).
+- **[v2.0.28] GAIN EROSION RECALIBRÉ** — (1) Seuil minimum global relevé 0.01%→0.02% ($0.50) — les peaks < $0.50 sont du bruit de tick qui polluait le journal avec des exits à +$0.12-$0.18. (2) Ratio scalping assoupli 0.30→0.40 — donne plus de marge aux petits gains pour se développer vers le trailing (0.04%).
 - **[v2.0.4] Export enrichi** — Service `EnrichedExportService` + endpoint `GET /audit/enriched-export`. Export tick-par-tick avec : prix BTC, variation %, décision moteur, score, raison de non-trade, position ouverte/fermée, PnL, market quality. Inclut ventilation des refus par gate + détection des tendances BTC ratées.
 - **[v2.0.4] Learning runtime** — Nouvelle méthode `LearningService.learn_from_runtime()` + endpoint `POST /learning/learn-runtime`. Analyse les TickActivityLog (pas les trades fermés) pour identifier les gates sur-bloquants et proposer des assouplissements en mode shadow. Suggestions 15 (micro-trend dominant) et 16 (gate unique > 70%).
 - **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.
