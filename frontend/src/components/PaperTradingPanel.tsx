@@ -802,8 +802,13 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
   const activeProfileInfo = PROFILE_OPTIONS.find(p => p.value === activeProfile);
 
   // [v2.0.6] Certification du profil — détection de désynchronisation
-  const backendProfileInfo = PROFILE_OPTIONS.find(p => p.value === backendProfile);
-  const profileMismatch = isActive && backendProfile && backendProfile !== selectedProfile;
+  const displayProfileInfo = selectedProfile === 'multi_strategy'
+    ? PROFILE_OPTIONS.find(p => p.value === 'multi_strategy')
+    : PROFILE_OPTIONS.find(p => p.value === backendProfile);
+  const backendProfileInfo = displayProfileInfo;
+  // Multi-strategy utilise "scalping" comme profil backend de base → pas de mismatch
+  const profileMismatch = isActive && backendProfile &&
+    (selectedProfile === 'multi_strategy' ? false : backendProfile !== selectedProfile);
 
   // Progress pour le countdown
   const countdownProgress = autoMode && autoIntervalSec > 0
