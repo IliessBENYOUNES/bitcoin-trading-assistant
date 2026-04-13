@@ -1,8 +1,8 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v2.0.18
-## Date: 2026-04-12
+## Version: v2.0.28
+## Date: 2026-04-13
 
 ---
 
@@ -97,6 +97,17 @@
 | **FR-CDO-001** | **Candle direction override** | **Direction trade = direction prix 30s (bougie verte→LONG, rouge→SHORT)** | **✅ PASS** | **v2.0.14 — 9 tests (test_pivot_v200.py)** |
 | **FR-CDI-001** | **Candle direction indicator** | **Champ `entry_candle_direction` stocké sur chaque trade, affiché en frontend** | **✅ PASS** | **v2.0.15 — 7 tests (test_paper_trading.py::TestEntryCandleDirection)** |
 | **FR-RPF-001** | **REST price fallback** | **Si WebSocket inaccessible, fallback REST /market/price toutes les 10s** | **✅ PASS** | **v2.0.15 — useLivePrice.ts fallback + PriceTicker REST badge** |
+| **FR-EXC-001** | **Exit candle direction** | **Champ exit_candle_direction stocké à la fermeture, pastille double (E/S)** | **✅ PASS** | **v2.0.16 — 8 tests (test_paper_trading.py)** |
+| **FR-CLP-001** | **Candle direction learning** | **Patterns entrée→sortie (same_aligned, reversed_against, meta, durée×candle)** | **✅ PASS** | **v2.0.17 — 9 tests (test_learning.py)** |
+| **FR-CRE-001** | **Candle reversal exit** | **Sortie active si bougie inverse ≥3s, reversal_delay_seconds tracking** | **✅ PASS** | **v2.0.18 — 12 tests (test_candle_reversal.py)** |
+| **FR-AGP-001** | **Aggressive slot protection** | **Stale négatif 60min, trailing 0.15%/0.30, gain erosion 0.50** | **✅ PASS** | **v2.0.19 — test_pivot_v200.py** |
+| **FR-OAC-001** | **Override anti-churn** | **Tick override entry_reason préfixé, protection signal contraire** | **✅ PASS** | **v2.0.19 — test_pivot_v200.py** |
+| **FR-DTP-001** | **Downtrend protection** | **Veto bearish micro-trend bloque LONG si mt_score < 0** | **✅ PASS** | **v2.0.10 — 11 tests (test_pivot_v200.py)** |
+| **FR-MSC-001** | **Momentum stability check** | **Compare direction 30s vs 10s, bloque entrées fin de bougie** | **✅ PASS** | **v2.0.21 — 7 tests (test_pivot_v200.py)** |
+| **FR-SAS-001** | **SAS d'entrée sécurisé** | **Observation 10-15s virtuelle, range caution, confirmation PnL positif** | **✅ PASS** | **v2.0.22 — 39 tests (test_entry_sas.py)** |
+| **FR-MSL-002** | **Micro stop loss** | **Sortie immédiate si PnL < -micro_stop_loss_pct, configurable par profil** | **✅ PASS** | **v2.0.23 — 18 tests (test_micro_stop_loss.py)** |
+| **FR-TAF-001** | **Trend alignment filter** | **Bloque SHORT/LONG override quand score technique fort en sens inverse** | **✅ PASS** | **v2.0.26+v2.0.27 — 12 tests (test_pivot_v200.py)** |
+| **FR-AGP-002** | **Aggressive protections complètes** | **SAS + micro SL 0.15% + smart cooldown + trailing recalibré** | **✅ PASS** | **v2.0.28 — test_entry_sas.py + test_micro_stop_loss.py** |
 
 ---
 
@@ -106,7 +117,7 @@
 |----|-------------|---------------------|--------|-------|
 | NFR-SEC-001 | No secrets in repo | `.env` not tracked, no passwords in code | ✅ PASS | `git ls-files \| findstr .env` → empty |
 | NFR-SEC-002 | Test artifacts ignored | `test.db` not tracked | ✅ PASS | Listed in `.gitignore` |
-| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1701 tests passing |
+| NFR-TEST-001 | Backend tests pass | `pytest -v` all green | ✅ PASS | 1808 tests passing |
 | NFR-TZ-001 | UTC timestamps | All timestamps stored/returned in UTC | ✅ PASS | `max_ts: "2026-01-07T20:00:00+00:00"` |
 | NFR-IDEM-001 | Idempotent fetch | Re-fetch same data → 0 inserts | ✅ PASS | `inserted: 0, duplicates: 42` |
 
@@ -178,27 +189,30 @@
 | **test_decision.py** | **122** | **✅** |
 | **test_backtest.py** | **31** | **✅** |
 | **test_verification.py** | **79** | **✅** |
-| **test_binance_and_router.py** | **89** | **✅** |
+| **test_binance_and_router.py** | **17** | **✅** |
 | **test_news_history.py** | **33** | **✅** |
 | **test_cryptocompare.py** | **30** | **✅** |
 | **test_sentiment_history.py** | **42** | **✅** |
 | **test_scheduler_news.py** | **11** | **✅** |
 | **test_risk.py** | **57** | **✅** |
-| **test_price_service.py** | **15** | **✅** |
-| **test_paper_trading.py** | **68** | **✅** |
+| **test_price_service.py** | **5** | **✅** |
+| **test_paper_trading.py** | **141** | **✅** |
 | **test_journal_and_profiles.py** | **84** | **✅** |
 | **test_diagnostic.py** | **55** | **✅** |
 | **test_reality_gap.py** | **48** | **✅** |
-| **test_economic_value.py** | **—** | **✅** |
-| **test_stability.py** | **—** | **✅** |
-| **test_scalping_audit.py** | **—** | **✅** |
-| **test_smart_cooldown.py** | **—** | **✅** |
-| **test_learning.py** | **—** | **✅** |
-| **test_short_optimization.py** | **—** | **✅** |
-| **test_market_structure.py** | **—** | **✅** |
-| **test_runtime_truth.py** | **—** | **✅** |
-| **test_pivot_v200.py** | **41** | **✅** |
-| **test_autonomous.py** | **—** | **✅** |
+| **test_economic_value.py** | **40** | **✅** |
+| **test_stability.py** | **67** | **✅** |
+| **test_scalping_audit.py** | **37** | **✅** |
+| **test_smart_cooldown.py** | **51** | **✅** |
+| **test_learning.py** | **31** | **✅** |
+| **test_short_optimization.py** | **67** | **✅** |
+| **test_market_structure.py** | **55** | **✅** |
+| **test_runtime_truth.py** | **34** | **✅** |
+| **test_pivot_v200.py** | **174** | **✅** |
+| **test_autonomous.py** | **15** | **✅** |
 | **test_runtime_correlation.py** | **17** | **✅** |
 | **test_candle_reversal.py** | **12** | **✅** |
-| **Total** | **1730** | ✅ |
+| **test_enriched_export.py** | **25** | **✅** |
+| **test_entry_sas.py** | **39** | **✅** |
+| **test_micro_stop_loss.py** | **18** | **✅** |
+| **Total** | **1808** | ✅ |

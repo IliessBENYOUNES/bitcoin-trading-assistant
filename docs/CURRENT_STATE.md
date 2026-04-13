@@ -140,14 +140,14 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
   - **Nouveaux signal interpreters** : `interpret_price_position()`, `interpret_range_quality()` — signaux basés sur la structure réelle du marché.
   - **Learning v3** : suggestions stale-négatif dominant, longs homogènes à WR faible.
   - **55 tests** : MarketStructureService, interpreters, score decompression, gating, profil, learning.
-- 1426 tests backend, tsc clean
+- 1808 tests backend, tsc clean
 - **[v1.9.9] Lot correctif structurel — Audit de vérité runtime** — Le moteur sait enfin dire NON
   - **Runtime trace** : 8 nouvelles colonnes dans tick_activity_log (market_quality_score, volume_ratio, price_position_pct, range_width_atr, micro_trend_score, vwap_distance_pct, quality_gate_passed, quality_gate_reason). Chaque tick est auditable.
   - **Anti-saturation score technique** : soft ceiling à 88 (était 100), convergence boost exige vol_ratio ≥ 1.2 (était 0.8) et raw_score ≥ 0.75 (était 0.6), dilution par signaux NEUTRAL (4%/signal), plafond exceptionnel 95 (vol ≥ 1.5x + unanimité parfaite).
   - **Quality gate = veto réel** : scalping min_market_quality 35→45, aggressive a désormais un gate (25). Mid-range veto renforcé : exige micro_trend_score ≥ 3 (était > 0).
   - **Anti-churn stale négatif** : stale cooldown multiplier inversé 0.5→2.0 (AUGMENTE au lieu de réduire). Stale négatif → multiplicateur 3x + plancher 4 min. max_cooldown scalping 5→10 min.
   - **34 tests ciblés** : runtime trace (4), anti-saturation (6), quality gate veto (8), anti-churn (8), non-régression (8).
-- 1460 tests backend, tsc clean
+- 1808 tests backend, tsc clean
 
 **Ce qui manque structurellement avant v2.0 :**
 - ⚠️ **Validation runtime prolongée** : Les métriques sont disponibles mais n'ont pas encore été validées sur un run de 30+ trades.
@@ -191,7 +191,7 @@ bitcoin-trading-assistant/
 │   │   ├── services/           # Logique métier (25 services)
 │   │   ├── tasks/              # Jobs planifiés (APScheduler)
 │   │   └── utils/              # Utilitaires
-│   └── tests/                  # 1163+ tests pytest
+│   └── tests/                  # 1808 tests pytest
 ├── frontend/src/               # React 18 + TypeScript
 │   ├── components/             # Panels UI
 │   ├── hooks/                  # Custom hooks React
@@ -263,13 +263,26 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | test_risk.py | 57 |
 | test_price_service.py | 15 |
 | test_time_buckets.py | 24 |
-| test_paper_trading.py | 114 |
+| test_paper_trading.py | 141 |
 | test_journal_and_profiles.py | 84 |
 | test_diagnostic.py | 55 |
 | test_reality_gap.py | 48 |
 | test_autonomous.py | 15 |
 | test_market_structure.py | 55 |
-| **TOTAL** | **1647** ✅ |
+| test_economic_value.py | 40 |
+| test_enriched_export.py | 25 |
+| test_entry_sas.py | 39 |
+| test_micro_stop_loss.py | 18 |
+| test_pivot_v200.py | 174 |
+| test_runtime_correlation.py | 17 |
+| test_runtime_truth.py | 34 |
+| test_scalping_audit.py | 37 |
+| test_smart_cooldown.py | 51 |
+| test_stability.py | 67 |
+| test_short_optimization.py | 67 |
+| test_learning.py | 31 |
+| test_candle_reversal.py | 12 |
+| **TOTAL** | **1808** ✅ |
 
 ---
 
@@ -279,23 +292,26 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 |-------|----------|-------------|--------|
 | **1** BTC Insight | v0.2 → v0.9 | Assistant visuel, pédagogique | ✅ Complet |
 | **2** INFINI v1 | v1.0 → v1.7 | Assistant décisionnel + simulation | ✅ Fonctionnel |
-| **2b** Reality Gap | v1.8 | Coûts, campagnes, audit, gate v2.0 | 🔄 En cours |
-| **3** INFINI v2 | v2.0+ | Robot autonome (sous contrôle humain) | ⬜ Bloqué par 2b |
+| **2b** Reality Gap | v1.8-v1.9 | Coûts, campagnes, audit, gate v2.0 | ✅ Complet |
+| **2c** Pivot stratégique | v2.0.0-v2.0.28 | Scalping viable, aggressive protégé, gates d'entrée | ✅ En cours (itérations) |
+| **3** INFINI v2 | v2.1+ | Robot autonome (sous contrôle humain) | ⬜ Futur |
 | **4** INFINI v3 | v3.0+ | Modèle ML convergent | ⬜ Futur |
 
 ---
 
-## 6. Prochaine étape : v1.8 — Reality Gap Closure
+## 6. État des phases v1.8-v2.0
 
-> **Objectif** : Fermer l'écart entre la sophistication fonctionnelle et la vérité opérationnelle.
-> **Doctrine** : Pas d'exécution réelle tant que le reality gap n'est pas comblé.
+> **Phase Reality Gap complétée.** Le pivot stratégique v2.0.0 a été livré et itéré jusqu'à v2.0.28.
+> **Prochaine étape** : Validation runtime prolongée, puis v2.1+ (exécution réelle).
 
 | Sous-phase | Description | Status |
 |------------|-------------|--------|
 | v1.8.1 | TradingCostModel (frais, spread, slippage, presets) | ✅ Livré |
-| v1.8.2 | PaperRun — Campagnes de validation organisées | ⬜ Futur |
+| v1.8.2 | PaperRun — Campagnes de validation organisées | ✅ Livré (v1.9.0) |
 | v1.8.3 | TruthAudit — Audit de vérité des métriques | ✅ Livré |
 | v1.8.4 | V2Gate — Gate formelle avant exécution réelle | ✅ Livré |
+| v2.0.0 | Pivot stratégique (economic gate, structural proofs, scoring refondu) | ✅ Livré |
+| v2.0.1-v2.0.28 | Itérations scalping + aggressive (SAS, micro SL, trend alignment, etc.) | ✅ Livré |
 
 ---
 
@@ -306,7 +322,7 @@ Dashboard, PaperTradingPanel (multi-slot), JournalPanel, DiagnosticPanel, Decisi
 | **Modèle de coûts de trading** | 🔴 CRITIQUE | ✅ v1.8.0 |
 | **Audit de vérité métriques** | 🔴 Haute | ✅ v1.8.0 |
 | **Gate formelle v2.0** | 🔴 Haute | ✅ v1.8.0 |
-| **Campagnes de validation (PaperRun)** | 🟠 Moyenne | ⬜ Futur |
+| **Campagnes de validation (PaperRun)** | 🟠 Moyenne | ✅ v1.9.0 |
 | Robot autonome (connecteur exchange) | Haute | ⬜ v2.0 (bloqué) |
 | Docker Compose / CI/CD / Auth JWT | Moyenne | ⬜ Futur |
 | Multi-Assets (ETH, SOL...) | Basse | ⬜ Futur |

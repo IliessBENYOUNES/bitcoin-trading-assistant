@@ -80,9 +80,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v2.0.15 livré — Candle direction indicator + REST price fallback
+### État actuel : v2.0.28 livré — Refonte protections aggressive + cooldown scalping optimisé
 
-> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. La v2.0.15 ajoute l'indicateur visuel de couleur de bougie (🟢/🔴) à côté de chaque position dans le frontend pour vérifier la cohérence direction/bougie, et un fallback REST API pour le prix BTC quand le WebSocket est inaccessible. **1701 tests passing.**
+> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. Les versions v2.0.1 à v2.0.28 ont itéré sur les protections runtime : SAS d'entrée, micro stop loss, trend alignment filter, candle direction override, momentum stability, downtrend protection, aggressive slot protection, cooldown recalibrés. **1808 tests passing.**
 
 | Composant | Status |
 |-----------|--------|
@@ -121,7 +121,7 @@
 | **Multi-slot positions parallèles (trend + scalping simultanés)** | **✅ Complet (v1.7)** |
 | **Mean reversion bidirectionnel (SHORT surachat, LONG survente)** | **✅ Complet (v1.7)** |
 | **Per-slot cooldown + daily trade counter indépendants** | **✅ Complet (v1.7.1)** |
-| 1005 tests backend | ✅ Tous passing |
+| 1808 tests backend | ✅ Tous passing |
 
 ### ✅ LIVRÉ : v0.7 — Moteur de Signaux (Niveau 2)
 
@@ -682,7 +682,15 @@ Aujourd'hui, le moteur de décision est **rule-based** : 8 règles écrites à l
 │   ├── [✅] v1.7.2 — Trailing stop scalping + Auto-refresh panels
 │   ├── [✅] v1.8.x — Reality Gap Closure (TradingCostModel, PaperRun, TruthAudit, V2Gate, ScalpingAudit)
 │   └── [✅] v2.0.0 — Pivot stratégique (aggressive sanctuarisé, economic gate, structural proofs, scoring refondu)
-│       └── [✅] fix: expected_capture_pct 0.50% — gate économique scalping débloqué
+│       ├── [✅] fix: expected_capture_pct 0.50% — gate économique scalping débloqué
+│       ├── [✅] v2.0.1-v2.0.6 — Aggressive slot vivant (1h timeframe), certification profil UI, micro-trend gate
+│       ├── [✅] v2.0.7-v2.0.9 — Sorties recalibrées (trailing relatif, breakeven, stale rapide)
+│       ├── [✅] v2.0.10-v2.0.12 — Downtrend protection, anti-churn reversal, gain erosion stop
+│       ├── [✅] v2.0.13-v2.0.15 — Tick momentum confirmation, candle direction override, REST fallback
+│       ├── [✅] v2.0.16-v2.0.18 — Exit candle direction, learning patterns, candle reversal exit
+│       ├── [✅] v2.0.19-v2.0.22 — Aggressive protection, override anti-churn, SAS d'entrée sécurisé
+│       ├── [✅] v2.0.23-v2.0.25 — Micro stop loss, cooldown recalibré, SL/TP stop-limit
+│       └── [✅] v2.0.26-v2.0.28 — Trend alignment filter symétrique, mini chart, refonte protections aggressive
 │
 ├── Mai — Juin
 │   └── [ ] v2.1+ — INFINI Mode Autonome réel (exécution exchange)

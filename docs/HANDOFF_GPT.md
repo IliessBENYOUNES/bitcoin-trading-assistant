@@ -87,8 +87,10 @@ Le profil aggressive manquait de toutes les protections développées pour le sc
 
 | Document | Changements |
 |----------|-------------|
-| `docs/CURRENT_STATE.md` | Version 2.0.28, features v2.0.28 (3 entrées), dernier commit |
+| `docs/CURRENT_STATE.md` | Version 2.0.28, features v2.0.28, tests 1808, section 5 Vision Reality Gap ✅ Complet, section 6 phases v1.8-v2.0 mises à jour, section 7 PaperRun ✅, table tests complète (40 fichiers) |
 | `CHANGELOG.md` | Entrée [2.0.28] complète (Added + Changed + Technical) |
+| `docs/ROADMAP.md` | État actuel v2.0.28, 1808 tests, timeline v2.0.1-v2.0.28 ajoutée |
+| `docs/requirements_traceability.md` | Version v2.0.28, date 13/04, 12 FRs ajoutés (v2.0.10-v2.0.28), NFR tests 1808, table test coverage complète (40 fichiers) |
 | `docs/HANDOFF_GPT.md` | Ce fichier (édité, pas recréé) |
 
 ## État actuel
