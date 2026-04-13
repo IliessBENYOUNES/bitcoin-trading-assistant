@@ -1,83 +1,75 @@
 # 🔄 HANDOFF GPT — Dernière intervention
 
-## Date : 13 avril 2026 — v2.0.25
+## Date : 13 avril 2026 — v2.0.26
 
 ---
 
 ## Problème
 
-L'analyse de **345 trades** du run nocturne du 12-13 avril 2026 (account 49) révèle un PnL brut de **-$5.55** malgré un profit factor de 0.96 (presque rentable). Trois causes racines identifiées :
-
-1. **Micro SL trop serré (P0)** — Le micro stop loss à 0.01% (-$0.25) tuait 130 trades (37.7%) avec un taux de perte de 100% (-$59.44 total). Le seuil était trop serré pour les fluctuations BTC entre ticks (5 sec).
-2. **Churn destructeur (P1a)** — Le cooldown de 10 sec + SAS 15 sec = 25 sec total permettait des re-entries quasi-instantanées sur le même signal inchangé. Boucle : micro SL → re-entry → micro SL → re-entry.
-3. **SL/TP slippage (P1b)** — Le SL/TP exécutait au prix courant au lieu du prix de l'ordre. Avec des gaps de 5 sec entre ticks, le trade #629 a perdu -$21.76 (-0.87%) alors que le SL était à -0.20%.
+L'analyse de **92 trades** du run nocturne v2.0.25 révèle que les **shorts scalping** perdent de l'argent (47% WR, **-$8.93** net) quand le score technique est fortement bullish (+64/+65). Le tick_override ouvre des shorts quand la bougie 30s est rouge, mais le marché monte globalement → les shorts sont fermés 36-72s plus tard par "signal contraire" en perte.
 
 ## Diagnostic
 
-- Export JSON de 345 trades analysé par score, exit type, direction, durée
-- Micro SL : 130/345 trades = 37.7% du volume, perte moyenne -$0.46, total -$59.44
-- Sans le micro SL, le système serait à +$54 (profit factor ~1.5)
-- 4 trades SL catastrophiques : -$21.76, -$15.27, -$5.79, -$5.03 (gap de prix entre ticks)
-- Score 66 : 178/345 trades (52%) avec WR 43.8% (-$48.41) — dominé par les micro SL kills
+- Sur 92 trades analysés, les shorts ont un WR de 47% et un PnL net de -$8.93
+- Le score technique de +64/+65 indique un marché nettement bullish (≥4 indicateurs convergent)
+- Le tick_override détecte une bougie rouge (micro-dip de 30s) et ouvre un short
+- Mais le marché remonte car la tendance de fond est bullish → le score déclenche un "signal contraire" → fermeture en perte
+- Les LONGs dans la même période sont rentables (bénéficient de la tendance)
 
 ## Cause racine
 
-1. **Micro SL 0.01%** = -$0.25 sur $2500 = mouvement BTC de $7. À BTC ~$71,700, un tick de 5 sec peut facilement bouger de $10-20 → le micro SL trigger quasiment à chaque dip, même temporaire.
-2. **Cooldown 10 sec** = le bot re-entre avant que le signal ait changé → même setup, même résultat, en boucle.
-3. **SL au prix courant** = quand BTC gappe de $600 entre deux ticks (rare mais critique), la perte peut être 4× le SL prévu.
+Le tick_override (v2.0.14) ne vérifie pas l'alignement entre la direction de la bougie 30s et la tendance macro (score technique). Il ouvre aveuglément dans la direction de la bougie, même si le marché va dans l'autre sens. Un short sur un micro-dip dans un marché bullish est structurellement perdant.
 
 ## Correction appliquée
 
-### `backend/app/services/trading_profile_service.py` (profil scalping)
-| Paramètre | Avant | Après | Justification |
-|-----------|-------|-------|---------------|
-| `micro_stop_loss_pct` | 0.01 | 0.05 | -$1.25 au lieu de -$0.25, laisse 1-2 ticks de respiration |
-| `cooldown_minutes` | 0.17 (10s) | 1.0 (60s) | Le signal a le temps de changer entre trades |
-| `min_cooldown_minutes` | 0.17 | 0.5 | Minimum 30s même après un bon trade |
-| `max_cooldown_minutes` | 1.0 | 3.0 | Après une série de pertes, 3 min de pause |
+### `backend/app/schemas/journal.py`
+- Ajout du paramètre `trend_alignment_score_threshold` (Optional[float], default None)
 
-### `backend/app/services/paper_trading_service.py` (SL/TP execution)
-| Aspect | Avant | Après |
-|--------|-------|-------|
-| Exit price SL | `current_price` | `trade.stop_loss_price` |
-| Exit price TP | `current_price` | `trade.take_profit_price` |
-| Exit price expiration | `current_price` | `current_price` (inchangé) |
+### `backend/app/services/trading_profile_service.py`
+- Profil scalping : `trend_alignment_score_threshold=50`
+
+### `backend/app/services/paper_trading_service.py`
+- Gate inséré entre le momentum stability check et le scalping reversal check
+- Condition : `if tm_override_active and action == "vendre" and score > ta_threshold`
+- Retourne `PaperTickResult(non_trade_reason="trend_alignment_blocked")`
+
+### `backend/app/services/journal_service.py`
+- 2 nouveaux labels : `trend_alignment_blocked`, `momentum_unstable`
 
 ## Ce qui n'a PAS été touché
 
-- Aucun autre profil (aggressive, balanced, conservative) modifié
-- Aucun gate d'entrée modifié (SAS, micro SL logic, economic gate, structural proofs)
-- Aucun mécanisme de sortie modifié en logique (trailing, breakeven, gain erosion, stale)
-- Smart cooldown service (multiplieurs inchangés)
-- Micro SL toujours inconditionnel (pas de vérification de score), juste le seuil relevé
+- Aucun autre profil modifié (aggressive, balanced, conservative ont threshold=None)
+- Les shorts mean_reversion ne sont PAS affectés (filtre vérifie `tm_override_active=True`)
+- Les LONGs ne sont PAS affectés (filtre vérifie `action == "vendre"`)
+- Aucun gate existant modifié (SAS, micro SL, economic gate, structural proofs)
+- Aucun mécanisme de sortie modifié
 
 ## Validations
 
-- ✅ **1796 tests** backend passent (0 échec)
+- ✅ **1804 tests** backend passent (0 échec)
 - ✅ `tsc --noEmit` frontend sans erreur
-- ✅ 18 tests micro SL mis à jour pour le nouveau seuil 0.05%
-- ✅ 11 assertions cooldown mises à jour dans 5 fichiers de tests
-- ✅ Test `test_stale_still_works_for_never_profitable` corrigé : -0.04% ne trigger plus le micro SL (0.04 < 0.05)
+- ✅ 8 nouveaux tests dédiés dans `TestTrendAlignmentFilter`
+- ✅ Non-régression complète sur les 1796 tests existants
 
 ## Documentation mise à jour
 
 | Document | Changements |
 |----------|-------------|
-| `docs/CURRENT_STATE.md` | Version 2.0.25, dernier commit, features v2.0.25 ajoutées |
-| `CHANGELOG.md` | Nouvelle entrée [2.0.25] avec 3 Fixed + 5 Changed |
+| `docs/CURRENT_STATE.md` | Version 2.0.26, dernier commit, 1804 tests, feature v2.0.26 ajoutée |
+| `CHANGELOG.md` | Nouvelle entrée [2.0.26] avec Added + Changed + Technical |
 | `docs/HANDOFF_GPT.md` | Ce fichier (édité, pas recréé) |
 
 ## Commit
 
-Message : `fix(scalping): recalibrer micro SL 0.01→0.05%, cooldown 10s→1min, SL/TP stop-limit v2.0.25`
+Message : `feat(scalping): trend alignment filter — bloque shorts override en marché bullish v2.0.26`
 
 ## État actuel
 
-- **Version** : v2.0.25
-- **Tests** : 1796 passed ✅
-- **Impact estimé** : profit factor ~1.5-2.0 (vs 0.96 avant)
-- **Le robot devrait** : ~100-150 trades/nuit (vs 345 avant), PnL positif sur le scalping
-- **Prochaine action recommandée** : Lancer le robot toute la nuit et comparer les métriques avec le run précédent
+- **Version** : v2.0.26
+- **Tests** : 1804 passed ✅
+- **Impact estimé** : +$8.93 net sur 92 trades (élimination des shorts contre-tendance)
+- **Le robot devrait** : ne plus ouvrir de shorts quand le score est > 50 (bullish), ne trade que les longs en marché haussier
+- **Prochaine action recommandée** : Lancer un run de 12h et comparer : ratio long/short, PnL shorts, WR global
 
 ## Commandes de relance
 

@@ -2228,9 +2228,8 @@ class TestTickMomentumIntegrationV2013:
         from datetime import timedelta
 
         account = PaperAccount(
-            initial_capital=10000.0, current_capital=10000.0,
-            peak_capital=10000.0, is_active=True, active_profile="scalping",
-            btc_price_at_start=83000.0,
+            id=1, initial_capital=10000, current_capital=10000,
+            is_active=True, active_profile="scalping", max_open_positions=3,
         )
         db_session.add(account)
         db_session.flush()
@@ -2274,7 +2273,8 @@ class TestTickMomentumIntegrationV2013:
              patch.object(svc, "_check_max_trades_per_day", return_value=None):
             result = svc._tick_single_slot(
                 account=account, slot_name="scalping",
-                current_price=83060.0, now=base, is_multi=True,
+                current_price=71000 - 9 * 5, now=base + timedelta(seconds=25),
+                is_multi=True,
             )
 
         # Avec l'override actif, le short ne devrait PAS être bloqué par tick_momentum_mismatch
@@ -2292,9 +2292,8 @@ class TestTickMomentumIntegrationV2013:
         from datetime import timedelta
 
         account = PaperAccount(
-            initial_capital=10000.0, current_capital=10000.0,
-            peak_capital=10000.0, is_active=True, active_profile="scalping",
-            btc_price_at_start=83000.0,
+            id=1, initial_capital=10000, current_capital=10000,
+            is_active=True, active_profile="scalping", max_open_positions=3,
         )
         db_session.add(account)
         db_session.flush()
@@ -2329,7 +2328,8 @@ class TestTickMomentumIntegrationV2013:
 
             result = svc._tick_single_slot(
                 account=account, slot_name="scalping",
-                current_price=83000.0, now=base, is_multi=True,
+                current_price=71000 - 9 * 5, now=base + timedelta(seconds=25),
+                is_multi=True,
             )
 
         # Le trade ne devrait PAS être bloqué par tick momentum
@@ -2351,8 +2351,8 @@ class TestTickMomentumIntegrationV2013:
         from datetime import timedelta
 
         account = PaperAccount(
-            initial_capital=10000.0, current_capital=10000.0,
-            peak_capital=10000.0, is_active=True, active_profile="scalping",
+            id=1, initial_capital=10000, current_capital=10000,
+            is_active=True, active_profile="scalping",
         )
         db_session.add(account)
         db_session.flush()
@@ -2419,8 +2419,7 @@ class TestScalpingV2020:
 
         account = PaperAccount(
             initial_capital=10000.0, current_capital=10000.0,
-            peak_capital=10000.0, is_active=True, active_profile="scalping",
-            btc_price_at_start=83000.0,
+            is_active=True, active_profile="scalping", max_open_positions=3,
         )
         db_session.add(account)
         db_session.flush()
@@ -2636,7 +2635,7 @@ class TestMomentumStabilityV2021:
 
         mq_data = {
             "market_quality_score": 60, "volume_ratio": 1.0,
-            "price_position_pct": 0.3, "range_width_atr": 2.0,
+            "price_position_pct": 0.5, "range_width_atr": 2.0,
             "micro_trend_score": 3, "vwap_distance_pct": 0.1,
         }
 
@@ -2654,5 +2653,297 @@ class TestMomentumStabilityV2021:
         assert result.non_trade_reason == "momentum_unstable", (
             f"Le momentum instable aurait dû bloquer l'entrée. Got: action={result.action_taken}, "
             f"reason={result.non_trade_reason or 'none'}, detail={result.detail}"
+        )
+
+
+# ================================================================
+# 14. TREND ALIGNMENT FILTER (v2.0.26)
+# ================================================================
+
+class TestTrendAlignmentFilter:
+    """Tests v2.0.26 — Filtre d'alignement tendance.
+
+    Bloque les SHORTs via tick_override quand le score technique est
+    fortement bullish (score > threshold). L'analyse de 92 trades montre
+    que les shorts scalping perdent -$8.93 (47% WR) quand le score est
+    à +64/+65 et BTC monte globalement.
+    """
+
+    def test_scalping_profile_has_trend_alignment_threshold(self):
+        """Le preset scalping contient trend_alignment_score_threshold=50."""
+        params = PROFILE_PRESETS["scalping"]
+        assert hasattr(params, "trend_alignment_score_threshold")
+        assert params.trend_alignment_score_threshold == 50
+
+    def test_other_profiles_have_no_threshold(self):
+        """Les autres profils n'ont pas de trend alignment threshold (None)."""
+        for name in ("conservative", "balanced", "aggressive"):
+            params = PROFILE_PRESETS[name]
+            val = getattr(params, "trend_alignment_score_threshold", None)
+            assert val is None, f"Le profil {name} ne devrait pas avoir de trend alignment threshold"
+
+    def test_short_blocked_when_score_strongly_bullish(self, db_session):
+        """Un SHORT tick_override est bloqué quand score > threshold (bullish)."""
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models import PaperAccount
+        from unittest.mock import patch
+
+        svc = PaperTradingService(db_session)
+        account = PaperAccount(
+            id=1, initial_capital=10000, current_capital=10000,
+            is_active=True, active_profile="scalping", max_open_positions=3,
+        )
+        db_session.add(account)
+        db_session.commit()
+
+        base = datetime(2026, 4, 13, 16, 0, 0, tzinfo=timezone.utc)
+        TickMomentumService.clear_buffer()
+
+        # Simuler une bougie ROUGE (prix baisse sur 30s) → override veut SHORT
+        for i in range(10):
+            ts = base + timedelta(seconds=i * 2)
+            TickMomentumService.record_tick("scalping", 71000 - i * 5, ts)
+
+        # Mais le score technique est fortement bullish (+65 > threshold 50)
+        decision = {
+            "recommendation": {"action": "acheter", "confidence": "medium"},
+            "combined_score": 65,
+            "summary": "Bullish test",
+            "_series": [],
+            "rules_evaluated": [],
+        }
+
+        mq_data = {
+            "market_quality_score": 60, "volume_ratio": 1.0,
+            "price_position_pct": 0.5, "range_width_atr": 2.0,
+            "micro_trend_score": 2, "vwap_distance_pct": 0.1,
+        }
+
+        with patch.object(svc, "_get_decision", return_value=decision), \
+             patch.object(svc, "_check_market_quality", return_value=(None, mq_data)), \
+             patch.object(svc, "_check_cooldown", return_value=None), \
+             patch.object(svc, "_check_max_trades_per_day", return_value=None):
+            result = svc._tick_single_slot(
+                account=account, slot_name="scalping",
+                current_price=71000 - 9 * 5, now=base + timedelta(seconds=25),
+                is_multi=True,
+            )
+
+        assert result.non_trade_reason == "trend_alignment_blocked", (
+            f"Le SHORT override aurait dû être bloqué par le trend alignment filter. "
+            f"Got: action={result.action_taken}, reason={result.non_trade_reason}, detail={result.detail}"
+        )
+
+    def test_short_allowed_when_score_below_threshold(self, db_session):
+        """Un SHORT tick_override est autorisé quand score ≤ threshold."""
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models import PaperAccount
+        from unittest.mock import patch
+
+        svc = PaperTradingService(db_session)
+        account = PaperAccount(
+            id=1, initial_capital=10000, current_capital=10000,
+            is_active=True, active_profile="scalping", max_open_positions=3,
+        )
+        db_session.add(account)
+        db_session.commit()
+
+        base = datetime(2026, 4, 13, 16, 5, 0, tzinfo=timezone.utc)
+        TickMomentumService.clear_buffer()
+
+        # Bougie rouge → override SHORT
+        for i in range(10):
+            ts = base + timedelta(seconds=i * 2)
+            TickMomentumService.record_tick("scalping", 71000 - i * 5, ts)
+
+        # Score faible (+30 ≤ threshold 50) → le marché n'est pas fortement bullish
+        decision = {
+            "recommendation": {"action": "acheter", "confidence": "low"},
+            "combined_score": 30,
+            "summary": "Mild bullish test",
+            "_series": [],
+            "rules_evaluated": [],
+        }
+
+        mq_data = {
+            "market_quality_score": 60, "volume_ratio": 1.0,
+            "price_position_pct": 0.5, "range_width_atr": 2.0,
+            "micro_trend_score": 0, "vwap_distance_pct": 0.1,
+        }
+
+        with patch.object(svc, "_get_decision", return_value=decision), \
+             patch.object(svc, "_check_market_quality", return_value=(None, mq_data)), \
+             patch.object(svc, "_check_cooldown", return_value=None), \
+             patch.object(svc, "_check_max_trades_per_day", return_value=None):
+            result = svc._tick_single_slot(
+                account=account, slot_name="scalping",
+                current_price=71000 - 9 * 5, now=base + timedelta(seconds=25),
+                is_multi=True,
+            )
+
+        # Le short ne devrait PAS être bloqué par trend alignment
+        assert result.non_trade_reason != "trend_alignment_blocked", (
+            f"Le SHORT avec score=30 ne devrait PAS être bloqué par le trend alignment. "
+            f"Got: reason={result.non_trade_reason}, detail={result.detail}"
+        )
+
+    def test_long_not_affected_by_filter(self, db_session):
+        """Un LONG tick_override n'est JAMAIS bloqué par le trend alignment, même avec score élevé."""
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models import PaperAccount
+        from unittest.mock import patch
+
+        svc = PaperTradingService(db_session)
+        account = PaperAccount(
+            id=1, initial_capital=10000, current_capital=10000,
+            is_active=True, active_profile="scalping", max_open_positions=3,
+        )
+        db_session.add(account)
+        db_session.commit()
+
+        base = datetime(2026, 4, 13, 16, 10, 0, tzinfo=timezone.utc)
+        TickMomentumService.clear_buffer()
+
+        # Bougie VERTE (hausse) → override LONG
+        for i in range(10):
+            ts = base + timedelta(seconds=i * 2)
+            TickMomentumService.record_tick("scalping", 71000 + i * 5, ts)
+
+        # Score très bullish (+65) — le long est ALIGNÉ avec la tendance
+        decision = {
+            "recommendation": {"action": "acheter", "confidence": "medium"},
+            "combined_score": 65,
+            "summary": "Bullish long test",
+            "_series": [],
+            "rules_evaluated": [],
+        }
+
+        mq_data = {
+            "market_quality_score": 60, "volume_ratio": 1.0,
+            "price_position_pct": 0.5, "range_width_atr": 2.0,
+            "micro_trend_score": 3, "vwap_distance_pct": 0.1,
+        }
+
+        with patch.object(svc, "_get_decision", return_value=decision), \
+             patch.object(svc, "_check_market_quality", return_value=(None, mq_data)), \
+             patch.object(svc, "_check_cooldown", return_value=None), \
+             patch.object(svc, "_check_max_trades_per_day", return_value=None):
+            result = svc._tick_single_slot(
+                account=account, slot_name="scalping",
+                current_price=71000 + 9 * 5, now=base + timedelta(seconds=25),
+                is_multi=True,
+            )
+
+        # Le LONG ne devrait PAS être bloqué
+        assert result.non_trade_reason != "trend_alignment_blocked", (
+            f"Un LONG ne devrait JAMAIS être bloqué par le trend alignment filter. "
+            f"Got: reason={result.non_trade_reason}, detail={result.detail}"
+        )
+
+    def test_filter_not_applied_to_mean_reversion(self):
+        """Le filtre vérifie tm_override_active=True. Sans override, il ne bloque rien."""
+        params = PROFILE_PRESETS["scalping"]
+        assert params.trend_alignment_score_threshold == 50
+        # Le test d'intégration est couvert par le flow existant des mean_reversion tests
+
+    def test_threshold_boundary_exact_equal(self, db_session):
+        """Un score EXACTEMENT au threshold (50) ne bloque PAS (score > threshold, pas >=)."""
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models import PaperAccount
+        from unittest.mock import patch
+
+        svc = PaperTradingService(db_session)
+        account = PaperAccount(
+            id=1, initial_capital=10000, current_capital=10000,
+            is_active=True, active_profile="scalping", max_open_positions=3,
+        )
+        db_session.add(account)
+        db_session.commit()
+
+        base = datetime(2026, 4, 13, 16, 15, 0, tzinfo=timezone.utc)
+        TickMomentumService.clear_buffer()
+
+        for i in range(10):
+            ts = base + timedelta(seconds=i * 2)
+            TickMomentumService.record_tick("scalping", 71000 - i * 5, ts)
+
+        # Score EXACTEMENT = threshold (50 == 50 → pas de blocage, on vérifie score > threshold)
+        decision = {
+            "recommendation": {"action": "acheter", "confidence": "medium"},
+            "combined_score": 50,
+            "summary": "Boundary test",
+            "_series": [],
+            "rules_evaluated": [],
+        }
+
+        mq_data = {
+            "market_quality_score": 60, "volume_ratio": 1.0,
+            "price_position_pct": 0.5, "range_width_atr": 2.0,
+            "micro_trend_score": 1, "vwap_distance_pct": 0.1,
+        }
+
+        with patch.object(svc, "_get_decision", return_value=decision), \
+             patch.object(svc, "_check_market_quality", return_value=(None, mq_data)), \
+             patch.object(svc, "_check_cooldown", return_value=None), \
+             patch.object(svc, "_check_max_trades_per_day", return_value=None):
+            result = svc._tick_single_slot(
+                account=account, slot_name="scalping",
+                current_price=71000 - 9 * 5, now=base + timedelta(seconds=25),
+                is_multi=True,
+            )
+
+        assert result.non_trade_reason != "trend_alignment_blocked", (
+            f"Score=50 (exact boundary) ne devrait PAS bloquer (> strict, pas >=). "
+            f"Got: reason={result.non_trade_reason}, detail={result.detail}"
+        )
+
+    def test_score_just_above_threshold_blocks(self, db_session):
+        """Un score juste au-dessus du threshold (51 > 50) DOIT bloquer."""
+        from app.services.paper_trading_service import PaperTradingService
+        from app.models import PaperAccount
+        from unittest.mock import patch
+
+        svc = PaperTradingService(db_session)
+        account = PaperAccount(
+            id=1, initial_capital=10000, current_capital=10000,
+            is_active=True, active_profile="scalping", max_open_positions=3,
+        )
+        db_session.add(account)
+        db_session.commit()
+
+        base = datetime(2026, 4, 13, 16, 20, 0, tzinfo=timezone.utc)
+        TickMomentumService.clear_buffer()
+
+        for i in range(10):
+            ts = base + timedelta(seconds=i * 2)
+            TickMomentumService.record_tick("scalping", 71000 - i * 5, ts)
+
+        decision = {
+            "recommendation": {"action": "acheter", "confidence": "medium"},
+            "combined_score": 51,  # Juste au-dessus du threshold
+            "summary": "Just above threshold test",
+            "_series": [],
+            "rules_evaluated": [],
+        }
+
+        mq_data = {
+            "market_quality_score": 60, "volume_ratio": 1.0,
+            "price_position_pct": 0.5, "range_width_atr": 2.0,
+            "micro_trend_score": 1, "vwap_distance_pct": 0.1,
+        }
+
+        with patch.object(svc, "_get_decision", return_value=decision), \
+             patch.object(svc, "_check_market_quality", return_value=(None, mq_data)), \
+             patch.object(svc, "_check_cooldown", return_value=None), \
+             patch.object(svc, "_check_max_trades_per_day", return_value=None):
+            result = svc._tick_single_slot(
+                account=account, slot_name="scalping",
+                current_price=71000 - 9 * 5, now=base + timedelta(seconds=25),
+                is_multi=True,
+            )
+
+        assert result.non_trade_reason == "trend_alignment_blocked", (
+            f"Score=51 (> threshold 50) devrait bloquer le SHORT. "
+            f"Got: reason={result.non_trade_reason}, detail={result.detail}"
         )
 

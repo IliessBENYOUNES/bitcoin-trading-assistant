@@ -200,6 +200,16 @@ class TradingProfileParams(BaseModel):
     # Philosophie : on préfère perdre $0.25 que risquer -$21 sur un retournement.
     # None = désactivé (profils classiques qui utilisent le SL normal).
     micro_stop_loss_pct: Optional[float] = Field(default=None, description="% PnL négatif max avant sortie immédiate (ex: 0.01 = -0.01%). None=désactivé.")
+    # [v2.0.26] TREND ALIGNMENT FILTER — Bloque les SHORTs via tick_override quand
+    # le score technique est fortement bullish (marché en hausse).
+    # L'analyse de 92 trades (v2.0.25) montre que les shorts scalping perdent -$8.93
+    # (47% WR) quand le score est à +64/+65 (bullish) car le marché monte globalement.
+    # Le tick_override ouvre un short quand la bougie 30s est rouge, mais le score dit
+    # "acheter" → le short est fermé 36-72s plus tard par "signal contraire" en perte.
+    # Ce seuil bloque les shorts override quand score > threshold. Ex: 50 = si le score
+    # technique est > +50 (nettement bullish), pas de short. None = filtre désactivé.
+    # Ne bloque PAS les shorts non-override (mean_reversion) ni les LONGs.
+    trend_alignment_score_threshold: Optional[float] = Field(default=None, description="Score au-dessus duquel les SHORTs tick_override sont bloqués. None=désactivé.")
 
 
 class TradingProfileResponse(BaseModel):

@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 13 avril 2026
-> **Version :** v2.0.25
+> **Version :** v2.0.26
 > **Branche :** `master`
-> **Dernier commit :** fix(scalping): recalibrer micro SL 0.01→0.05%, cooldown 10s→1min, SL/TP stop-limit v2.0.25
+> **Dernier commit :** feat(scalping): trend alignment filter — bloque shorts override en marché bullish v2.0.26
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.25** |
+| Version courante | **v2.0.26** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1796 tests**, tous passing ✅ |
+| Tests backend | **1804 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.25 livré** — Recalibrage post-analyse 345 trades (micro SL, cooldown, SL/TP) |
+| Phase courante | **v2.0.26 livré** — Trend alignment filter pour bloquer les shorts contre-tendance |
 
 ### ⚠️ État de maturité honnête
 
@@ -63,6 +63,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.23+v2.0.25] MICRO STOP LOSS** — Garde-fou inconditionnel : si le PnL latent dépasse un seuil négatif, sortie IMMÉDIATE. [v2.0.25] Recalibré 0.01%→0.05% après analyse de 345 trades : à 0.01%, le micro SL tuait 130 trades (100% perdants, -$59.44). Le seuil de 0.05% (-$1.25 sur $2500) laisse 1-2 ticks de respiration tout en restant 4× plus serré que le SL classique.
 - **[v2.0.24+v2.0.25] COOLDOWN RECALIBRÉ** — `max_trades_per_day` 30→999 (illimité). [v2.0.25] Cooldown relevé après analyse de 345 trades : les boucles micro SL→re-entry créaient du churn destructeur (gap médian 64s). `cooldown_minutes` 0.17→1.0, `min_cooldown` 0.17→0.5, `max_cooldown` 1.0→3.0.
 - **[v2.0.25] SL/TP STOP-LIMIT** — Le SL/TP exécute désormais au prix de l'ordre au lieu du prix courant. Avant, des gaps entre ticks (5 sec) causaient des pertes 4× supérieures au SL attendu (trade #629 : -$21.76 vs SL -0.20%). Perte max par SL bornée à loss_cut_pct.
+- **[v2.0.26] TREND ALIGNMENT FILTER** — Bloque les SHORTs via tick_override quand le score technique est fortement bullish (score > 50). L'analyse de 92 trades (v2.0.25) montre que les shorts scalping perdent -$8.93 (47% WR) quand le score est à +64/+65 et BTC monte globalement. Le tick_override ouvre un short sur bougie rouge 30s, mais le marché bullish fait remonter le prix → le short est fermé en perte par "signal contraire". Le filtre ne bloque PAS les shorts non-override (mean_reversion) ni les LONGs. Seuil configurable via `trend_alignment_score_threshold` (default None, 50 pour scalping). 8 tests dédiés.
 - **[v2.0.4] Export enrichi** — Service `EnrichedExportService` + endpoint `GET /audit/enriched-export`. Export tick-par-tick avec : prix BTC, variation %, décision moteur, score, raison de non-trade, position ouverte/fermée, PnL, market quality. Inclut ventilation des refus par gate + détection des tendances BTC ratées.
 - **[v2.0.4] Learning runtime** — Nouvelle méthode `LearningService.learn_from_runtime()` + endpoint `POST /learning/learn-runtime`. Analyse les TickActivityLog (pas les trades fermés) pour identifier les gates sur-bloquants et proposer des assouplissements en mode shadow. Suggestions 15 (micro-trend dominant) et 16 (gate unique > 70%).
 - **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.

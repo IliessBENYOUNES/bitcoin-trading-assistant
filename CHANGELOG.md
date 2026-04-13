@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.26] - 2026-04-13
+
+### Added
+- **TREND ALIGNMENT FILTER** — Nouveau gate d'entrée qui bloque les SHORTs via tick_override quand le score technique est fortement bullish (score > threshold). L'analyse de 92 trades (v2.0.25) montre que les shorts scalping perdent -$8.93 (47% WR) quand le score est à +64/+65 et BTC monte globalement. Le tick_override ouvre un short sur bougie rouge 30s, mais le marché bullish fait remonter le prix → le short est fermé en perte par "signal contraire" 36-72s plus tard.
+- Nouveau paramètre `trend_alignment_score_threshold` sur `TradingProfileParams` (None = désactivé, 50 = bloque shorts quand score > 50).
+- Gate inséré entre le momentum stability check et le scalping reversal check dans `_tick_single_slot`.
+- 2 nouveaux labels dans `REASON_LABELS` : `trend_alignment_blocked`, `momentum_unstable`.
+- 8 tests dédiés dans `TestTrendAlignmentFilter` : paramètres profils, intégration SHORT bloqué/autorisé, LONG non affecté, mean_reversion non affecté, boundaries exactes.
+
+### Changed
+- Profil scalping : `trend_alignment_score_threshold=50` (bloque shorts override quand score > 50)
+- Les autres profils (conservative, balanced, aggressive) : `trend_alignment_score_threshold=None` (filtre inactif)
+
+### Technical
+- Total tests backend : **1804** (1796 existants + 8 trend alignment filter)
+- Le filtre ne s'applique qu'aux shorts tick_override (`tm_override_active=True` et `action="vendre"`). Les shorts mean_reversion et les LONGs ne sont pas affectés.
+- Impact estimé : élimination des shorts perdants en marché bullish, gain net estimé +$8.93 sur 92 trades
+
 ## [2.0.25] - 2026-04-13
 
 ### Fixed

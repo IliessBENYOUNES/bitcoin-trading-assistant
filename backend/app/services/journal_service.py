@@ -59,6 +59,8 @@ REASON_LABELS = {
     "tick_momentum_mismatch": "Tick momentum : direction du prix ne confirme pas l'entrée",
     "tick_momentum_no_direction": "Tick momentum : bougie neutre, pas de direction claire",
     "tick_momentum_override": "Tick momentum : direction overridée par la bougie",
+    "momentum_unstable": "Momentum instable : bougie en fin de vie",
+    "trend_alignment_blocked": "Trend alignment : SHORT bloqué car score bullish > seuil",
     "other": "Autre",
 }
 

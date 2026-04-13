@@ -282,6 +282,14 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # empêchant toute récupération. 0.05% (-$1.25 sur $2500) laisse le trade
         # respirer 1-2 ticks tout en coupant 4× plus tôt que le SL classique (-$5).
         micro_stop_loss_pct=0.05,
+        # [v2.0.26] TREND ALIGNMENT FILTER — Bloque les shorts override quand le
+        # score technique est fortement bullish. L'analyse de 92 trades (v2.0.25)
+        # montre que les shorts scalping perdent -$8.93 (47% WR) quand le score
+        # est à +64/+65 et BTC monte globalement. Le tick_override ouvre un short
+        # sur bougie rouge 30s, mais le marché bullish fait remonter le prix → le
+        # short est fermé en perte par "signal contraire". Seuil 50 = bloque les
+        # shorts quand le score est nettement bullish (≥4 indicateurs convergent).
+        trend_alignment_score_threshold=50,
     ),
 }
 
