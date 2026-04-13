@@ -177,15 +177,22 @@ class ExperimentalPaperTradingService:
                 )
 
         # ── PHASE 2 : Analyse de marché ─────────────────────────────
-        # Déterminer le timeframe d'analyse (5m pour être réactif)
+        # Fallback automatique : 5m → 30m → 4h selon les données disponibles
         decision_service = DecisionService(self.db)
-        decision = decision_service.analyze(
-            symbol="BTC/USD",
-            timeframe="5m",
-            history_days=2,
-        )
-
-        series = decision.get("_series", [])
+        series = []
+        decision = {}
+        for tf, days in [("5m", 2), ("30m", 2), ("4h", 7)]:
+            decision = decision_service.analyze(
+                symbol="BTC/USD",
+                timeframe=tf,
+                history_days=days,
+            )
+            series = decision.get("_series", [])
+            if len(series) >= 10:
+                logger.info(f"[MULTI] Contexte marché via {tf} ({len(series)} candles)")
+                break
+        else:
+            logger.warning(f"[MULTI] Données insuffisantes sur tous les timeframes (dernière série: {len(series)} candles)")
 
         # ── PHASE 3 : Orchestrer les stratégies ─────────────────────
         open_pos_dicts = [
@@ -208,8 +215,22 @@ class ExperimentalPaperTradingService:
         )
 
         if not orch_result.approved_signals:
+            # Labels lisibles pour l'UI
+            regime_labels = {
+                "range": "Range (latéral)",
+                "trend": "Trend",
+                "breakout": "Breakout",
+                "unknown": "Analyse...",
+            }
+            zone_labels = {"low": "bas", "mid": "milieu", "high": "haut"}
+            regime_label = regime_labels.get(orch_result.context.regime, orch_result.context.regime)
+            zone_label = zone_labels.get(orch_result.context.zone, orch_result.context.zone)
+            trend_info = ""
+            if orch_result.context.trend_direction != "neutral":
+                trend_info = f" {'↗' if orch_result.context.trend_direction == 'bullish' else '↘'}"
+
             detail = (
-                f"Multi-strategy: {orch_result.context.regime}/{orch_result.context.zone} | "
+                f"Multi-strategy: {regime_label}{trend_info} · Zone {zone_label} | "
                 f"Éligibles: {orch_result.eligible_strategies} | "
                 f"Signaux: {len(orch_result.signals)} | "
             )

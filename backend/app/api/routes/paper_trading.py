@@ -516,12 +516,19 @@ def get_market_context(
     import dataclasses
 
     decision_service = DecisionService(db)
-    decision = decision_service.analyze(
-        symbol="BTC/USD",
-        timeframe=timeframe,
-        history_days=2,
-    )
-    series = decision.get("_series", [])
+    # Fallback automatique : timeframe demandé → 30m → 4h
+    series = []
+    used_tf = timeframe
+    for tf, days in [(timeframe, 2), ("30m", 2), ("4h", 7)]:
+        decision = decision_service.analyze(
+            symbol="BTC/USD",
+            timeframe=tf,
+            history_days=days,
+        )
+        series = decision.get("_series", [])
+        if len(series) >= 10:
+            used_tf = tf
+            break
     context = MarketContextEngine.analyze(series)
 
     # Stratégies éligibles
@@ -532,6 +539,8 @@ def get_market_context(
     result["eligible_strategies"] = eligible
     result["combined_score"] = decision.get("combined_score", 0)
     result["technical_score"] = decision.get("technical_score", 0)
+    result["timeframe_used"] = used_tf
+    result["candle_count"] = len(series)
     return result
 
 
