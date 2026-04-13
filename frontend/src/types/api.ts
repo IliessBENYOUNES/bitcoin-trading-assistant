@@ -925,7 +925,7 @@ export interface JournalResponse {
 // Paper Trading — Profils (v1.5)
 // -----------------------------------------------------------------------------
 
-export type TradingProfileType = 'conservative' | 'balanced' | 'aggressive' | 'scalping' | 'auto';
+export type TradingProfileType = 'conservative' | 'balanced' | 'aggressive' | 'scalping' | 'auto' | 'multi_strategy';
 
 export interface TradingProfileParams {
   profile_type: TradingProfileType;

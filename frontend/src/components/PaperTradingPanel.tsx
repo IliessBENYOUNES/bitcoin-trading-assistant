@@ -51,7 +51,7 @@ import {
   Warning as WarningIcon,
 } from '@mui/icons-material';
 import { usePaperTrading } from '../hooks/usePaperTrading';
-import { setPaperProfile, getPaperProfile, createPaperAccount, closePaperPosition, getPaperTradesExport, resetDailyLoss, startAutonomous, stopAutonomous, getAutonomousStatus } from '../api/marketApi';
+import { setPaperProfile, getPaperProfile, createPaperAccount, closePaperPosition, getPaperTradesExport, resetDailyLoss, startAutonomous, stopAutonomous, getAutonomousStatus, setEngineMode } from '../api/marketApi';
 import type { PaperTradeItem, TradingProfileType, AutonomousStatus } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -402,6 +402,14 @@ const PROFILE_OPTIONS: {
     autoInterval: 10,
     color: '#9c27b0',
   },
+  {
+    value: 'multi_strategy' as TradingProfileType,
+    label: 'Multi-Strategy',
+    emoji: '🧠',
+    description: '5 stratégies orchestrées par contexte (range/trend/breakout)',
+    autoInterval: 5,
+    color: '#00bcd4',
+  },
 ];
 
 export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: { onTradeExecuted?: () => void; onResetComplete?: () => void }) {
@@ -436,7 +444,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
   const [capital, setCapital] = useState('10000');
   const [tickLoading, setTickLoading] = useState(false);
   const [selectedInterval, setSelectedInterval] = useState(10);
-  const [selectedProfile, setSelectedProfile] = useState<TradingProfileType>('auto');
+  const [selectedProfile, setSelectedProfile] = useState<TradingProfileType>('multi_strategy' as TradingProfileType);
   const [activeProfile, setActiveProfile] = useState<TradingProfileType | null>(null);
   const [launching, setLaunching] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -523,11 +531,21 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
   const handleStartHeadless = async () => {
     setLaunching(true);
     try {
+      const isMultiStrategy = selectedProfile === 'multi_strategy';
+
+      // Activer le bon engine mode
+      if (isMultiStrategy) {
+        await setEngineMode('experimental');
+      } else {
+        await setEngineMode('standard');
+      }
+
       const profileOpt = PROFILE_OPTIONS.find(p => p.value === selectedProfile);
       const interval = profileOpt?.autoInterval ?? 30;
+      const backendProfile = isMultiStrategy ? 'scalping' : selectedProfile;
       await startAutonomous({
         interval_seconds: interval,
-        profile: selectedProfile,
+        profile: backendProfile,
       });
       await fetchHeadlessStatus();
     } catch (err) {
@@ -601,17 +619,26 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
   const handleLaunchRobot = async () => {
     setLaunching(true);
     try {
-      // 0. Fermer la position existante si le profil change
-      //    (évite le "goulot d'étranglement : position blocking")
+      const isMultiStrategy = selectedProfile === 'multi_strategy';
+
+      // 0. Activer le bon engine mode
+      if (isMultiStrategy) {
+        await setEngineMode('experimental');
+      } else {
+        await setEngineMode('standard');
+      }
+
+      // 1. Fermer la position existante si le profil change
       if (status?.open_position && activeProfile !== selectedProfile) {
         await closePaperPosition(`Changement de profil : ${activeProfile} → ${selectedProfile}`);
       }
 
-      // 1. Définir le profil
-      await setPaperProfile(selectedProfile);
+      // 2. Définir le profil backend (scalping pour multi-strategy, sinon le profil choisi)
+      const backendProfile = isMultiStrategy ? 'scalping' : selectedProfile;
+      await setPaperProfile(backendProfile);
       setActiveProfile(selectedProfile);
 
-      // 2. Activer le compte avec multi-slot (3 positions simultanées)
+      // 3. Activer le compte avec multi-slot (3 positions simultanées)
       const isActive = status?.account?.is_active ?? false;
       if (!isActive) {
         await createPaperAccount({
@@ -620,14 +647,13 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
         });
         await refresh();
       } else {
-        // Même si actif, mettre à jour max_open_positions pour le multi-slot
         await createPaperAccount({
           initial_capital: status?.account?.initial_capital || Number(capital) || 10000,
           max_open_positions: 3,
         });
       }
 
-      // 3. Démarrer le mode auto avec l'intervalle optimal du profil
+      // 4. Démarrer le mode auto avec l'intervalle optimal
       const profileOpt = PROFILE_OPTIONS.find(p => p.value === selectedProfile);
       const interval = profileOpt?.autoInterval ?? 10;
       startAuto(interval);

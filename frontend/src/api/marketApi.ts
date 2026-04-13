@@ -924,3 +924,37 @@ export async function getAutonomousStatus(
   return apiFetch<AutonomousStatus>('/paper/autonomous/status', options);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// [EXPERIMENT] Engine Mode — switch standard ↔ experimental
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function getEngineMode(
+  options: FetchOptions = {}
+): Promise<{ engine_mode: string }> {
+  return apiFetch<{ engine_mode: string }>('/paper/engine-mode', options);
+}
+
+export async function setEngineMode(
+  mode: string,
+  options: FetchOptions = {}
+): Promise<{ engine_mode: string; message: string }> {
+  const url = `${BASE_URL}/paper/engine-mode?mode=${encodeURIComponent(mode)}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Accept': 'application/json' },
+    signal: options.signal,
+  });
+  if (!response.ok) throw new Error(`setEngineMode failed: ${response.status}`);
+  return response.json();
+}
+
+export async function getMarketContext(
+  timeframe: string = '5m',
+  options: FetchOptions = {}
+): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(
+    `/paper/market-context?timeframe=${encodeURIComponent(timeframe)}`,
+    options,
+  );
+}
+
