@@ -41,25 +41,27 @@ logger = logging.getLogger(__name__)
 
 CONTEXT_STRATEGY_MAP: dict[str, dict[str, list[str]]] = {
     # regime → zone → [strategies]
+    # Stratégies primaires en premier, secondaires ensuite
+    # Chaque contexte propose 2-3 stratégies pour permettre des positions simultanées
     "range": {
-        "low": ["mean_reversion", "scalping"],
-        "mid": ["scalping", "micro_scalping"],
-        "high": ["mean_reversion", "scalping"],
+        "low": ["mean_reversion", "scalping", "micro_scalping"],
+        "mid": ["scalping", "micro_scalping", "mean_reversion"],
+        "high": ["mean_reversion", "scalping", "micro_scalping"],
     },
     "trend": {
-        "low": ["aggressive", "breakout"],
-        "mid": ["aggressive", "breakout"],
-        "high": ["aggressive", "breakout"],
+        "low": ["aggressive", "breakout", "scalping"],
+        "mid": ["aggressive", "breakout", "scalping"],
+        "high": ["aggressive", "breakout", "scalping"],
     },
     "breakout": {
-        "low": ["breakout"],
-        "mid": ["breakout"],
-        "high": ["breakout"],
+        "low": ["breakout", "aggressive"],
+        "mid": ["breakout", "aggressive"],
+        "high": ["breakout", "aggressive"],
     },
     "unknown": {
-        "low": ["scalping"],
-        "mid": ["scalping"],
-        "high": ["scalping"],
+        "low": ["scalping", "micro_scalping"],
+        "mid": ["scalping", "micro_scalping"],
+        "high": ["scalping", "micro_scalping"],
     },
 }
 
@@ -106,7 +108,7 @@ class MultiStrategyEngine:
         decision: dict,
         current_price: float,
         open_positions: list[dict] | None = None,
-        max_simultaneous: int = 2,
+        max_simultaneous: int = 3,
     ) -> OrchestratorResult:
         """
         Évalue un tick et retourne les signaux approuvés.

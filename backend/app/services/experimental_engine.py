@@ -301,7 +301,6 @@ class ExperimentalPaperTradingService:
                 trade.market_zone = orch_result.context.zone
                 self.db.commit()
 
-                self._risk_layer.record_entry(now)
                 opened_trades.append(trade)
 
                 # Mettre à jour open_pos_dicts pour les prochains signaux
@@ -313,14 +312,22 @@ class ExperimentalPaperTradingService:
                     "entry_price": current_price,
                 })
 
+        # Enregistrer le cooldown APRÈS la boucle (pas entre chaque signal du même tick)
+        if opened_trades:
+            self._risk_layer.record_entry(now)
+
         if opened_trades:
             trade = opened_trades[0]
             action = f"opened_{trade.direction}"
+            strategies_opened = [t.strategy_type or "?" for t in opened_trades]
+            detail = (
+                f"Multi-strategy: {' + '.join(strategies_opened)} | "
+                f"{orch_result.context.regime}/{orch_result.context.zone} | "
+                f"{len(opened_trades)} position(s) ouverte(s)"
+            )
             return PaperTickResult(
                 action_taken=action,
-                detail=f"Multi-strategy: {trade.strategy_type} | "
-                       f"{orch_result.context.regime}/{orch_result.context.zone} | "
-                       f"score={trade.decision_score}",
+                detail=detail,
                 position_opened=PaperTradeResponse.model_validate(trade),
                 current_price=current_price,
                 timestamp=now.isoformat(),

@@ -350,8 +350,9 @@ class TestMultiStrategyEngine:
         assert "aggressive" in CONTEXT_STRATEGY_MAP["trend"]["mid"]
 
     def test_strategy_routing_breakout(self):
-        """En breakout → breakout only."""
-        assert CONTEXT_STRATEGY_MAP["breakout"]["mid"] == ["breakout"]
+        """En breakout → breakout + aggressive."""
+        assert "breakout" in CONTEXT_STRATEGY_MAP["breakout"]["mid"]
+        assert "aggressive" in CONTEXT_STRATEGY_MAP["breakout"]["mid"]
 
     def test_orchestrator_instantiation(self):
         engine = MultiStrategyEngine()

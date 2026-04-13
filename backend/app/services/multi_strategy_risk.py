@@ -55,7 +55,7 @@ class MultiStrategyRiskLayer:
         max_single_position_pct: float = 30.0,    # Max 30% du capital par position
         max_simultaneous_positions: int = 3,       # Max 3 positions simultanées
         max_same_direction: int = 2,               # Max 2 positions même direction
-        min_entry_interval_seconds: float = 30.0,  # 30s entre deux entrées
+        min_entry_interval_seconds: float = 5.0,   # 5s entre deux entrées (permet multi-slot)
         max_drawdown_kill_pct: float = 5.0,        # Kill switch à -5%
     ):
         self.max_total_exposure_pct = max_total_exposure_pct
