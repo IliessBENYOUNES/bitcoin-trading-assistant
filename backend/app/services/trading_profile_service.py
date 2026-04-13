@@ -114,11 +114,10 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         #   a déclenché trop tard à cause du gap entre ticks.
         trailing_stop_activation_pct=0.25,
         trailing_stop_drop_ratio=0.20,
-        # [v2.0.28] GAIN EROSION recalibré 0.50→0.70 : l'analyse du run v2.0.27
-        # montre que le gain erosion à 50% sort sur des peaks de 0.02-0.03% avec
-        # des PnL de $0 à +$0.40 — du bruit. Les swings oscillent naturellement,
-        # 70% d'érosion tolère cette oscillation avant de couper.
-        gain_erosion_ratio=0.70,
+        # [EXPERIMENT] Gain erosion DÉSACTIVÉ sur aggressive : avec les frais,
+        # les exits à +$0.40 brut sont des pertes nettes de -$11. Le trailing
+        # à 0.25%/20% et le micro SL à 0.15% suffisent comme protections.
+        gain_erosion_ratio=None,
         # [v1.9.9] Quality gate minimum pour le slot aggressive.
         min_market_quality=25,
         min_volume_ratio=0.5,
@@ -184,14 +183,17 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         loss_cut_score_threshold=5,
         leverage_enabled=True,
         max_leverage=1.5,
-        analysis_timeframe="15m",
+        # [EXPERIMENT] Timeframe 15m→5m : les indicateurs 15m (RSI 14 = 3h30 de données)
+        # sont trop lents pour des trades de 30-120s. En 5m, RSI 14 = 70 min,
+        # MACD(12,26,9) = 2h10 — bien plus réactif. Binance fetch nativement le 5m.
+        analysis_timeframe="5m",
         buy_threshold=30,   # [v2.0.3] 25→30 : exiger un signal directionnel plus fort
         sell_threshold=20,
-        # [v2.0.0] Momentum fade = RESTRICTED : principal destructeur de valeur identifié.
-        # Le momentum fade sortait à +$1.59 avg quand le coût RT est $7.75.
-        # En mode restricted, il ne se déclenche que si le pic >= 0.35% ($8.75 sur $2500).
-        # En dessous de ce seuil, on laisse le trailing stop gérer la sortie.
-        momentum_fade_enabled=True,
+        # [EXPERIMENT] Momentum fade DÉSACTIVÉ : même en mode restricted, c'est un
+        # destructeur de valeur net identifié (sort à +$1.59 avg vs coût RT $7.75).
+        # Avec les frais intégrés, chaque sortie prématurée coûte cher. On laisse
+        # le trailing stop gérer toutes les sorties en profit.
+        momentum_fade_enabled=False,
         momentum_fade_mode="restricted",
         momentum_fade_min_amplitude_pct=0.35,
         momentum_fade_retention=0.55,
@@ -211,15 +213,19 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # déjà 80% plus bas. 15% = $0.19 de tolérance = ~1-2 ticks de marge réaliste.
         # Activation 0.02→0.04% : les peaks à 0.01% (=$0.25) ne sont pas protégeables,
         # le breakeven sort en négatif. 0.04% = ~$1 minimum avant protection.
-        trailing_stop_activation_pct=0.04,  # [v2.0.9] 0.02→0.04 : ~$1 de gain min
+        # [EXPERIMENT] Trailing activation 0.04→0.10% : avec les frais RT à 0.31%,
+        # un gain de 0.04% ($1) est NET NÉGATIF après frais ($1 - $7.75 = -$6.75).
+        # Le trailing doit protéger les gains qui ont une chance de couvrir les frais.
+        # 0.10% = $2.50 brut, toujours négatif mais évite de verrouiller des poussières.
+        trailing_stop_activation_pct=0.10,
         trailing_stop_pct=0.06,  # fallback absolu (utilisé si drop_ratio est None)
         trailing_stop_drop_ratio=0.15,  # [v2.0.9] 15% : garde 85% du gain, réaliste pour 5sec ticks
-        # [v2.0.28] GAIN EROSION STOP recalibré 0.30→0.40 : l'analyse du run v2.0.27
-        # montre que l'érosion à 30% sort sur des gains minuscules ($0.12-$0.50) qui
-        # ne couvrent même pas les frais. 40% laisse plus de marge aux petits gains
-        # pour se développer vers le trailing (0.04%), tout en coupant les pertes
-        # quand le gain a vraiment fondu (>40% du pic).
-        gain_erosion_ratio=0.40,
+        # [EXPERIMENT] Gain erosion DÉSACTIVÉ : avec les frais intégrés, les exits
+        # gain erosion à +$0.37 sont en réalité des pertes de -$7.38 après frais.
+        # Mieux vaut laisser le trailing ou le stale gérer la sortie.
+        # Le gain erosion ne fait que cristalliser des micro-gains qui ne couvrent
+        # jamais les frais. On le désactive pour laisser les trades respirer.
+        gain_erosion_ratio=None,
         # [v2.0.14] CANDLE DIRECTION OVERRIDE — La direction du trade vient de la
         # direction RÉELLE du prix (bougie verte → LONG, bougie rouge → SHORT),
         # pas du score technique lagging. Le score est gardé comme filtre de qualité

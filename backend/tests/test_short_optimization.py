@@ -627,12 +627,12 @@ class TestScalpingPresetNonRegression:
     def test_scalping_analysis_timeframe(self):
         """Le timeframe d'analyse est inchangé (15m)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.analysis_timeframe == "15m"
+        assert p.analysis_timeframe == "5m"
 
     def test_scalping_trailing_stop(self):
         """[v2.0.9] Les paramètres trailing stop recalibrés — relatif 3%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.04  # [v2.0.9] 0.10→0.02
+        assert p.trailing_stop_activation_pct == 0.10  # [v2.0.9] 0.10→0.02
         assert p.trailing_stop_pct == 0.06             # fallback absolu
         assert p.trailing_stop_drop_ratio == 0.15      # [v2.0.9] 3% relatif
 

@@ -529,7 +529,7 @@ class TestNonRegression:
         p = PROFILE_PRESETS["scalping"]
         assert p.profit_take_pct == 0.8  # [v2.0.0] 0.6→0.8
         assert p.loss_cut_pct == 0.20
-        assert p.analysis_timeframe == "15m"
+        assert p.analysis_timeframe == "5m"
         assert p.stale_negative_exit_minutes == 2
 
     def test_tick_log_backward_compatible(self, db_session):

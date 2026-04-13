@@ -1523,7 +1523,7 @@ class TestStaleVsTrailingThreshold:
         )
         # La logique dans _tick_single_slot doit utiliser ts_act, pas profit_take_pct
         # Vérifié via le code : stale_pnl_threshold = ts_act si disponible
-        assert ts_act == 0.04, f"Expected 0.04, got {ts_act}"  # [v2.0.9] activation 0.04%
+        assert ts_act == 0.10, f"Expected 0.04, got {ts_act}"  # [v2.0.9] activation 0.04%
 
     def test_profitable_position_above_trailing_activation_not_stale(self, db_session):
         """Un trade à +0.46% ne doit PAS être fermé stale si au-dessus du seuil trailing."""
@@ -1543,7 +1543,7 @@ class TestStaleVsTrailingThreshold:
         )
 
     def test_flat_position_below_trailing_activation_is_stale(self, db_session):
-        """Un trade à +0.01% DOIT être fermé stale (en dessous du seuil trailing 0.04%)."""
+        """Un trade à +0.01% DOIT être fermé stale (en dessous du seuil trailing 0.10%)."""
         from app.services.trading_profile_service import PROFILE_PRESETS
 
         scalping = PROFILE_PRESETS["scalping"]
@@ -1756,7 +1756,7 @@ class TestAggressiveSlotCalibration:
             "Les timeframes doivent être distincts : aggressive vs scalping"
         )
         assert agg.analysis_timeframe == "1h"
-        assert scl.analysis_timeframe == "15m"
+        assert scl.analysis_timeframe == "5m"
 
     def test_aggressive_distinct_from_scalping_risk_profile(self):
         """Le profil de risque aggressive reste distinct du scalping."""

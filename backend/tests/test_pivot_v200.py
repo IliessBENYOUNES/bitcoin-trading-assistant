@@ -262,7 +262,7 @@ class TestScalpingProfileV200:
     def test_trailing_activation_raised(self):
         """[v2.0.9] Trailing activation abaissé à 0.02% — protège les gains dès ~$0.50."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct == 0.04
+        assert scalp.trailing_stop_activation_pct == 0.10
         # [v2.0.9] drop_ratio doit être configuré
         assert scalp.trailing_stop_drop_ratio == 0.15, "drop_ratio 3% pour protéger les gains"
 
@@ -429,7 +429,7 @@ class TestScalpingV203MiniLot:
     def test_trailing_activation_lowered_to_010(self):
         """[v2.0.9] trailing_stop_activation_pct abaissé de 0.10 à 0.02 — protège dès ~$0.50."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct == 0.04, (
+        assert scalp.trailing_stop_activation_pct == 0.10, (
             f"Attendu 0.02, obtenu {scalp.trailing_stop_activation_pct}"
         )
 
@@ -574,7 +574,7 @@ class TestScalpingV206MicroTrendDisable:
         """Aucun autre paramètre scalping n'a bougé (correction chirurgicale)."""
         scalp = PROFILE_PRESETS["scalping"]
         # [v2.0.9] Trailing recalibré : activation basse + drop ratio 3%
-        assert scalp.trailing_stop_activation_pct == 0.04
+        assert scalp.trailing_stop_activation_pct == 0.10
         assert scalp.trailing_stop_pct == 0.06
         assert scalp.trailing_stop_drop_ratio == 0.15
         assert scalp.profit_take_pct == 0.8
@@ -611,7 +611,7 @@ class TestScalpingV207FastExit:
     def test_trailing_activation_lowered_to_010(self):
         """[v2.0.9] Trailing activation abaissé à 0.02% : protège dès ~$0.50."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.trailing_stop_activation_pct == 0.04
+        assert scalp.trailing_stop_activation_pct == 0.10
 
     def test_trailing_trail_tightened_to_006(self):
         """Trail resserré de 0.10→0.06% : moins de give-back depuis le peak."""
@@ -635,7 +635,7 @@ class TestScalpingV207FastExit:
         # [v2.0.19] Stale négatif raccourci : 180→60 min
         assert agg.stale_negative_exit_minutes == 60
         # [v2.0.28] Gain erosion plus permissif pour swings
-        assert agg.gain_erosion_ratio == 0.70  # [v2.0.28] 0.50→0.70
+        assert agg.gain_erosion_ratio is None  # [v2.0.28] 0.50→0.70
         # [v2.0.28] SAS et micro SL ajoutés
         assert agg.entry_sas_enabled is True
         assert agg.micro_stop_loss_pct == 0.15
@@ -735,7 +735,7 @@ class TestTrailingStopPriorityV208:
 
         entry_time = datetime.now(timezone.utc) - timedelta(minutes=3)
         entry_price = 73000.0
-        # Peak à 73020 (+0.027%, > activation/2=0.02% mais < activation 0.04%)
+        # [EXPERIMENT] Peak à 73060 (+0.082%, > activation/2=0.05% mais < activation 0.10%)
         trade = PaperTrade(
             account_id=account.id,
             direction="long",
@@ -745,7 +745,7 @@ class TestTrailingStopPriorityV208:
             take_profit_price=entry_price * 1.008,
             status="open",
             entry_ts=entry_time,
-            highest_price_since_entry=73020.0,  # peak +0.027%
+            highest_price_since_entry=73060.0,  # peak +0.082%
             lowest_price_since_entry=entry_price,
             leverage=1.0,
             entry_reason="Test breakeven protection",
@@ -766,12 +766,10 @@ class TestTrailingStopPriorityV208:
             is_multi=True,
         )
 
-        # [v2.0.12] Le gain erosion stop a priorité sur le breakeven pour les gains
-        # dans la zone 0.01%-0.04%. Le gain erosion ferme dès que 30% du pic est perdu,
-        # AVANT que le gain retombe à 0% (breakeven). C'est le comportement souhaité :
-        # on préserve plus de gain qu'avant.
-        assert result.action_taken in ("closed_breakeven", "closed_gain_erosion"), (
-            f"Attendu closed_breakeven ou closed_gain_erosion, obtenu {result.action_taken}"
+        # [EXPERIMENT] Gain erosion désactivé, seul le breakeven protège.
+        # Peak +0.082% > breakeven activation 0.05%, PnL retombé < 0% → breakeven.
+        assert result.action_taken == "closed_breakeven", (
+            f"Attendu closed_breakeven, obtenu {result.action_taken}"
         )
 
     def test_stale_still_works_for_never_profitable(self, db_session):
@@ -1595,12 +1593,12 @@ class TestGainErosionStopV2012:
     def test_scalping_has_gain_erosion_ratio(self):
         """[v2.0.28] Le profil scalping a gain_erosion_ratio=0.40."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.gain_erosion_ratio == 0.40
+        assert p.gain_erosion_ratio is None
 
     def test_aggressive_has_gain_erosion(self):
         """[v2.0.28] Le profil aggressive a gain_erosion_ratio=0.70 (plus permissif pour swings)."""
         p = PROFILE_PRESETS["aggressive"]
-        assert p.gain_erosion_ratio == 0.70
+        assert p.gain_erosion_ratio is None
 
     def test_conservative_has_no_gain_erosion(self):
         """Le profil conservative n'a PAS de gain erosion."""
@@ -1701,7 +1699,7 @@ class TestGainErosionStopV2012:
     def test_gain_erosion_other_scalping_params_unchanged(self):
         """Les autres paramètres scalping ne sont pas affectés."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.04
+        assert p.trailing_stop_activation_pct == 0.10
         assert p.trailing_stop_drop_ratio == 0.15
         assert p.stale_negative_exit_minutes == 2
         assert p.profit_take_pct == 0.8
@@ -1762,10 +1760,10 @@ class TestGainErosionStopV2012:
             is_multi=True,
         )
 
-        assert result.action_taken == "closed_gain_erosion", (
-            f"Attendu closed_gain_erosion, obtenu {result.action_taken}"
+        # [EXPERIMENT] Gain erosion désactivé pour scalping → hold
+        assert result.action_taken == "hold", (
+            f"Attendu hold (gain erosion disabled), obtenu {result.action_taken}"
         )
-        assert "erosion" in result.detail.lower()
 
     def test_gain_erosion_does_not_fire_in_real_tick_above_retention(self, db_session):
         """Test d'intégration : gain au-dessus du seuil de rétention → PAS de fermeture.
@@ -1878,8 +1876,9 @@ class TestGainErosionStopV2012:
             is_multi=True,
         )
 
-        assert result.action_taken == "closed_gain_erosion", (
-            f"Short : gain erosion devrait fire, obtenu {result.action_taken}"
+        # [EXPERIMENT] Gain erosion désactivé pour scalping → hold
+        assert result.action_taken == "hold", (
+            f"Short : gain erosion disabled, attendu hold, obtenu {result.action_taken}"
         )
 
 

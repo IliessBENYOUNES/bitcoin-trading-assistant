@@ -318,14 +318,14 @@ class TestMicroStopLossNonRegression:
         # Position avec un pic élevé → le trailing devrait se déclencher au recul
         trade = _create_open_trade(db_session, account.id, entry_price=entry,
                                     direction="long", size=2500.0, slot="scalping")
-        # Simuler un pic à +0.10% puis retour à +0.04% (trailing activation 0.04%, drop 15%)
-        trade.highest_price_since_entry = entry * 1.001  # pic +0.10%
+        # Simuler un pic à +0.20% puis retour à +0.04% (trailing activation 0.10%, drop 15%)
+        trade.highest_price_since_entry = entry * 1.002  # pic +0.20%
         db_session.commit()
 
         service = PaperTradingService(db_session)
         now = datetime.now(timezone.utc)
 
-        # Prix actuel = entry + 0.04% → pic 0.10%, actuel 0.04%, drop = 60% > 15%
+        # Prix actuel = entry + 0.04% → pic 0.20%, actuel 0.04%, drop = 80% > 15%
         current = entry * 1.0004
         result = service._tick_single_slot(account, "scalping", current, now)
 

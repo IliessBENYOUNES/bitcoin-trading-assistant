@@ -280,7 +280,7 @@ class TestScalpingRecalibration:
     def test_trailing_stop_activation_increased(self):
         """[v2.0.9] Trailing stop activation abaissé à 0.02% — protège dès ~$0.50."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.04
+        assert p.trailing_stop_activation_pct == 0.10
 
     def test_trailing_stop_trail_increased(self):
         """[v1.9.5] Trailing stop trail resserré de 0.12% à 0.10%."""
@@ -325,8 +325,8 @@ class TestScalpingRecalibration:
         assert p.loss_cut_pct == 0.20
         assert p.max_trades_per_day == 999  # [v2.0.24] 30→999 (illimité)
         assert p.max_position_duration_hours == 2
-        assert p.analysis_timeframe == "15m"
-        assert p.momentum_fade_enabled is True
+        assert p.analysis_timeframe == "5m"
+        assert p.momentum_fade_enabled is False
         # [v1.9.1] Protection anti-micro-PnL
         assert p.min_hold_seconds == 30
         assert p.min_economic_pnl_pct == 0.15

@@ -289,10 +289,10 @@ class TestScalpingProfile:
         assert p.profit_take_pct == 0.8    # [v2.0.0] 0.6→0.8
         assert p.loss_cut_pct == 0.20      # maintenu
         assert p.max_position_duration_hours == 2
-        assert p.analysis_timeframe == "15m"
+        assert p.analysis_timeframe == "5m"
         assert p.buy_threshold == 30       # [v2.0.3] recalibré 25→30
         assert p.sell_threshold == 20      # [v1.9.5] recalibré 15→20
-        assert p.momentum_fade_enabled is True
+        assert p.momentum_fade_enabled is False
         assert p.stale_exit_minutes == 5
         # [v1.9.1] min_hold et min_economic_pnl
         assert p.min_hold_seconds == 30
@@ -316,7 +316,7 @@ class TestScalpingProfile:
     def test_scalping_params_analysis_timeframe(self):
         """Scalping utilise timeframe 15m."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.analysis_timeframe == "15m"
+        assert p.analysis_timeframe == "5m"
 
     def test_scalping_params_buy_threshold(self):
         """Scalping a un seuil BUY recalibré (v2.0.3: 25→30)."""
@@ -331,7 +331,7 @@ class TestScalpingProfile:
     def test_scalping_momentum_fade_enabled(self):
         """Scalping active le momentum fade."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.momentum_fade_enabled is True
+        assert p.momentum_fade_enabled is False
 
     def test_scalping_stale_exit(self):
         """Scalping a un stale exit à 12 minutes (recalibré)."""
@@ -570,7 +570,7 @@ class TestFasterExits:
     def test_momentum_fade_on_scalping(self):
         """Scalping active momentum_fade."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.momentum_fade_enabled is True
+        assert p.momentum_fade_enabled is False
 
     def test_paper_service_pnl_at_price(self, db_session):
         """_calc_unrealized_pnl_at_price fonctionne correctement."""

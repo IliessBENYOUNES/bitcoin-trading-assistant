@@ -2009,8 +2009,17 @@ class PaperTradingService:
         else:
             pnl_pct = (trade.entry_price - exit_price) / trade.entry_price * 100
 
-        # PnL = taille nominale × levier × variation %
-        pnl = trade.position_size_usd * leverage * pnl_pct / 100
+        # PnL brut = taille nominale × levier × variation %
+        gross_pnl = trade.position_size_usd * leverage * pnl_pct / 100
+
+        # [EXPERIMENT] Frais de trading réalistes — round-trip (entrée + sortie)
+        # Binance spot : 0.10% maker/taker. Spread ~0.05%. Slippage ~0.03%.
+        # Coût par côté = 0.10% + 0.025% + 0.03% = 0.155%. Round-trip = 0.31%.
+        from app.services.trading_cost_service import get_cost_model
+        cost_model = get_cost_model("realistic")
+        effective_size = trade.position_size_usd * leverage
+        trading_fees = cost_model.round_trip_cost_usd(effective_size)
+        pnl = gross_pnl - trading_fees
 
         # Durée
         entry_ts = _ensure_aware(trade.entry_ts)
@@ -2071,7 +2080,8 @@ class PaperTradingService:
         emoji = "✅" if pnl >= 0 else "❌"
         logger.info(
             f"{emoji} Position fermée ({status}) @ {exit_price:.2f} | "
-            f"PnL={pnl:+.2f} USD ({pnl_pct:+.2f}%) | Levier=x{leverage} | Durée={duration:.1f}h"
+            f"PnL brut={gross_pnl:+.2f} - frais={trading_fees:.2f} = net={pnl:+.2f} USD ({pnl_pct:+.2f}%) | "
+            f"Levier=x{leverage} | Durée={duration:.1f}h"
         )
         return trade
 

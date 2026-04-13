@@ -91,7 +91,7 @@ class TestScalpingParamsV195:
 
     def test_trailing_stop_activation(self):
         """[v2.0.9] Activation trailing abaissée à 0.02% — protège dès ~$0.50."""
-        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.04
+        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.10
 
     def test_trailing_stop_pct(self):
         """Trail fallback absolu à 0.06%."""
