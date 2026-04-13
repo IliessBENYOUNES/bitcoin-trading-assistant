@@ -39,22 +39,30 @@ class SmartCooldownService:
     """
 
     # Multiplicateurs par type de sortie
-    # [v1.9.9] closed_stale INVERSÉ : était 0.5 (réduisait le cooldown !),
-    # maintenant 2.0 (double le cooldown). Un stale est du BRUIT ou une perte
-    # lente — il ne faut PAS réentrer vite après un stale.
-    # C'était le cœur du bug de churn : ouvrir → stale négatif → rouvrir immédiatement.
+    # [v2.0.24] Rebalancé : le SAS (v2.0.22) et le micro SL (v2.0.23) protègent
+    # contre le churn et les pertes. Le cooldown n'a plus besoin d'être punitif.
+    # Multiplicateurs réduits globalement pour favoriser la réactivité.
     EXIT_MULTIPLIERS = {
-        # Sorties stale → cooldown ALLONGÉ (anti-churn)
-        "closed_stale": 2.0,
-        "closed_trailing_stop": 0.7,
-        "closed_momentum_fade": 0.6,
+        # Sorties stale → cooldown légèrement allongé (était 2.0, réduit à 1.3)
+        # Le SAS empêchera la réentrée si le marché est défavorable
+        "closed_stale": 1.3,
+        "closed_trailing_stop": 0.5,
+        "closed_momentum_fade": 0.5,
         # Sorties normales → cooldown standard
-        "closed_signal": 1.0,
-        "closed_tp": 0.8,    # TP touché = bon trade, on peut réentrer vite
+        "closed_signal": 0.8,
+        "closed_tp": 0.5,    # TP touché = bon trade, réentrer rapidement
         "closed_expired": 1.0,
         "closed_manual": 1.0,
-        # SL touché = prudence
-        "closed_sl": 1.5,
+        # SL touché = un peu de prudence, mais le SAS protège
+        "closed_sl": 1.2,
+        # [v2.0.23] Micro SL = sortie ultra-rapide, la position était à peine
+        # ouverte → réentrer vite, le SAS filtrera si le marché est mauvais
+        "closed_micro_sl": 0.7,
+        # Breakeven, gain erosion = pas de perte → réentrer vite
+        "closed_breakeven": 0.6,
+        "closed_gain_erosion": 0.6,
+        # Candle reversal = momentum changé mais pas catastrophique
+        "closed_candle_reversal": 0.8,
     }
 
     @classmethod
@@ -92,19 +100,16 @@ class SmartCooldownService:
             exit_mult = cls.EXIT_MULTIPLIERS.get(last_exit_type, 1.0)
             multiplier *= exit_mult
 
-        # [v1.9.9] Pénalité spécifique stale NÉGATIF — anti-churn.
-        # Un stale avec PnL négatif est le mode d'échec principal du moteur :
-        # ouvrir → perdre petit → stale → rouvrir → reperdre.
-        # On applique un multiplicateur 3x (au lieu de 2x pour un stale simple)
-        # ET un plancher de 4 minutes (quelle que soit la borne min configurée).
+        # [v2.0.24] Pénalité stale négatif réduite : le SAS filtre en amont.
+        # Multiplicateur réduit de 3.0→1.5. Le SAS empêchera la réentrée sur un
+        # marché défavorable, donc pas besoin de bloquer longtemps par le cooldown.
         stale_negative = (
             last_exit_type == "closed_stale"
             and last_pnl is not None
             and last_pnl < 0
         )
         if stale_negative:
-            # Surcharge le multiplicateur stale normal (2.0 → 3.0)
-            multiplier = multiplier / cls.EXIT_MULTIPLIERS.get("closed_stale", 1.0) * 3.0
+            multiplier = multiplier / cls.EXIT_MULTIPLIERS.get("closed_stale", 1.0) * 1.5
 
         # 2. Ajustement par PnL du dernier trade
         if last_pnl is not None:
@@ -141,13 +146,10 @@ class SmartCooldownService:
         # Bornes de sécurité absolues
         computed = max(ABSOLUTE_MIN_COOLDOWN, min(ABSOLUTE_MAX_COOLDOWN, computed))
 
-        # [v1.9.9] Plancher anti-churn après stale négatif.
-        # Quelle que soit la configuration, un stale négatif impose un minimum
-        # avant de réentrer.
-        # [v2.0.11] Réduit de 4.0→2.0 min : le bearish_veto (v2.0.10) bloque
-        # les LONG anti-tendance en amont, rendant le plancher long redondant.
-        # 2 min reste suffisant pour laisser le marché se stabiliser.
-        STALE_NEGATIVE_FLOOR = 2.0
+        # [v2.0.24] Plancher stale négatif réduit de 2.0→0.5 min (30 sec).
+        # Le SAS (15s d'observation virtuelle) protège contre la réentrée immédiate
+        # dans un marché défavorable. Cooldown 30s + SAS 15s = 45s de protection totale.
+        STALE_NEGATIVE_FLOOR = 0.5
         if stale_negative:
             computed = max(STALE_NEGATIVE_FLOOR, computed)
 

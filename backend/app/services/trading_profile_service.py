@@ -137,11 +137,18 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         min_score=30,   # [v2.0.3] 25→30 : relever le plancher de score pour filtrer le bruit
         min_confidence="low",
         min_scenario_dominance=0.35,
-        max_trades_per_day=30,  # [v2.0.0] 50→30 : moins de trades, meilleurs trades
-        # [v2.0.11] Cooldown 2→1 min : le bearish_veto (v2.0.10) bloque les entrées
-        # anti-tendance en amont, rendant le cooldown long redondant pour l'anti-churn.
-        # 1 min permet de ne pas rater le prochain signal après un renversement de tendance.
-        cooldown_minutes=1,
+        # [v2.0.24] max_trades_per_day 30→999 : SUPPRESSION de la limite quotidienne.
+        # La limite de 30 trades bloquait le robot pendant des heures une fois atteinte.
+        # Avec le SAS (v2.0.22) qui filtre les mauvaises entrées et le micro SL (v2.0.23)
+        # qui coupe à -0.01%, la qualité est contrôlée en amont. Pas besoin d'un plafond
+        # arbitraire — le robot doit pouvoir trader toute la nuit sans limite.
+        max_trades_per_day=999,
+        # [v2.0.24] Cooldown 1 min → 10 sec : le SAS (15s d'observation virtuelle) et
+        # le micro SL (-0.01%) rendent le cooldown long obsolète. Le cooldown servait
+        # à protéger contre le churn, mais le SAS fait mieux : il observe le prix
+        # AVANT d'ouvrir au lieu de bloquer aveuglément par le temps.
+        # 10 sec = juste assez pour ne pas ouvrir sur le même tick.
+        cooldown_minutes=0.17,
         max_position_duration_hours=2,
         # [v2.0.0] TP élargi 0.6%→0.8% : le TP doit être atteignable et couvrir les frais.
         # Le trailing à 0.15%+0.10% capture en pratique 0.05-0.30%. Un TP à 0.8%
@@ -213,10 +220,13 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # 30s = ~6 ticks = même fenêtre que la détection d'entrée.
         candle_reversal_window_seconds=30.0,
         smart_cooldown_enabled=True,
-        min_cooldown_minutes=0.5,
-        # [v2.0.11] max_cooldown 10→5 min : en scalping, 10 min = éternité.
-        # Le bearish_veto protège contre le rechurn, pas besoin de bloquer 10 min.
-        max_cooldown_minutes=5.0,
+        # [v2.0.24] min_cooldown 0.5→0.17 min (10 sec) : avec le SAS et le micro SL,
+        # le minimum peut être ultra-court. Le SAS fait la vraie vérification.
+        min_cooldown_minutes=0.17,
+        # [v2.0.24] max_cooldown 5→1 min : même après un stale négatif, 1 min suffit
+        # car le SAS va de toute façon observer 15s avant de laisser entrer.
+        # Total = cooldown (max 1 min) + SAS (15s) = 75s max de protection.
+        max_cooldown_minutes=1.0,
         min_hold_seconds=30,
         min_economic_pnl_pct=0.15,
         short_min_score=30,  # [v2.0.3] 25→30 : aligné avec min_score relevé

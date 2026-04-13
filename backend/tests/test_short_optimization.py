@@ -620,9 +620,9 @@ class TestScalpingPresetNonRegression:
         assert p.smart_cooldown_enabled is True
 
     def test_scalping_max_trades_per_day(self):
-        """[v2.0.0] Le max trades par jour est réduit à 30."""
+        """[v2.0.24] Le max trades par jour est illimité (999)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_trades_per_day == 30
+        assert p.max_trades_per_day == 999
 
     def test_scalping_analysis_timeframe(self):
         """Le timeframe d'analyse est inchangé (15m)."""

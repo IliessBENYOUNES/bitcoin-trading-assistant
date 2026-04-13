@@ -303,9 +303,9 @@ class TestScalpingRecalibration:
         assert p.min_score == 30
 
     def test_cooldown_recalibrated(self):
-        """[v2.0.11] Cooldown réduit à 1 min (bearish_veto protège contre churn)."""
+        """[v2.0.24] Cooldown réduit à 10 sec (SAS + micro SL protègent)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.cooldown_minutes == 1  # [v2.0.11] 2→1 : bearish_veto gère l'anti-churn
+        assert p.cooldown_minutes == 0.17  # [v2.0.24] 1→0.17 (10 sec)
 
     def test_stale_exit_increased(self):
         """Stale exit augmenté de 10 à 15 min."""
@@ -323,7 +323,7 @@ class TestScalpingRecalibration:
         # [v2.0.0] TP élargi 0.6→0.8, SL maintenu 0.20
         assert p.profit_take_pct == 0.8
         assert p.loss_cut_pct == 0.20
-        assert p.max_trades_per_day == 30  # [v2.0.0] 50→30
+        assert p.max_trades_per_day == 999  # [v2.0.24] 30→999 (illimité)
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
         assert p.momentum_fade_enabled is True

@@ -1,71 +1,83 @@
 # 🔄 HANDOFF GPT — Dernière intervention
 
-## Titre et date
-**feat(scalping): Micro Stop Loss — Sortie immédiate à -0.01% PnL** — 13 avril 2026
+## Date : 13 avril 2026 — v2.0.24
+
+---
 
 ## Problème
-Le journal des trades montrait des pertes catastrophiques sur certaines positions scalping (ex: -0.87% PnL = -$21.76). Même avec le SAS d'entrée (v2.0.22) qui filtre les mauvaises entrées, le prix peut se retourner APRÈS l'ouverture et dériver vers le SL classique (-0.20% = -$5). L'utilisateur veut zéro tolérance aux pertes.
+
+1. **Limite 30 trades/jour atteinte** — Le robot atteignait `max_trades_per_day=30` après quelques heures et s'arrêtait complètement. L'utilisateur n'avait jamais demandé cette limite.
+2. **Cooldown trop long** — Le diagnostic de fréquence identifiait le cooldown comme goulot d'étranglement principal, empêchant le repositionnement rapide après une sortie.
 
 ## Diagnostic
-Analyse du journal des trades : les trades les plus destructeurs ont un PnL de -0.87% ($-21.76). Le SL classique à -0.20% est 20× trop large pour l'objectif "quasi-zéro perte". Il faut un garde-fou ultra-serré qui coupe dès le premier signe de perte.
+
+- Le profil scalping dans `trading_profile_service.py` avait `max_trades_per_day=30` (ajouté en v2.0.0).
+- Le cooldown était configuré à 1 min base, 0.5 min minimum, 5 min maximum.
+- Le smart cooldown multipliait par 3x après un stale négatif avec plancher de 2 min.
+- Avec le SAS (v2.0.22) et le micro SL (v2.0.23) maintenant en place, ces protections par le temps sont obsolètes.
 
 ## Cause racine
-Aucun mécanisme ne coupait les positions en perte AVANT le trailing stop (qui ne s'active qu'en profit) ou le stale exit (qui attend 2 minutes). Entre l'entrée et ces protections, la perte pouvait grossir librement.
+
+Les limites (30 trades/jour) et le cooldown long (1-5 min) avaient été ajoutés comme protection anti-churn AVANT que le SAS et le micro SL existent. Maintenant que :
+- Le SAS filtre les mauvaises entrées (10-15s observation virtuelle)
+- Le micro SL coupe instantanément à -0.01%
+
+…le cooldown long n'est plus qu'un frein inutile au throughput.
 
 ## Correction appliquée
 
-| Fichier | Modification |
-|---------|-------------|
-| `app/schemas/journal.py` | Ajout du champ `micro_stop_loss_pct: Optional[float]` dans `TradingProfileParams` |
-| `app/services/trading_profile_service.py` | Ajout de `micro_stop_loss_pct=0.01` sur le profil scalping |
-| `app/services/paper_trading_service.py` | Ajout du check micro SL dans `_tick_single_slot` (après highest/lowest update, avant trailing stop) |
-| `tests/test_micro_stop_loss.py` | 18 tests dédiés (profils, calcul PnL, intégration, non-régression) |
-| `tests/test_pivot_v200.py` | Adapté `test_stale_still_works_for_never_profitable` et `test_exit_priority_order` |
+### `backend/app/services/trading_profile_service.py` (profil scalping)
+| Paramètre | Avant | Après |
+|-----------|-------|-------|
+| `max_trades_per_day` | 30 | 999 |
+| `cooldown_minutes` | 1 | 0.17 (~10s) |
+| `min_cooldown_minutes` | 0.5 | 0.17 (~10s) |
+| `max_cooldown_minutes` | 5.0 | 1.0 |
 
-### Code ajouté (paper_trading_service.py, après ligne 437)
-```python
-# [v2.0.23] MICRO STOP LOSS — PRIORITÉ ABSOLUE (avant trailing stop)
-micro_sl_pct = getattr(profile_params, "micro_stop_loss_pct", None) if profile_params else None
-if micro_sl_pct is not None and micro_sl_pct > 0:
-    micro_unrealized = self._calc_unrealized_pnl(open_pos, current_price)
-    micro_unrealized_pct = (micro_unrealized / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
-    if micro_unrealized_pct <= -micro_sl_pct:
-        # Sortie immédiate, inconditionnelle
-        closed = self._close_position(open_pos, current_price, micro_reason, "closed_micro_sl")
-        return PaperTickResult(action_taken="closed_micro_sl", ...)
-```
+### `backend/app/services/smart_cooldown_service.py`
+| Paramètre | Avant | Après |
+|-----------|-------|-------|
+| Multiplicateur `closed_stale` | 2.0 | 1.3 |
+| Multiplicateur stale négatif | 3.0 | 1.5 |
+| Plancher stale négatif | 2.0 min | 0.5 min |
+
+### `backend/app/schemas/journal.py`
+- `cooldown_minutes`: `int` → `float` (supporte les fractions de minute)
 
 ## Ce qui n'a PAS été touché
-- Aucune modification du frontend
-- Aucune modification de la DB (pas de migration)
-- Aucune modification des autres profils (balanced, aggressive, conservative)
-- Aucune modification du SAS d'entrée (v2.0.22)
-- Le trailing stop, breakeven, stale exit, momentum fade : inchangés (mais le micro SL passe AVANT)
+
+- Aucun autre profil (aggressive, balanced, conservative) modifié
+- Aucun gate d'entrée modifié (SAS, micro SL, economic gate, structural proofs)
+- Aucun mécanisme de sortie modifié (trailing, breakeven, gain erosion, stale)
+- Aucune logique du smart cooldown modifiée (structure identique, seules les constantes changent)
 
 ## Validations
-- ✅ 1796 tests backend passent (1778 existants + 18 nouveaux)
-- ✅ 0 échecs, 10 warnings cosmétiques préexistants
-- ✅ Ordre de priorité vérifié par test `test_exit_priority_order`
+
+- ✅ **1796 tests** backend passent (0 échec, 12 warnings cosmétiques)
+- ✅ 7 fichiers de tests mis à jour pour refléter les nouvelles valeurs
+- ✅ Schéma Pydantic accepte les floats pour cooldown_minutes
 
 ## Documentation mise à jour
-| Document | Ce qui a changé |
-|----------|----------------|
-| `docs/CURRENT_STATE.md` | Version 2.0.23, tests 1796, nouvelle feature documentée |
-| `CHANGELOG.md` | Nouvelle entrée [2.0.23] avec Added/Changed/Technical |
+
+| Document | Changements |
+|----------|-------------|
+| `docs/CURRENT_STATE.md` | Version 2.0.24, dernier commit, feature v2.0.24 ajoutée |
+| `CHANGELOG.md` | Nouvelle entrée [2.0.24] |
 | `docs/HANDOFF_GPT.md` | Ce fichier (écrasé) |
 
 ## Commit
-`feat(scalping): micro stop loss — sortie immédiate à -0.01% PnL v2.0.23`
+
+Message : `feat(scalping): suppression limite 30 trades/jour + cooldown ultra-court (10s) v2.0.24`
 
 ## État actuel
-| Élément | Valeur |
-|---------|--------|
-| Version | v2.0.23 |
-| Tests | 1796 passing |
-| Phase | Micro stop loss déployé |
-| Prochaine action | Observer le comportement en runtime : le micro SL devrait réduire drastiquement les pertes. Ajuster le seuil si nécessaire (0.01% peut être trop serré → augmenter à 0.02-0.05% si trop de sorties prématurées). |
+
+- **Version** : v2.0.24
+- **Tests** : 1796 passed ✅
+- **Le robot peut maintenant** : trader sans limite de nombre, se repositionner en ~10 secondes
+- **Prochaine action recommandée** : Lancer le robot toute la nuit et observer le throughput
 
 ## Commandes de relance
+
 ```bash
 # Backend
 cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 8000

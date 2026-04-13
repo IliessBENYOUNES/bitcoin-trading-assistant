@@ -283,8 +283,8 @@ class TestScalpingProfile:
         assert "scalping" in PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
         assert p.min_score == 30           # [v2.0.3] 25→30
-        assert p.cooldown_minutes == 1     # [v2.0.11] 2→1 : bearish_veto protège en amont
-        assert p.max_trades_per_day == 30  # [v2.0.0] 50→30
+        assert p.cooldown_minutes == 0.17   # [v2.0.24] 1→0.17 (10 sec)
+        assert p.max_trades_per_day == 999  # [v2.0.24] 30→999 (illimité)
         # [v2.0.0] TP élargi, SL maintenu
         assert p.profit_take_pct == 0.8    # [v2.0.0] 0.6→0.8
         assert p.loss_cut_pct == 0.20      # maintenu

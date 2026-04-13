@@ -403,23 +403,23 @@ class TestAntiChurnStaleNegative:
             last_pnl_pct=-0.15,
             max_cooldown=30.0,
         )
-        # 2.0 * 3.0 (stale négatif) * 1.2 (perte modérée) = 7.2, borné à max_cooldown
-        assert result >= 2.0, (
-            f"Cooldown {result} min après stale négatif — devrait être >= 2.0 min"
+        # [v2.0.24] Multiplicateurs réduits : 2.0 * 1.5 (stale négatif) * 1.2 (perte modérée) = 3.6
+        assert result >= 0.5, (
+            f"Cooldown {result} min après stale négatif — devrait être >= 0.5 min"
         )
 
-    def test_stale_negative_floor_at_2_minutes(self):
-        """[v2.0.11] Un stale négatif impose un plancher de 2 minutes (réduit de 4→2, bearish_veto protège)."""
+    def test_stale_negative_floor_at_30_seconds(self):
+        """[v2.0.24] Un stale négatif impose un plancher de 0.5 min (30 sec). Le SAS protège en amont."""
         result = SmartCooldownService.compute_cooldown(
-            base_cooldown=0.5,       # Base très courte
+            base_cooldown=0.17,      # Base très courte (10 sec)
             last_exit_type="closed_stale",
             last_pnl=-0.5,
             last_pnl_pct=-0.05,
-            min_cooldown=0.5,
+            min_cooldown=0.17,
             max_cooldown=10.0,
         )
-        assert result >= 2.0, (
-            f"Cooldown {result} min < 2.0 min plancher après stale négatif"
+        assert result >= 0.5, (
+            f"Cooldown {result} min < 0.5 min plancher après stale négatif"
         )
 
     def test_stale_positive_no_floor(self):
@@ -457,9 +457,9 @@ class TestAntiChurnStaleNegative:
         assert result > 2.0
 
     def test_scalping_max_cooldown_raised(self):
-        """Le max_cooldown scalping est relevé à 10 min (anti-churn)."""
+        """[v2.0.24] Le max_cooldown scalping est réduit à 1 min."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 5.0  # [v2.0.11] 10→5
+        assert p.max_cooldown_minutes == 1.0  # [v2.0.24] 5→1
 
     def test_stale_negative_heavy_loss_extra_penalty(self):
         """Un stale négatif avec grosse perte cumule les pénalités."""
@@ -470,9 +470,9 @@ class TestAntiChurnStaleNegative:
             last_pnl_pct=-0.5,   # Grosse perte
             max_cooldown=30.0,
         )
-        # 2.0 * 3.0 (stale négatif) * 1.5 (grosse perte) = 9.0
-        assert result >= 6.0, (
-            f"Cooldown {result} min après stale négatif + grosse perte — devrait être >= 6.0"
+        # [v2.0.24] Multiplicateurs réduits : 2.0 * 1.5 (stale négatif) * 1.5 (grosse perte) = 4.5
+        assert result >= 3.0, (
+            f"Cooldown {result} min après stale négatif + grosse perte — devrait être >= 3.0"
         )
 
 

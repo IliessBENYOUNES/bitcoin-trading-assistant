@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.24] - 2026-04-13
+
+### Changed
+- **SUPPRESSION LIMITE 30 TRADES/JOUR** — `max_trades_per_day` passé de 30 à 999 (illimité). La limite bloquait le robot en production après quelques heures, sans aucune justification de sécurité (le SAS + micro SL protègent en amont et en aval).
+- **COOLDOWN ULTRA-COURT (10 sec)** — `cooldown_minutes` 1→0.17 (~10s), `min_cooldown_minutes` 0.5→0.17 (~10s), `max_cooldown_minutes` 5→1 (1 min max). Le diagnostic de fréquence identifiait le cooldown comme goulot d'étranglement principal.
+- **SMART COOLDOWN ALLÉGÉ** — Multiplicateur stale 2.0→1.3, stale négatif 3.0→1.5, plancher stale négatif 2.0→0.5 (30 sec). Les anciennes pénalités anti-churn étaient calibrées AVANT le SAS (v2.0.22) et le micro SL (v2.0.23) — maintenant que ces protections existent, le cooldown peut être minimal.
+- Schéma `cooldown_minutes` changé de `int` à `float` pour supporter les fractions de minute.
+
+### Technical
+- Total tests backend : **1796** (aucun nouveau test, 7 fichiers de tests mis à jour pour refléter les nouvelles valeurs)
+- Justification : le SAS filtre les mauvaises entrées (10-15s observation virtuelle), le micro SL coupe à -0.01% instantanément. Le cooldown long comme substitut de protection n'a plus de raison d'être. Il suffit d'un tampon de 10s pour éviter les boucles open/close/reopen sur le même tick.
+
 ## [2.0.23] - 2026-04-13
 
 ### Added

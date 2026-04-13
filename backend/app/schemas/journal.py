@@ -33,7 +33,7 @@ class TradingProfileParams(BaseModel):
     min_scenario_dominance: float = Field(description="Probabilité min du scénario dominant")
     # Fréquence
     max_trades_per_day: int = Field(description="Nombre max de trades par jour")
-    cooldown_minutes: int = Field(description="Minutes de cooldown entre deux trades")
+    cooldown_minutes: float = Field(description="Minutes de cooldown entre deux trades")
     max_position_duration_hours: float = Field(description="Durée max position (heures)")
     # Sorties
     profit_take_pct: float = Field(description="% PnL latent pour prise de profit rapide")

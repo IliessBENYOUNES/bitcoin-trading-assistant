@@ -266,10 +266,10 @@ class TestScalpingProfileV200:
         # [v2.0.9] drop_ratio doit être configuré
         assert scalp.trailing_stop_drop_ratio == 0.15, "drop_ratio 3% pour protéger les gains"
 
-    def test_max_trades_reduced(self):
-        """Moins de trades par jour (≤ 30)."""
+    def test_max_trades_unlimited(self):
+        """[v2.0.24] Plus de limite quotidienne (999 = illimité)."""
         scalp = PROFILE_PRESETS["scalping"]
-        assert scalp.max_trades_per_day <= 30
+        assert scalp.max_trades_per_day >= 999
 
     def test_market_quality_raised(self):
         """Qualité marché relevée (≥ 50)."""
@@ -498,7 +498,7 @@ class TestScalpingV203MiniLot:
         # Paramètres qui ne doivent PAS changer
         assert scalp.profit_take_pct == 0.8, "TP ne doit pas changer"
         assert scalp.loss_cut_pct == 0.20, "SL ne doit pas changer"
-        assert scalp.max_trades_per_day == 30, "max_trades ne doit pas changer"
+        assert scalp.max_trades_per_day == 999, "max_trades illimité v2.0.24"
         assert scalp.min_market_quality == 50, "market quality ne doit pas changer"
         assert scalp.min_volume_ratio == 0.8, "volume ratio ne doit pas changer"
         assert scalp.min_structural_proofs == 2, "structural proofs ne doit pas changer"
@@ -586,8 +586,8 @@ class TestScalpingV206MicroTrendDisable:
         assert scalp.expected_capture_pct == 0.50
         assert scalp.min_ev_multiple == 1.5
         assert scalp.stale_exit_minutes == 5
-        assert scalp.cooldown_minutes == 1  # [v2.0.11] 2→1
-        assert scalp.max_trades_per_day == 30
+        assert scalp.cooldown_minutes == 0.17  # [v2.0.24] 1→0.17 (10 sec)
+        assert scalp.max_trades_per_day == 999  # [v2.0.24] 30→999 (illimité)
 
 
 class TestScalpingV207FastExit:
@@ -1545,27 +1545,27 @@ class TestReversalSignalContraireProtection:
         assert "breakeven" in source.lower()
         assert "stale" in source.lower()
     def test_cooldown_reduced_for_scalping(self):
-        """[v2.0.11] Le cooldown scalping est reduit a 1 min."""
+        """[v2.0.24] Le cooldown scalping est reduit a 10 sec (0.17 min)."""
         from app.services.trading_profile_service import PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
-        assert p.cooldown_minutes == 1
+        assert p.cooldown_minutes == 0.17
     def test_max_cooldown_reduced_for_scalping(self):
-        """[v2.0.11] Le max cooldown scalping est reduit a 5 min."""
+        """[v2.0.24] Le max cooldown scalping est reduit a 1 min."""
         from app.services.trading_profile_service import PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 5.0
+        assert p.max_cooldown_minutes == 1.0
     def test_stale_negative_floor_reduced(self):
-        """[v2.0.11] Le plancher stale negatif est reduit a 2 min."""
+        """[v2.0.24] Le plancher stale negatif est reduit a 0.5 min (30 sec)."""
         from app.services.smart_cooldown_service import SmartCooldownService
         result = SmartCooldownService.compute_cooldown(
             base_cooldown=0.5,
             last_exit_type="closed_stale",
             last_pnl=-0.5,
             last_pnl_pct=-0.05,
-            min_cooldown=0.5,
+            min_cooldown=0.17,
             max_cooldown=10.0,
         )
-        assert result >= 2.0
+        assert result >= 0.5
     def test_reversal_signal_contraire_code_exists(self):
         """Le code de protection reversal signal contraire est dans le source."""
         from app.services.paper_trading_service import PaperTradingService
