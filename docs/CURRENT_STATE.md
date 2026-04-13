@@ -3,7 +3,7 @@
 > **Dernière mise à jour :** 13 avril 2026
 > **Version :** v2.0.27
 > **Branche :** `master`
-> **Dernier commit :** fix(scalping): trend alignment symétrique — bloque aussi les longs override en marché bearish v2.0.27
+> **Dernier commit :** feat(ui): mini chart BTC 1m temps réel sur onglet Trading v2.0.27
 
 ---
 
@@ -65,6 +65,7 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.25] SL/TP STOP-LIMIT** — Le SL/TP exécute désormais au prix de l'ordre au lieu du prix courant. Avant, des gaps entre ticks (5 sec) causaient des pertes 4× supérieures au SL attendu (trade #629 : -$21.76 vs SL -0.20%). Perte max par SL bornée à loss_cut_pct.
 - **[v2.0.26] TREND ALIGNMENT FILTER** — Bloque les SHORTs via tick_override quand le score technique est fortement bullish (score > 50). L'analyse de 92 trades (v2.0.25) montre que les shorts scalping perdent -$8.93 (47% WR) quand le score est à +64/+65 et BTC monte globalement. Le tick_override ouvre un short sur bougie rouge 30s, mais le marché bullish fait remonter le prix → le short est fermé en perte par "signal contraire". Le filtre ne bloque PAS les shorts non-override (mean_reversion). Seuil configurable via `trend_alignment_score_threshold` (default None, 50 pour scalping). 8 tests dédiés.
 - **[v2.0.27] TREND ALIGNMENT SYMÉTRIQUE** — Le filtre v2.0.26 ne bloquait que les SHORTs en marché bullish. Ajout du filtre miroir : les LONGs via tick_override sont maintenant aussi bloqués quand le score est fortement bearish (score < -threshold). Une bougie verte 30s en tendance baissière est un faux signal. Le filtre est bidirectionnel : SHORT bloqué quand score > +50, LONG bloqué quand score < -50. 5 tests supplémentaires (total 12).
+- **[v2.0.27] MINI CHART BTC 1M** — Nouveau graphique compact en chandeliers 1 minute sur l'onglet Trading. Affiche les 60 dernières bougies (1h) avec focus auto sur les 15 dernières minutes. Données directement depuis Binance REST (polling 30s), mise à jour en temps réel via WebSocket live price. Désactivé automatiquement en mode low-bandwidth ou hors de l'onglet Trading. Composant `MiniChart.tsx` + hook `useMiniCandles.ts`.
 - **[v2.0.4] Export enrichi** — Service `EnrichedExportService` + endpoint `GET /audit/enriched-export`. Export tick-par-tick avec : prix BTC, variation %, décision moteur, score, raison de non-trade, position ouverte/fermée, PnL, market quality. Inclut ventilation des refus par gate + détection des tendances BTC ratées.
 - **[v2.0.4] Learning runtime** — Nouvelle méthode `LearningService.learn_from_runtime()` + endpoint `POST /learning/learn-runtime`. Analyse les TickActivityLog (pas les trades fermés) pour identifier les gates sur-bloquants et proposer des assouplissements en mode shadow. Suggestions 15 (micro-trend dominant) et 16 (gate unique > 70%).
 - **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.

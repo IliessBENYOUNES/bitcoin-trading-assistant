@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.27] - 2026-04-13
 
+### Added
+- **MINI CHART BTC 1M** — Nouveau graphique compact en chandeliers 1 minute sur l'onglet Trading. Affiche les 60 dernières bougies (1h de données) avec focus automatique sur les 15 dernières minutes. Données depuis Binance REST API (polling 30s), mise à jour en temps réel via le WebSocket live price existant. Désactivé en mode low-bandwidth et hors de l'onglet Trading.
+- Nouveau hook `useMiniCandles.ts` — Fetch les klines 1m Binance directement (pas de stockage DB, données éphémères).
+- Nouveau composant `MiniChart.tsx` — Version allégée du `CandlestickChart` : 250px de haut, pas de volume, header minimal avec prix + variation, focus auto 15 bougies.
+
 ### Fixed
 - **TREND ALIGNMENT SYMÉTRIQUE** — Le filtre v2.0.26 ne bloquait que les SHORTs en marché bullish mais laissait passer les LONGs en marché bearish. Ajout du filtre miroir : les LONGs via tick_override sont maintenant bloqués quand le score technique est fortement bearish (score < -threshold). Une bougie verte 30s en tendance baissière est un faux signal → BTC redescend → le long ferme en perte.
 
@@ -13,8 +18,9 @@ All notable changes to this project will be documented in this file.
 - Test `test_long_not_affected_by_filter` renommé en `test_long_not_blocked_when_score_bullish` (le LONG est toujours autorisé en marché bullish, mais bloqué en bearish).
 
 ### Technical
-- Total tests backend : **1813** (1808 existants + 5 trend alignment long)
+- Total tests backend : **1808** (existants + 5 trend alignment long)
 - Le filtre symétrique réutilise le même paramètre `trend_alignment_score_threshold` (seuil 50 en valeur absolue).
+- Frontend : `tsc --noEmit` sans erreur, nouveau composant + hook ajoutés.
 
 ## [2.0.26] - 2026-04-13
 

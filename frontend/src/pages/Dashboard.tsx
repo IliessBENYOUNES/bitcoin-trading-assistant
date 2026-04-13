@@ -62,6 +62,7 @@ import PaperTradingPanel from '../components/PaperTradingPanel';
 import JournalPanel from '../components/JournalPanel';
 import DiagnosticPanel from '../components/DiagnosticPanel';
 import CandlestickChart from '../components/CandlestickChart';
+import MiniChart from '../components/MiniChart';
 import { ChartErrorBoundary } from '../components/ErrorBoundary';
 import { PriceTicker } from '../components/PriceTicker';
 
@@ -75,6 +76,7 @@ import { useNews } from '../hooks/useNews';
 import { useLivePrice } from '../hooks/useLivePrice';
 import { useDecision } from '../hooks/useDecision';
 import { useBacktest } from '../hooks/useBacktest';
+import { useMiniCandles } from '../hooks/useMiniCandles';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -201,6 +203,9 @@ const Dashboard: React.FC = () => {
 
   const livePrice = useLivePrice({ enabled: !lowBandwidth });
   const currentPrice = livePrice.price ?? indicators.data?.latest?.close ?? null;
+
+  // Mini chart — bougies 1m depuis Binance (actif seulement sur l'onglet Trading)
+  const miniCandles = useMiniCandles({ enabled: activeTab === 2 && !lowBandwidth });
 
   const alertNotificationCount = alertsHook.notifications.length;
   const alertActiveCount = alertsHook.alerts.filter(a => a.status === 'active').length;
@@ -950,6 +955,18 @@ const Dashboard: React.FC = () => {
                 }}>
                   <RiskPanel refreshTrigger={tradeVersion} />
                 </Box>
+              </Grid>
+              {/* Mini Chart BTC 1m — Visibilité prix temps réel */}
+              <Grid item xs={12}>
+                <ChartErrorBoundary fallbackMessage="Le mini chart a rencontré une erreur.">
+                  <MiniChart
+                    candles={miniCandles.candles}
+                    loading={miniCandles.loading}
+                    error={miniCandles.error}
+                    livePrice={currentPrice}
+                    lastUpdate={miniCandles.lastUpdate}
+                  />
+                </ChartErrorBoundary>
               </Grid>
               {/* Paper Trading — Pleine largeur */}
               <Grid item xs={12}>
