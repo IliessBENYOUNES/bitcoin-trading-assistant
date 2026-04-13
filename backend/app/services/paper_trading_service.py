@@ -1223,36 +1223,62 @@ class PaperTradingService:
                             non_trade_reason="momentum_unstable",
                         )
 
-            # [v2.0.26] TREND ALIGNMENT FILTER — Bloque les SHORTs via tick_override
-            # quand le score technique est fortement bullish. L'analyse de 92 trades
-            # (v2.0.25) montre que les shorts perdent -$8.93 (47% WR) à score +64/+65
-            # car BTC monte globalement. Le tick_override ouvre un short sur bougie
-            # rouge 30s, mais le marché bullish fait remonter le prix → le short est
-            # fermé en perte par "signal contraire" 36-72s plus tard.
-            # Ne bloque PAS les shorts non-override (mean_reversion) ni les LONGs.
-            if tm_override_active and action == "vendre" and profile_params:
+            # [v2.0.26] TREND ALIGNMENT FILTER — Bloque les trades override
+            # contre-tendance. L'analyse de 92 trades (v2.0.25) montre que les
+            # shorts perdent quand le score est fortement bullish, et symétriquement
+            # les longs perdent quand le score est fortement bearish.
+            # Le tick_override ouvre sur une micro-bougie 30s, mais la tendance de
+            # fond ramène le prix dans l'autre sens → fermeture en perte.
+            # [v2.0.27] Symétrique : bloque aussi les LONGs quand score < -threshold.
+            if tm_override_active and profile_params:
                 ta_threshold = getattr(profile_params, "trend_alignment_score_threshold", None)
-                if ta_threshold is not None and score > ta_threshold:
-                    ta_reason = (
-                        f"trend_alignment_blocked: SHORT override bloqué car score={score} > "
-                        f"threshold={ta_threshold} (marché bullish, short contre-tendance)"
-                    )
-                    logger.info(f"🚫 Trend alignment [{slot_name}]: {ta_reason}")
-                    _log_tick(action_taken="hold", btc_price=current_price,
-                              decision_score=score, decision_action=action,
-                              decision_confidence=confidence,
-                              reason_no_trade="trend_alignment_blocked",
-                              reason_detail=ta_reason[:500])
-                    return PaperTickResult(
-                        action_taken="hold",
-                        detail=ta_reason,
-                        current_price=current_price,
-                        timestamp=now.isoformat(),
-                        decision_score=score,
-                        decision_action=action,
-                        profile_type=profile_name,
-                        non_trade_reason="trend_alignment_blocked",
-                    )
+                if ta_threshold is not None:
+                    # SHORT override bloqué en marché bullish (score > +threshold)
+                    if action == "vendre" and score > ta_threshold:
+                        ta_reason = (
+                            f"trend_alignment_blocked: SHORT override bloqué car score={score} > "
+                            f"threshold={ta_threshold} (marché bullish, short contre-tendance)"
+                        )
+                        logger.info(f"🚫 Trend alignment [{slot_name}]: {ta_reason}")
+                        _log_tick(action_taken="hold", btc_price=current_price,
+                                  decision_score=score, decision_action=action,
+                                  decision_confidence=confidence,
+                                  reason_no_trade="trend_alignment_blocked",
+                                  reason_detail=ta_reason[:500])
+                        return PaperTickResult(
+                            action_taken="hold",
+                            detail=ta_reason,
+                            current_price=current_price,
+                            timestamp=now.isoformat(),
+                            decision_score=score,
+                            decision_action=action,
+                            profile_type=profile_name,
+                            non_trade_reason="trend_alignment_blocked",
+                        )
+                    # [v2.0.27] LONG override bloqué en marché bearish (score < -threshold)
+                    # Même logique symétrique : une bougie verte 30s en tendance baissière
+                    # est un faux signal → BTC redescend → le long ferme en perte.
+                    if action == "acheter" and score < -ta_threshold:
+                        ta_reason = (
+                            f"trend_alignment_blocked: LONG override bloqué car score={score} < "
+                            f"-{ta_threshold} (marché bearish, long contre-tendance)"
+                        )
+                        logger.info(f"🚫 Trend alignment [{slot_name}]: {ta_reason}")
+                        _log_tick(action_taken="hold", btc_price=current_price,
+                                  decision_score=score, decision_action=action,
+                                  decision_confidence=confidence,
+                                  reason_no_trade="trend_alignment_blocked",
+                                  reason_detail=ta_reason[:500])
+                        return PaperTickResult(
+                            action_taken="hold",
+                            detail=ta_reason,
+                            current_price=current_price,
+                            timestamp=now.isoformat(),
+                            decision_score=score,
+                            decision_action=action,
+                            profile_type=profile_name,
+                            non_trade_reason="trend_alignment_blocked",
+                        )
 
             # [v1.6.2] Scalping bidirectionnel — mean reversion
             # En scalping, on ne suit pas aveuglément la tendance. Quand les

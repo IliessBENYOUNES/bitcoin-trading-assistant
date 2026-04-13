@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.27] - 2026-04-13
+
+### Fixed
+- **TREND ALIGNMENT SYMÉTRIQUE** — Le filtre v2.0.26 ne bloquait que les SHORTs en marché bullish mais laissait passer les LONGs en marché bearish. Ajout du filtre miroir : les LONGs via tick_override sont maintenant bloqués quand le score technique est fortement bearish (score < -threshold). Une bougie verte 30s en tendance baissière est un faux signal → BTC redescend → le long ferme en perte.
+
+### Changed
+- Le trend alignment filter est désormais bidirectionnel : bloque SHORT quand score > +50, bloque LONG quand score < -50.
+- 5 nouveaux tests pour le côté LONG (bloqué bearish, autorisé mild bearish, boundary -50, -51, long bullish OK).
+- Test `test_long_not_affected_by_filter` renommé en `test_long_not_blocked_when_score_bullish` (le LONG est toujours autorisé en marché bullish, mais bloqué en bearish).
+
+### Technical
+- Total tests backend : **1813** (1808 existants + 5 trend alignment long)
+- Le filtre symétrique réutilise le même paramètre `trend_alignment_score_threshold` (seuil 50 en valeur absolue).
+
 ## [2.0.26] - 2026-04-13
 
 ### Added

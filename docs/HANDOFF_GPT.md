@@ -1,75 +1,75 @@
 # 🔄 HANDOFF GPT — Dernière intervention
 
-## Date : 13 avril 2026 — v2.0.26
+## Date : 13 avril 2026 — v2.0.27
 
 ---
 
 ## Problème
 
-L'analyse de **92 trades** du run nocturne v2.0.25 révèle que les **shorts scalping** perdent de l'argent (47% WR, **-$8.93** net) quand le score technique est fortement bullish (+64/+65). Le tick_override ouvre des shorts quand la bougie 30s est rouge, mais le marché monte globalement → les shorts sont fermés 36-72s plus tard par "signal contraire" en perte.
+Le filtre trend alignment v2.0.26 ne bloquait que les **SHORTs** en marché bullish (score > +50), mais **ne bloquait pas les LONGs** en marché bearish (score < -50). Asymétrie : une bougie verte 30s en tendance baissière est tout autant un faux signal qu'une bougie rouge en tendance haussière. Les longs contre-tendance perdent de la même manière.
 
 ## Diagnostic
 
-- Sur 92 trades analysés, les shorts ont un WR de 47% et un PnL net de -$8.93
-- Le score technique de +64/+65 indique un marché nettement bullish (≥4 indicateurs convergent)
-- Le tick_override détecte une bougie rouge (micro-dip de 30s) et ouvre un short
-- Mais le marché remonte car la tendance de fond est bullish → le score déclenche un "signal contraire" → fermeture en perte
-- Les LONGs dans la même période sont rentables (bénéficient de la tendance)
+- Le filtre v2.0.26 vérifie `action == "vendre" and score > ta_threshold` — unilatéral
+- Aucune condition symétrique pour `action == "acheter" and score < -ta_threshold`
+- En marché bearish, le tick_override détecte une bougie verte (micro-rebond 30s) et ouvre un LONG
+- Mais la tendance de fond est baissière → le prix redescend → fermeture en perte
 
 ## Cause racine
 
-Le tick_override (v2.0.14) ne vérifie pas l'alignement entre la direction de la bougie 30s et la tendance macro (score technique). Il ouvre aveuglément dans la direction de la bougie, même si le marché va dans l'autre sens. Un short sur un micro-dip dans un marché bullish est structurellement perdant.
+Le filtre trend alignment v2.0.26 a été conçu uniquement pour le cas observé dans les données (shorts perdants en marché bullish) sans considérer le cas symétrique (longs perdants en marché bearish). C'est un problème de conception unilatérale.
 
 ## Correction appliquée
 
-### `backend/app/schemas/journal.py`
-- Ajout du paramètre `trend_alignment_score_threshold` (Optional[float], default None)
-
-### `backend/app/services/trading_profile_service.py`
-- Profil scalping : `trend_alignment_score_threshold=50`
-
 ### `backend/app/services/paper_trading_service.py`
-- Gate inséré entre le momentum stability check et le scalping reversal check
-- Condition : `if tm_override_active and action == "vendre" and score > ta_threshold`
-- Retourne `PaperTickResult(non_trade_reason="trend_alignment_blocked")`
+- Restructuration du bloc trend alignment : le `if` externe vérifie maintenant `tm_override_active and profile_params` (sans direction)
+- Deux branches internes indépendantes :
+  - `action == "vendre" and score > ta_threshold` → bloque SHORT (existant)
+  - `action == "acheter" and score < -ta_threshold` → bloque LONG (**nouveau**)
+- Même seuil `trend_alignment_score_threshold=50` utilisé en valeur absolue
 
-### `backend/app/services/journal_service.py`
-- 2 nouveaux labels : `trend_alignment_blocked`, `momentum_unstable`
+### `backend/tests/test_pivot_v200.py`
+- Test `test_long_not_affected_by_filter` renommé en `test_long_not_blocked_when_score_bullish`
+- 5 nouveaux tests ajoutés :
+  - `test_long_blocked_when_score_strongly_bearish` (score=-65 → bloqué)
+  - `test_long_allowed_when_score_mildly_bearish` (score=-30 → autorisé)
+  - `test_long_boundary_exact_negative_threshold` (score=-50 → autorisé, strict <)
+  - `test_long_just_below_negative_threshold_blocks` (score=-51 → bloqué)
+  - `test_long_not_blocked_when_score_bullish` (score=+65 → autorisé, aligné)
 
 ## Ce qui n'a PAS été touché
 
-- Aucun autre profil modifié (aggressive, balanced, conservative ont threshold=None)
-- Les shorts mean_reversion ne sont PAS affectés (filtre vérifie `tm_override_active=True`)
-- Les LONGs ne sont PAS affectés (filtre vérifie `action == "vendre"`)
-- Aucun gate existant modifié (SAS, micro SL, economic gate, structural proofs)
+- Aucun autre profil modifié (threshold=None pour conservative, balanced, aggressive)
+- Les shorts mean_reversion et longs mean_reversion ne sont PAS affectés
+- Le schéma `trend_alignment_score_threshold` est réutilisé (pas de nouveau paramètre)
 - Aucun mécanisme de sortie modifié
+- Aucun gate existant modifié
 
 ## Validations
 
-- ✅ **1804 tests** backend passent (0 échec)
+- ✅ **1808 tests** backend passent (0 échec)
 - ✅ `tsc --noEmit` frontend sans erreur
-- ✅ 8 nouveaux tests dédiés dans `TestTrendAlignmentFilter`
-- ✅ Non-régression complète sur les 1796 tests existants
+- ✅ 12 tests trend alignment total (7 existants + 5 nouveaux)
+- ✅ Non-régression complète
 
 ## Documentation mise à jour
 
 | Document | Changements |
 |----------|-------------|
-| `docs/CURRENT_STATE.md` | Version 2.0.26, dernier commit, 1804 tests, feature v2.0.26 ajoutée |
-| `CHANGELOG.md` | Nouvelle entrée [2.0.26] avec Added + Changed + Technical |
+| `docs/CURRENT_STATE.md` | Version 2.0.27, dernier commit, 1808 tests, feature v2.0.27 ajoutée |
+| `CHANGELOG.md` | Nouvelle entrée [2.0.27] avec Fixed + Changed + Technical |
 | `docs/HANDOFF_GPT.md` | Ce fichier (édité, pas recréé) |
 
 ## Commit
 
-Message : `feat(scalping): trend alignment filter — bloque shorts override en marché bullish v2.0.26`
+Message : `fix(scalping): trend alignment symétrique — bloque aussi les longs override en marché bearish v2.0.27`
 
 ## État actuel
 
-- **Version** : v2.0.26
-- **Tests** : 1804 passed ✅
-- **Impact estimé** : +$8.93 net sur 92 trades (élimination des shorts contre-tendance)
-- **Le robot devrait** : ne plus ouvrir de shorts quand le score est > 50 (bullish), ne trade que les longs en marché haussier
-- **Prochaine action recommandée** : Lancer un run de 12h et comparer : ratio long/short, PnL shorts, WR global
+- **Version** : v2.0.27
+- **Tests** : 1808 passed ✅
+- **Le filtre est maintenant bidirectionnel** : SHORT bloqué quand score > +50, LONG bloqué quand score < -50
+- **Prochaine action recommandée** : Lancer un nouveau run et vérifier que les trades contre-tendance (shorts en bullish ET longs en bearish) sont bien bloqués
 
 ## Commandes de relance
 
