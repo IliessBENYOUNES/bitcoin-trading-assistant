@@ -586,7 +586,7 @@ class TestScalpingV206MicroTrendDisable:
         assert scalp.expected_capture_pct == 0.50
         assert scalp.min_ev_multiple == 1.5
         assert scalp.stale_exit_minutes == 5
-        assert scalp.cooldown_minutes == 0.17  # [v2.0.24] 1→0.17 (10 sec)
+        assert scalp.cooldown_minutes == 1.0  # [v2.0.24] 0.17→1.0 (anti-churn)
         assert scalp.max_trades_per_day == 999  # [v2.0.24] 30→999 (illimité)
 
 
@@ -773,8 +773,9 @@ class TestTrailingStopPriorityV208:
     def test_stale_still_works_for_never_profitable(self, db_session):
         """
         Position jamais en profit (peak < activation/2) :
-        [v2.0.23] Avec le micro SL (-0.01%), une perte de -0.04% déclenche
-        le micro SL AVANT le stale exit. Le micro SL a la priorité.
+        [v2.0.24] Avec le micro SL recalibré à -0.05%, une perte de -0.04%
+        ne déclenche PAS le micro SL (0.04 < 0.05). Le stale exit (2 min)
+        prend le relais pour cette perte modérée.
         """
         from app.services.paper_trading_service import PaperTradingService
         from app.models.paper_account import PaperAccount, PaperTrade
@@ -810,7 +811,7 @@ class TestTrailingStopPriorityV208:
         db_session.add(trade)
         db_session.flush()
 
-        # Prix en perte : -0.04%
+        # Prix en perte : -0.04% (< micro SL 0.05%, donc stale gère)
         current_price = 72970.0
         now = datetime.now(timezone.utc)
 
@@ -822,9 +823,10 @@ class TestTrailingStopPriorityV208:
             is_multi=True,
         )
 
-        # [v2.0.23] Le micro SL ferme avant le stale exit car -0.04% > -0.01% seuil
-        assert result.action_taken in ("closed_micro_sl", "closed_stale"), (
-            f"Attendu closed_micro_sl ou closed_stale, obtenu {result.action_taken}"
+        # [v2.0.24] -0.04% est sous le seuil micro SL (0.05%), donc le stale exit gère.
+        # Le micro SL ne trigger plus à ce niveau (recalibré de 0.01% à 0.05%).
+        assert result.action_taken == "closed_stale", (
+            f"Attendu closed_stale, obtenu {result.action_taken}"
         )
 
     def test_exit_priority_order(self):
@@ -1548,12 +1550,12 @@ class TestReversalSignalContraireProtection:
         """[v2.0.24] Le cooldown scalping est reduit a 10 sec (0.17 min)."""
         from app.services.trading_profile_service import PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
-        assert p.cooldown_minutes == 0.17
+        assert p.cooldown_minutes == 1.0
     def test_max_cooldown_reduced_for_scalping(self):
         """[v2.0.24] Le max cooldown scalping est reduit a 1 min."""
         from app.services.trading_profile_service import PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 1.0
+        assert p.max_cooldown_minutes == 3.0
     def test_stale_negative_floor_reduced(self):
         """[v2.0.24] Le plancher stale negatif est reduit a 0.5 min (30 sec)."""
         from app.services.smart_cooldown_service import SmartCooldownService
@@ -1562,7 +1564,7 @@ class TestReversalSignalContraireProtection:
             last_exit_type="closed_stale",
             last_pnl=-0.5,
             last_pnl_pct=-0.05,
-            min_cooldown=0.17,
+            min_cooldown=0.5,
             max_cooldown=10.0,
         )
         assert result >= 0.5

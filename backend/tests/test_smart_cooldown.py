@@ -360,7 +360,7 @@ class TestCooldownDiagnostic:
         svc = DiagnosticService(db_session)
         result = svc.get_diagnostic()
         # Scalping a un cooldown de 0.17 min (10 sec) — v2.0.24
-        assert result.cooldown.cooldown_configured_min == 0.17
+        assert result.cooldown.cooldown_configured_min == 1.0
 
     def test_cooldown_smart_enabled_visible(self, db_session):
         """Le smart cooldown enabled est visible dans le diagnostic."""
@@ -434,12 +434,12 @@ class TestScalpingProfileSmartCooldown:
     def test_scalping_preset_min_cooldown(self):
         """Le preset scalping a min_cooldown_minutes = 0.17 (10 sec)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_cooldown_minutes == 0.17
+        assert p.min_cooldown_minutes == 0.5
 
     def test_scalping_preset_max_cooldown(self):
         """Le preset scalping a max_cooldown_minutes = 1.0."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 1.0  # [v2.0.24] 5→1
+        assert p.max_cooldown_minutes == 3.0  # [v2.0.24] 1→3
 
     def test_conservative_no_smart_cooldown(self):
         """Conservative n'a pas de smart cooldown."""

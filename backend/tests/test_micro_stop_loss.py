@@ -1,8 +1,8 @@
 """
-Tests pour le Micro Stop Loss (v2.0.23).
+Tests pour le Micro Stop Loss (v2.0.23, recalibré v2.0.24).
 
 Le micro SL est un garde-fou ultra-serré qui ferme immédiatement une position
-dès que le PnL latent dépasse un seuil négatif (-0.01% par défaut).
+dès que le PnL latent dépasse un seuil négatif (-0.05% par défaut = -$1.25 sur $2500).
 Contrairement au loss_cut_pct classique (qui attend un signal faible),
 le micro SL est INCONDITIONNEL : il sort sans rien vérifier d'autre.
 """
@@ -71,7 +71,7 @@ class TestMicroStopLossProfileParams:
         """Le profil scalping a un micro_stop_loss_pct configuré."""
         p = PROFILE_PRESETS["scalping"]
         assert p.micro_stop_loss_pct is not None
-        assert p.micro_stop_loss_pct == 0.01
+        assert p.micro_stop_loss_pct == 0.05
 
     def test_balanced_has_no_micro_sl(self):
         """Le profil balanced n'a PAS de micro SL (désactivé par défaut)."""
@@ -157,7 +157,7 @@ class TestMicroStopLossIntegration:
     @patch("app.services.paper_trading_service.TickMomentumService")
     @patch("app.services.paper_trading_service.EntrySasService")
     def test_micro_sl_closes_long_in_loss(self, mock_sas, mock_tms, db_session):
-        """Un LONG en perte de -0.015% est fermé par le micro SL (-0.01%)."""
+        """Un LONG en perte de -0.06% est fermé par le micro SL (-0.05%)."""
         from app.services.paper_trading_service import PaperTradingService
         mock_tms.detect_direction.return_value = ("long", 0.5)
         mock_sas.has_pending.return_value = False
@@ -170,8 +170,8 @@ class TestMicroStopLossIntegration:
         service = PaperTradingService(db_session)
         now = datetime.now(timezone.utc)
 
-        # Prix baisse de 0.015% → doit déclencher le micro SL
-        bad_price = entry * (1 - 0.00015)
+        # Prix baisse de 0.06% → doit déclencher le micro SL (seuil 0.05%)
+        bad_price = entry * (1 - 0.0006)
         result = service._tick_single_slot(account, "scalping", bad_price, now)
 
         assert result.action_taken == "closed_micro_sl"
@@ -180,7 +180,7 @@ class TestMicroStopLossIntegration:
     @patch("app.services.paper_trading_service.TickMomentumService")
     @patch("app.services.paper_trading_service.EntrySasService")
     def test_micro_sl_closes_short_in_loss(self, mock_sas, mock_tms, db_session):
-        """Un SHORT en perte de -0.015% est fermé par le micro SL."""
+        """Un SHORT en perte de -0.06% est fermé par le micro SL."""
         from app.services.paper_trading_service import PaperTradingService
         mock_tms.detect_direction.return_value = ("short", 0.5)
         mock_sas.has_pending.return_value = False
@@ -193,8 +193,8 @@ class TestMicroStopLossIntegration:
         service = PaperTradingService(db_session)
         now = datetime.now(timezone.utc)
 
-        # Prix monte de 0.015% → perte pour un short
-        bad_price = entry * (1 + 0.00015)
+        # Prix monte de 0.06% → perte pour un short
+        bad_price = entry * (1 + 0.0006)
         result = service._tick_single_slot(account, "scalping", bad_price, now)
 
         assert result.action_taken == "closed_micro_sl"
@@ -225,7 +225,7 @@ class TestMicroStopLossIntegration:
     @patch("app.services.paper_trading_service.TickMomentumService")
     @patch("app.services.paper_trading_service.EntrySasService")
     def test_micro_sl_does_not_trigger_at_exact_threshold(self, mock_sas, mock_tms, db_session):
-        """Juste au-delà de -0.01%, le micro SL déclenche."""
+        """Au-delà de -0.05%, le micro SL déclenche."""
         from app.services.paper_trading_service import PaperTradingService
         mock_tms.detect_direction.return_value = ("long", 0.5)
         mock_sas.has_pending.return_value = False
@@ -238,8 +238,8 @@ class TestMicroStopLossIntegration:
         service = PaperTradingService(db_session)
         now = datetime.now(timezone.utc)
 
-        # Prix baisse de un peu plus que 0.01% pour être sûr de dépasser le seuil
-        threshold_price = entry * (1 - 0.00012)
+        # Prix baisse de un peu plus que 0.05% pour être sûr de dépasser le seuil
+        threshold_price = entry * (1 - 0.00055)
         result = service._tick_single_slot(account, "scalping", threshold_price, now)
 
         assert result.action_taken == "closed_micro_sl"
@@ -247,7 +247,7 @@ class TestMicroStopLossIntegration:
     @patch("app.services.paper_trading_service.TickMomentumService")
     @patch("app.services.paper_trading_service.EntrySasService")
     def test_micro_sl_tiny_loss_below_threshold(self, mock_sas, mock_tms, db_session):
-        """Une perte de -0.005% ne déclenche PAS le micro SL (seuil -0.01%)."""
+        """Une perte de -0.03% ne déclenche PAS le micro SL (seuil -0.05%)."""
         from app.services.paper_trading_service import PaperTradingService
         mock_tms.detect_direction.return_value = ("long", 0.5)
         mock_sas.has_pending.return_value = False
@@ -260,8 +260,8 @@ class TestMicroStopLossIntegration:
         service = PaperTradingService(db_session)
         now = datetime.now(timezone.utc)
 
-        # Perte de 0.005% → sous le seuil de 0.01% → pas de micro SL
-        small_loss_price = entry * (1 - 0.00005)
+        # Perte de 0.03% → sous le seuil de 0.05% → pas de micro SL
+        small_loss_price = entry * (1 - 0.0003)
         result = service._tick_single_slot(account, "scalping", small_loss_price, now)
 
         assert result.action_taken != "closed_micro_sl"
@@ -333,18 +333,18 @@ class TestMicroStopLossNonRegression:
         assert result.action_taken == "closed_trailing_stop"
 
     def test_micro_sl_pnl_is_small(self):
-        """Vérifier que -0.01% sur $2500 = perte minuscule (~$0.25)."""
+        """Vérifier que -0.05% sur $2500 = perte contenue (~$1.25)."""
         size = 2500.0
-        pnl_pct = -0.01  # -0.01%
+        pnl_pct = -0.05  # -0.05%
         pnl_usd = size * pnl_pct / 100
-        assert -0.30 < pnl_usd < -0.20  # ~-$0.25
+        assert -1.30 < pnl_usd < -1.20  # ~-$1.25
 
     def test_scalping_loss_cut_still_higher(self):
-        """Le loss_cut_pct (0.20%) est 20× plus large que le micro SL (0.01%)."""
+        """Le loss_cut_pct (0.20%) est 4× plus large que le micro SL (0.05%)."""
         p = PROFILE_PRESETS["scalping"]
         assert p.loss_cut_pct == 0.20
-        assert p.micro_stop_loss_pct == 0.01
-        assert p.loss_cut_pct / p.micro_stop_loss_pct == 20.0
+        assert p.micro_stop_loss_pct == 0.05
+        assert p.loss_cut_pct / p.micro_stop_loss_pct == 4.0
 
 
 # ---------------------------------------------------------------------------

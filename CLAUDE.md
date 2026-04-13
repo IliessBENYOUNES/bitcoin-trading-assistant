@@ -62,9 +62,11 @@
 
 ---
 
-## 🥇 Règle d'or n°2 — Toujours produire un fichier HANDOFF_GPT.md
+## 🥇 Règle d'or n°2 — Toujours mettre à jour le fichier HANDOFF_GPT.md (NE JAMAIS LE RECRÉER)
 
-> **Après chaque intervention**, l'agent DOIT écrire ou mettre à jour le fichier `docs/HANDOFF_GPT.md`.
+> **Après chaque intervention**, l'agent DOIT **éditer** le fichier existant `docs/HANDOFF_GPT.md`.
+
+> ⚠️ **INTERDIT de créer/recréer ce fichier.** Le fichier `docs/HANDOFF_GPT.md` **existe déjà** dans le repo et doit **toujours** être mis à jour par édition (insert_edit / replace), **jamais** par création (`create_file`, `>`, `New-Item`, etc.). Le recréer supprime l'historique Git du fichier et génère du bruit inutile dans les diffs.
 
 Ce fichier est un **résumé structuré** de ce qui vient d'être fait, destiné à être copié-collé dans un autre GPT pour analyse parallèle.
 
@@ -84,7 +86,9 @@ Ce fichier est un **résumé structuré** de ce qui vient d'être fait, destiné
 
 **Format du fichier :** Markdown, sections avec `##`, tableaux quand pertinent.
 
-**Emplacement :** `docs/HANDOFF_GPT.md` (fichier temporaire, écrasé à chaque intervention).
+**Emplacement :** `docs/HANDOFF_GPT.md` — fichier **permanent** du repo, **écrasé par édition** à chaque intervention.
+
+**Erreur passée à ne pas reproduire :** Des agents ont recréé le fichier au lieu de l'éditer, ce qui casse l'historique Git et produit des diffs « fichier entier supprimé + fichier entier ajouté » au lieu d'un diff propre. **Toujours éditer, jamais recréer.**
 
 > Ce fichier permet au propriétaire du projet de transférer le contexte à un autre assistant IA sans perte d'information. Il est aussi utile comme trace de la dernière action effectuée.
 
@@ -393,6 +397,7 @@ class TestXxxEndpoint:
 | 2 | Serveur `--reload` qui ne prend pas les changements | Redémarrer uvicorn en cas de 404 inattendu |
 | 3 | CHANGELOG.md avec des commandes shell en tête | Ne jamais écrire de commandes avant le `# Changelog` |
 | 4 | Warnings pytest `_fetch_and_store` non awaited | Cosmétique, ne pas corriger sans comprendre le scheduler async |
+| 5 | `HANDOFF_GPT.md` recréé au lieu d'être édité | **Toujours** utiliser insert_edit / replace sur le fichier existant, **jamais** create_file / `>` / New-Item |
 
 ---
 

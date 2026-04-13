@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernière mise à jour :** 13 avril 2026
-> **Version :** v2.0.23
+> **Version :** v2.0.25
 > **Branche :** `master`
-> **Dernier commit :** feat(scalping): micro stop loss — sortie immédiate à -0.01% PnL v2.0.23
+> **Dernier commit :** fix(scalping): recalibrer micro SL 0.01→0.05%, cooldown 10s→1min, SL/TP stop-limit v2.0.25
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.23** |
+| Version courante | **v2.0.25** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
 | Tests backend | **1796 tests**, tous passing ✅ |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.23 livré** — Micro stop loss (sortie immédiate en perte) |
+| Phase courante | **v2.0.25 livré** — Recalibrage post-analyse 345 trades (micro SL, cooldown, SL/TP) |
 
 ### ⚠️ État de maturité honnête
 
@@ -60,8 +60,9 @@ L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulatio
 - **[v2.0.19] OVERRIDE ANTI-CHURN** — Les trades ouverts via tick momentum override (entry_reason="vendre") étaient immédiatement fermés par signal contraire car le score bullish (+66) > seuil de sortie (30). Fix : (1) Entry reason préfixé `tick_override_{direction}`, (2) logique `is_reversal` étendue pour protéger les override trades comme les mean_reversion (seuil de sortie relevé à abs(score_entrée)+1).
 - **[v2.0.20] FIX BIAIS 100% SHORT SCALPING** — Le tick momentum override (v2.0.14) était censé éliminer le biais short en suivant la direction réelle du prix. Mais le gate **structural proofs** (v2.0.0) bloquait TOUS les LONGs de l'override car il vérifiait `micro_trend_score ≥ 3` — un indicateur **lagging 15 min** négatif en marché bearish. L'override détectait "prix monte → LONG" mais les structural proofs disaient "micro_trend bearish → pas de LONG". Résultat : seuls les SHORTs passaient (micro_trend négatif = proof pour short). Fix : bypass complet des structural proofs quand `tm_override_active=True`. La direction réelle du prix (30 sec) EST la preuve structurelle. Les protections restantes (economic gate, market quality, min_score, risk engine) suffisent. 2 tests dédiés.
 - **[v2.0.22] SAS D'ENTRÉE SÉCURISÉ (ENTRY AIRLOCK)** — Quand tous les gates passent, au lieu d'ouvrir immédiatement la position, le système entre dans un "SAS" (sas d'entrée). Pendant ~10-15 secondes, le prix est observé virtuellement (comme si on avait ouvert). Si le PnL virtuel reste négatif → l'entrée est annulée, on ne perd RIEN. Si le PnL virtuel devient positif et y reste → l'entrée réelle est confirmée au prix courant. **Range caution** : si le prix est en haut de range (>70%) et qu'on veut un LONG, ou en bas de range (<30%) et qu'on veut un SHORT, le SAS rejette immédiatement dès le premier tick négatif (position structurellement dangereuse). Nouveau service `EntrySasService` (in-memory, pattern identique à `TickMomentumService`). Résout le problème catastrophique du trade #620 (-$15.27 en 36s) : le PnL virtuel serait resté négatif → jamais ouvert. 39 tests dédiés.
-- **[v2.0.23] MICRO STOP LOSS — SORTIE IMMÉDIATE EN PERTE** — Nouveau garde-fou ultra-serré : si le PnL latent dépasse -0.01% (= -$0.25 sur $2500), la position est fermée IMMÉDIATEMENT, sans aucune condition (pas de vérification de score, pas d'attente). Contrairement au loss_cut_pct classique (-0.20% avec vérification de signal), le micro SL est inconditionnel et ultra-rapide. Priorité : SL/TP > Expiration > **Micro SL** > Trailing Stop > Breakeven > Stale > Momentum fade. Configurable via `micro_stop_loss_pct` dans `TradingProfileParams` (None = désactivé). Activé uniquement sur le profil scalping (0.01%). Le SAS filtre les mauvaises entrées en amont, le micro SL coupe les pertes en aval — double protection. 18 tests dédiés.
-- **[v2.0.24] SUPPRESSION LIMITE 30 TRADES/JOUR + COOLDOWN ULTRA-COURT** — La limite de 30 trades/jour bloquait le robot en production après quelques heures. Le cooldown (1 min base, 5 min max, plancher stale négatif 2 min) était identifié comme goulot d'étranglement principal par le diagnostic de fréquence. Avec le SAS (v2.0.22) qui filtre les mauvaises entrées et le micro SL (v2.0.23) qui coupe instantanément les pertes, le cooldown long comme substitut de protection n'a plus de raison d'être. Corrections : (1) `max_trades_per_day` 30→999 (illimité), (2) `cooldown_minutes` 1→0.17 (~10 sec), (3) `min_cooldown_minutes` 0.5→0.17 (~10 sec), (4) `max_cooldown_minutes` 5→1 (1 min max), (5) multiplicateur stale 2.0→1.3, stale négatif 3.0→1.5, (6) plancher stale négatif 2.0→0.5 (30 sec), (7) schéma `cooldown_minutes` int→float. Tests mis à jour (7 fichiers).
+- **[v2.0.23+v2.0.25] MICRO STOP LOSS** — Garde-fou inconditionnel : si le PnL latent dépasse un seuil négatif, sortie IMMÉDIATE. [v2.0.25] Recalibré 0.01%→0.05% après analyse de 345 trades : à 0.01%, le micro SL tuait 130 trades (100% perdants, -$59.44). Le seuil de 0.05% (-$1.25 sur $2500) laisse 1-2 ticks de respiration tout en restant 4× plus serré que le SL classique.
+- **[v2.0.24+v2.0.25] COOLDOWN RECALIBRÉ** — `max_trades_per_day` 30→999 (illimité). [v2.0.25] Cooldown relevé après analyse de 345 trades : les boucles micro SL→re-entry créaient du churn destructeur (gap médian 64s). `cooldown_minutes` 0.17→1.0, `min_cooldown` 0.17→0.5, `max_cooldown` 1.0→3.0.
+- **[v2.0.25] SL/TP STOP-LIMIT** — Le SL/TP exécute désormais au prix de l'ordre au lieu du prix courant. Avant, des gaps entre ticks (5 sec) causaient des pertes 4× supérieures au SL attendu (trade #629 : -$21.76 vs SL -0.20%). Perte max par SL bornée à loss_cut_pct.
 - **[v2.0.4] Export enrichi** — Service `EnrichedExportService` + endpoint `GET /audit/enriched-export`. Export tick-par-tick avec : prix BTC, variation %, décision moteur, score, raison de non-trade, position ouverte/fermée, PnL, market quality. Inclut ventilation des refus par gate + détection des tendances BTC ratées.
 - **[v2.0.4] Learning runtime** — Nouvelle méthode `LearningService.learn_from_runtime()` + endpoint `POST /learning/learn-runtime`. Analyse les TickActivityLog (pas les trades fermés) pour identifier les gates sur-bloquants et proposer des assouplissements en mode shadow. Suggestions 15 (micro-trend dominant) et 16 (gate unique > 70%).
 - **[v2.0.3-fix] Auto-activation paper trading** — L'endpoint `POST /paper/tick` auto-active le compte si inactif. Le frontend (`doAutoTick`, `manualTick`, `handleStartAuto`) fait aussi du self-healing : si le tick retourne "inactive", activation automatique + retry. L'utilisateur final n'a plus jamais besoin de faire de requête POST manuelle.

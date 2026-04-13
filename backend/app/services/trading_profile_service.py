@@ -143,12 +143,11 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # qui coupe à -0.01%, la qualité est contrôlée en amont. Pas besoin d'un plafond
         # arbitraire — le robot doit pouvoir trader toute la nuit sans limite.
         max_trades_per_day=999,
-        # [v2.0.24] Cooldown 1 min → 10 sec : le SAS (15s d'observation virtuelle) et
-        # le micro SL (-0.01%) rendent le cooldown long obsolète. Le cooldown servait
-        # à protéger contre le churn, mais le SAS fait mieux : il observe le prix
-        # AVANT d'ouvrir au lieu de bloquer aveuglément par le temps.
-        # 10 sec = juste assez pour ne pas ouvrir sur le même tick.
-        cooldown_minutes=0.17,
+        # [v2.0.24] Cooldown 0.17 min → 1 min : l'analyse de 345 trades montre que
+        # le gap médian entre trades est 64 sec. Avec un cooldown de 10 sec + SAS 15 sec,
+        # le bot re-entre en ~25 sec sur le MÊME signal → boucle de churn destructrice.
+        # 1 min = assez pour que le signal ait évolué avant de retenter.
+        cooldown_minutes=1.0,
         max_position_duration_hours=2,
         # [v2.0.0] TP élargi 0.6%→0.8% : le TP doit être atteignable et couvrir les frais.
         # Le trailing à 0.15%+0.10% capture en pratique 0.05-0.30%. Un TP à 0.8%
@@ -220,13 +219,14 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # 30s = ~6 ticks = même fenêtre que la détection d'entrée.
         candle_reversal_window_seconds=30.0,
         smart_cooldown_enabled=True,
-        # [v2.0.24] min_cooldown 0.5→0.17 min (10 sec) : avec le SAS et le micro SL,
-        # le minimum peut être ultra-court. Le SAS fait la vraie vérification.
-        min_cooldown_minutes=0.17,
-        # [v2.0.24] max_cooldown 5→1 min : même après un stale négatif, 1 min suffit
-        # car le SAS va de toute façon observer 15s avant de laisser entrer.
-        # Total = cooldown (max 1 min) + SAS (15s) = 75s max de protection.
-        max_cooldown_minutes=1.0,
+        # [v2.0.24] min_cooldown 0.17→0.5 min (30 sec) : le churn analysis montre que
+        # les re-entries < 30 sec sont systématiquement sur le même signal inchangé.
+        # 30 sec minimum même après un bon trade.
+        min_cooldown_minutes=0.5,
+        # [v2.0.24] max_cooldown 1→3 min : après une série de pertes, laisser plus
+        # de temps au marché pour évoluer avant de retenter. 3 min = ~36 ticks à 5 sec,
+        # suffisant pour un changement de micro-tendance.
+        max_cooldown_minutes=3.0,
         min_hold_seconds=30,
         min_economic_pnl_pct=0.15,
         short_min_score=30,  # [v2.0.3] 25→30 : aligné avec min_score relevé
@@ -276,10 +276,12 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         entry_sas_range_caution=True,       # Extra prudent aux extrémités de range
         # [v2.0.23] MICRO STOP LOSS — Sortie ultra-rapide en cas de perte.
         # Le SAS filtre les mauvaises entrées, mais si le prix se retourne APRÈS
-        # l'ouverture, le micro SL coupe à -0.01% ($0.25) au lieu d'attendre le
-        # SL classique (-0.20% = -$5). On préfère sortir et retenter plutôt que
-        # laisser une perte grossir. Complète le SAS en post-ouverture.
-        micro_stop_loss_pct=0.01,
+        # l'ouverture, le micro SL coupe au lieu d'attendre le SL classique (-0.20% = -$5).
+        # [v2.0.24] Recalibré 0.01% → 0.05% après analyse de 345 trades :
+        # À 0.01% (-$0.25), le micro SL tuait 130 trades (100% perdants, -$59.44),
+        # empêchant toute récupération. 0.05% (-$1.25 sur $2500) laisse le trade
+        # respirer 1-2 ticks tout en coupant 4× plus tôt que le SL classique (-$5).
+        micro_stop_loss_pct=0.05,
     ),
 }
 

@@ -409,10 +409,21 @@ class PaperTradingService:
                 close_reason = self._check_expiration(open_pos, now, profile_max_hours)
 
             if close_reason is not None:
-                exit_price = current_price
-                status = close_reason
+                # [v2.0.24] SL/TP : utiliser le prix de l'ordre au lieu du prix courant.
+                # Simule une exécution stop-limit : quand le SL/TP est franchi entre
+                # deux ticks (gap de 5 sec), on exécute AU prix de l'ordre, pas au prix
+                # actuel qui peut être bien pire. Avant ce fix, le trade #629 perdait
+                # -$21.76 (-0.87%) au lieu du SL attendu de -0.20% car le prix avait
+                # gappé de $600 entre deux ticks. Avec ce fix, la perte max par SL
+                # est bornée à loss_cut_pct (= -$5 sur $2500 à 0.20%).
+                if close_reason == "closed_sl":
+                    exit_price = open_pos.stop_loss_price
+                elif close_reason == "closed_tp":
+                    exit_price = open_pos.take_profit_price
+                else:
+                    exit_price = current_price
 
-                closed = self._close_position(open_pos, exit_price, close_reason, status)
+                closed = self._close_position(open_pos, exit_price, close_reason, close_reason)
                 _log_tick(action_taken=close_reason, btc_price=current_price,
                           had_open_position=True, trade_id=closed.id,
                           leverage_final=getattr(closed, "leverage", 1.0))

@@ -411,11 +411,11 @@ class TestAntiChurnStaleNegative:
     def test_stale_negative_floor_at_30_seconds(self):
         """[v2.0.24] Un stale négatif impose un plancher de 0.5 min (30 sec). Le SAS protège en amont."""
         result = SmartCooldownService.compute_cooldown(
-            base_cooldown=0.17,      # Base très courte (10 sec)
+            base_cooldown=1.0,       # [v2.0.24] Base 1 min (anti-churn)
             last_exit_type="closed_stale",
             last_pnl=-0.5,
             last_pnl_pct=-0.05,
-            min_cooldown=0.17,
+            min_cooldown=0.5,
             max_cooldown=10.0,
         )
         assert result >= 0.5, (
@@ -457,9 +457,9 @@ class TestAntiChurnStaleNegative:
         assert result > 2.0
 
     def test_scalping_max_cooldown_raised(self):
-        """[v2.0.24] Le max_cooldown scalping est réduit à 1 min."""
+        """[v2.0.24] Le max_cooldown scalping est relevé à 3 min (anti-churn)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 1.0  # [v2.0.24] 5→1
+        assert p.max_cooldown_minutes == 3.0  # [v2.0.24] 1→3
 
     def test_stale_negative_heavy_loss_extra_penalty(self):
         """Un stale négatif avec grosse perte cumule les pénalités."""

@@ -305,7 +305,7 @@ class TestScalpingRecalibration:
     def test_cooldown_recalibrated(self):
         """[v2.0.24] Cooldown réduit à 10 sec (SAS + micro SL protègent)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.cooldown_minutes == 0.17  # [v2.0.24] 1→0.17 (10 sec)
+        assert p.cooldown_minutes == 1.0  # [v2.0.24] 0.17→1.0 (anti-churn)
 
     def test_stale_exit_increased(self):
         """Stale exit augmenté de 10 à 15 min."""
