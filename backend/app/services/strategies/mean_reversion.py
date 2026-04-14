@@ -105,17 +105,18 @@ class MeanReversionStrategy(BaseStrategy):
         # SL au-delà du range, TP vers le milieu
         range_half_pct = context.range_width_pct / 2 if context.range_width_pct > 0 else 0.5
 
+        # $800 × 1.0x = frais RT $2.48
         return StrategyParams(
-            stop_loss_pct=max(0.30, range_half_pct * 0.8),   # SL = 80% du demi-range
-            take_profit_pct=max(0.20, range_half_pct * 0.6), # TP = 60% du demi-range
-            position_size_usd=2000.0,
-            leverage=1.0,           # Pas de levier en mean reversion
-            trailing_activation_pct=0.15,
+            stop_loss_pct=max(0.50, range_half_pct * 0.8),   # Élargi min 0.30→0.50%
+            take_profit_pct=max(0.40, range_half_pct * 0.6), # Élargi min 0.20→0.40%
+            position_size_usd=800.0,        # Réduit 2000→800
+            leverage=1.0,                   # Pas de levier
+            trailing_activation_pct=0.25,   # Élargi 0.15→0.25%
             trailing_drop_ratio=0.25,
-            micro_sl_pct=0.10,      # Micro SL un peu plus large
-            max_hold_seconds=3600,  # 1h max
-            min_hold_seconds=60,    # 1 min min
-            stale_negative_seconds=300,  # 5 min en perte → sortie
+            micro_sl_pct=0.20,              # Élargi 0.10→0.20%
+            max_hold_seconds=3600,          # 1h max
+            min_hold_seconds=60,
+            stale_negative_seconds=600,     # 10 min en perte → sortie (avant 5min)
         )
 
     @staticmethod

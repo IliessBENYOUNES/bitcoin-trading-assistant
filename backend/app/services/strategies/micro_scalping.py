@@ -56,16 +56,17 @@ class MicroScalpingStrategy(BaseStrategy):
         )
 
     def get_params(self, context: MarketContext, direction: str) -> StrategyParams:
-        # Ultra-serré : petites positions, sortie rapide
+        # Petites positions, sortie rapide mais pas trop serrée
+        # $500 × 1.0x = frais RT $1.55 → il faut capturer > 0.31%
         return StrategyParams(
-            stop_loss_pct=0.10,       # 0.10% SL (très serré)
-            take_profit_pct=0.30,     # 0.30% TP
-            position_size_usd=1500.0, # Plus petite taille
+            stop_loss_pct=0.25,       # Élargi 0.10→0.25%
+            take_profit_pct=0.50,     # Élargi 0.30→0.50%
+            position_size_usd=500.0,  # Réduit 1500→500 (frais $1.55 au lieu de $4.65)
             leverage=1.0,             # Pas de levier
-            trailing_activation_pct=0.05,   # Trailing dès 0.05%
-            trailing_drop_ratio=0.20,       # 20% de recul = sortie
-            micro_sl_pct=0.03,        # Micro SL à 0.03% (ultra-serré)
-            max_hold_seconds=300,     # 5 min max
-            min_hold_seconds=10,      # 10s min
-            stale_negative_seconds=60, # 1min en perte → sortie
+            trailing_activation_pct=0.15,   # Élargi 0.05→0.15%
+            trailing_drop_ratio=0.25,       # 25% de recul = sortie
+            micro_sl_pct=0.10,        # Élargi 0.03→0.10%
+            max_hold_seconds=600,     # 10 min max (était 5)
+            min_hold_seconds=30,      # 30s min (était 10)
+            stale_negative_seconds=120, # 2min en perte → sortie (était 1min)
         )

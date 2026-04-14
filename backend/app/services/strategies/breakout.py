@@ -19,7 +19,7 @@ class BreakoutStrategy(BaseStrategy):
     description = "Breakout — suit les cassures de range avec volume"
 
     MIN_BREAKOUT_STRENGTH = 0.2
-    MIN_VOLUME_RATIO = 1.3
+    MIN_VOLUME_RATIO = 0.0  # Désactivé (volume_sma_20 absent sur candles 30m fallback)
 
     def evaluate_entry(
         self,
@@ -48,8 +48,7 @@ class BreakoutStrategy(BaseStrategy):
         # Signal secondaire : début de trend après un range
         # (le context engine peut classer "trend" si le breakout est confirmé)
         if (context.regime == "trend" and
-                context.confidence >= 60 and
-                context.volume_ratio >= self.MIN_VOLUME_RATIO):
+                context.confidence >= 60):
             direction = "long" if context.trend_direction == "bullish" else "short"
 
             combined_score = decision.get("combined_score", 0) or 0
@@ -99,12 +98,12 @@ class BreakoutStrategy(BaseStrategy):
         return StrategyParams(
             stop_loss_pct=sl_pct,
             take_profit_pct=tp_pct,
-            position_size_usd=2500.0,
-            leverage=2.0,           # Levier modéré sur les breakouts
-            trailing_activation_pct=0.20,   # Trail après 0.20%
-            trailing_drop_ratio=0.20,       # Keep 80% du gain
-            micro_sl_pct=0.10,
-            max_hold_seconds=14400,  # 4h max (trend-following)
-            min_hold_seconds=60,
-            stale_negative_seconds=300,
+            position_size_usd=1000.0,       # Réduit 2500→1000 (frais proportionnels)
+            leverage=1.5,                   # Réduit 2.0→1.5
+            trailing_activation_pct=0.40,   # Élargi 0.20→0.40% (laisser le breakout se développer)
+            trailing_drop_ratio=0.25,       # Garde 75% du pic
+            micro_sl_pct=0.30,              # Élargi 0.10→0.30% (breakout = volatil)
+            max_hold_seconds=14400,         # 4h max
+            min_hold_seconds=120,           # 2min minimum
+            stale_negative_seconds=600,     # 10min (breakout prend du temps)
         )

@@ -164,12 +164,13 @@ class TestScalpingStrategy:
         signal = strategy.evaluate_entry(ctx, decision, 73000.0, [])
         assert signal.should_enter is False
 
-    def test_no_entry_low_volume(self):
+    def test_entry_despite_low_volume(self):
+        """Volume filter désactivé (fallback 30m sans volume_sma_20)."""
         strategy = ScalpingStrategy()
         ctx = MarketContext(regime="range", zone="mid", volume_ratio=0.3)
         decision = {"combined_score": 30}
         signal = strategy.evaluate_entry(ctx, decision, 73000.0, [])
-        assert signal.should_enter is False
+        assert signal.should_enter is True
 
     def test_trend_alignment(self):
         """En trend bullish, pas de short."""
@@ -182,9 +183,10 @@ class TestScalpingStrategy:
     def test_params(self):
         strategy = ScalpingStrategy()
         params = strategy.get_params(MarketContext(), "long")
-        assert params.stop_loss_pct == 0.20
-        assert params.micro_sl_pct == 0.05
-        assert params.leverage == 1.5
+        assert params.stop_loss_pct == 0.40
+        assert params.micro_sl_pct == 0.20
+        assert params.leverage == 1.0
+        assert params.position_size_usd == 800.0
 
 
 class TestMicroScalpingStrategy:
@@ -324,8 +326,9 @@ class TestAggressiveStrategy:
         low_conf = MarketContext(confidence=40)
         p_high = strategy.get_params(high_conf, "long")
         p_low = strategy.get_params(low_conf, "long")
-        assert p_high.leverage == 3.0
-        assert p_low.leverage == 1.5
+        assert p_high.leverage == 1.5  # Max 1.5x (réduit de 3x)
+        assert p_low.leverage == 1.0   # 1.0x sans confiance forte
+        assert p_high.position_size_usd == 1000.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -18,8 +18,8 @@ class ScalpingStrategy(BaseStrategy):
     description = "Scalping classique — signaux 5m, SAS, micro SL"
 
     # Seuils
-    MIN_SCORE = 10
-    MIN_VOLUME_RATIO = 0.8
+    MIN_SCORE = 20       # Relevé 10→20 (trop de trades à score 10-15 = bruit)
+    MIN_VOLUME_RATIO = 0.0  # Désactivé (volume_sma_20 absent sur les candles 30m fallback)
 
     def evaluate_entry(
         self,
@@ -35,17 +35,12 @@ class ScalpingStrategy(BaseStrategy):
         if abs_score < self.MIN_SCORE:
             return StrategySignal(strategy_type=self.name)
 
-        # Volume minimum
-        if context.volume_ratio < self.MIN_VOLUME_RATIO:
-            return StrategySignal(strategy_type=self.name)
-
         # Direction basée sur le score
         if combined_score > 0:
             direction = "long"
         else:
             direction = "short"
 
-        # En range mid : accepter les deux directions
         # En trend : suivre le trend uniquement
         if context.regime == "trend":
             if context.trend_direction == "bullish" and direction == "short":
@@ -63,16 +58,17 @@ class ScalpingStrategy(BaseStrategy):
         )
 
     def get_params(self, context: MarketContext, direction: str) -> StrategyParams:
-        # Paramètres serrés pour le scalping
+        # Position réduite : $800 × 1.0x = $800 effectif → frais RT = $2.48
+        # Il faut capturer > 0.62% pour être rentable → target 0.80% OK
         return StrategyParams(
-            stop_loss_pct=0.20,
-            take_profit_pct=0.80,
-            position_size_usd=2500.0,
-            leverage=1.5,
-            trailing_activation_pct=0.10,
-            trailing_drop_ratio=0.15,
-            micro_sl_pct=0.05,
-            max_hold_seconds=7200,  # 2h max
-            min_hold_seconds=30,
-            stale_negative_seconds=180,  # 3min en perte → sortie
+            stop_loss_pct=0.40,             # Élargi 0.20→0.40% (0.20 = micro bruit)
+            take_profit_pct=0.80,           # Gardé à 0.80% (bon ratio risque/gain)
+            position_size_usd=800.0,        # Réduit 2500→800 (frais $2.48 au lieu de $11.62)
+            leverage=1.0,                   # Pas de levier (levier amplifie les frais)
+            trailing_activation_pct=0.30,   # Élargi 0.10→0.30% (laisser le trade respirer)
+            trailing_drop_ratio=0.25,       # Garde 75% du pic
+            micro_sl_pct=0.20,              # Élargi 0.05→0.20% (0.05% = tick noise)
+            max_hold_seconds=7200,          # 2h max
+            min_hold_seconds=60,            # 1min minimum (avant 30s)
+            stale_negative_seconds=300,     # 5min en perte → sortie (avant 3min)
         )
