@@ -453,7 +453,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
   const [filterDirection, setFilterDirection] = useState<'all' | 'long' | 'short'>('all');
   const [filterResult, setFilterResult] = useState<'all' | 'win' | 'loss'>('all');
   const [filterCandle, setFilterCandle] = useState<'all' | 'same' | 'changed'>('all');
-  const [filterSlot, setFilterSlot] = useState<'all' | 'scalping' | 'aggressive'>('all');
+  const [filterSlot, setFilterSlot] = useState<string>('all');
   const [filterExitType, setFilterExitType] = useState<string>('all');
 
   // Trades filtrés (fermés seulement)
@@ -473,8 +473,8 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
         if (filterCandle === 'same' && !same) return false;
         if (filterCandle === 'changed' && same) return false;
       }
-      // Slot
-      if (filterSlot !== 'all' && t.slot !== filterSlot) return false;
+      // Stratégie (strategy_type ou fallback slot)
+      if (filterSlot !== 'all' && (t.strategy_type || t.slot) !== filterSlot) return false;
       // Type de sortie
       if (filterExitType !== 'all' && t.status !== filterExitType) return false;
       return true;
@@ -1480,17 +1480,20 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
               <ToggleButton value="changed" sx={{ color: '#ff9800' }}>🔄 Changée</ToggleButton>
             </ToggleButtonGroup>
 
-            {/* Slot */}
+            {/* Stratégie */}
             <ToggleButtonGroup
               value={filterSlot}
               exclusive
               onChange={(_, v) => v && setFilterSlot(v)}
               size="small"
-              sx={{ '& .MuiToggleButton-root': { fontSize: '0.7rem', px: 1, py: 0.3 } }}
+              sx={{ '& .MuiToggleButton-root': { fontSize: '0.65rem', px: 0.8, py: 0.3 } }}
             >
-              <ToggleButton value="all">Slots</ToggleButton>
+              <ToggleButton value="all">Toutes</ToggleButton>
               <ToggleButton value="scalping">⚡ Scalp</ToggleButton>
               <ToggleButton value="aggressive">🔥 Aggr</ToggleButton>
+              <ToggleButton value="breakout">🚀 Break</ToggleButton>
+              <ToggleButton value="mean_reversion">🔄 MRev</ToggleButton>
+              <ToggleButton value="micro_scalping">⚡ Micro</ToggleButton>
             </ToggleButtonGroup>
 
             {/* Type de sortie */}
@@ -1556,6 +1559,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
             <TableHead>
               <TableRow>
                 <TableCell>Status</TableCell>
+                <TableCell>Stratégie</TableCell>
                 <TableCell>Direction</TableCell>
                 <TableCell align="right">Entrée</TableCell>
                 <TableCell align="right">Sortie</TableCell>
@@ -1602,6 +1606,36 @@ function MetricBox({ label, value, color }: { label: string; value: string; colo
   );
 }
 
+// Sous-composant : chip stratégie avec couleur
+const STRATEGY_LABELS: Record<string, { label: string; emoji: string; color: string }> = {
+  scalping: { label: 'Scalp', emoji: '⚡', color: '#ff9800' },
+  aggressive: { label: 'Aggr', emoji: '🔥', color: '#f44336' },
+  breakout: { label: 'Break', emoji: '🚀', color: '#2196f3' },
+  mean_reversion: { label: 'MRev', emoji: '🔄', color: '#9c27b0' },
+  micro_scalping: { label: 'Micro', emoji: '⚡', color: '#00bcd4' },
+};
+
+function StrategyChip({ strategyType }: { strategyType?: string | null }) {
+  const info = strategyType ? STRATEGY_LABELS[strategyType] : null;
+  if (!info) {
+    return <Typography variant="caption" color="text.secondary">—</Typography>;
+  }
+  return (
+    <Chip
+      size="small"
+      label={`${info.emoji} ${info.label}`}
+      sx={{
+        fontSize: '0.65rem',
+        fontWeight: 700,
+        height: 20,
+        color: info.color,
+        bgcolor: `${info.color}18`,
+        border: `1px solid ${info.color}44`,
+      }}
+    />
+  );
+}
+
 // Sous-composant : ligne de trade — v2.0.17 enrichi (pastilles entrée+sortie avec fallback, timestamps, durée exacte)
 function TradeRow({ trade }: { trade: PaperTradeItem }) {
   // Calculer duration_seconds à partir de duration_hours si pas fourni par le backend
@@ -1618,6 +1652,9 @@ function TradeRow({ trade }: { trade: PaperTradeItem }) {
   return (
     <TableRow hover>
       <TableCell>{statusChip(trade.status)}</TableCell>
+      <TableCell>
+        <StrategyChip strategyType={trade.strategy_type || trade.slot} />
+      </TableCell>
       <TableCell>
         <Stack direction="row" alignItems="center" spacing={0.5}>
           <span>{trade.direction === 'long' ? '📈 Long' : '📉 Short'}</span>

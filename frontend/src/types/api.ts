@@ -678,6 +678,9 @@ export interface PaperTradeItem {
   created_at: string | null;
   updated_at: string | null;
   slot?: string | null; // v1.7 multi-slot
+  strategy_type?: string | null; // multi-strategy — "scalping"/"aggressive"/"breakout"/etc.
+  market_context?: string | null; // multi-strategy — "range"/"trend"/"breakout"
+  market_zone?: string | null; // multi-strategy — "low"/"mid"/"high"
   entry_candle_direction?: string | null; // v2.0.15 — "green"/"red"/null
   exit_candle_direction?: string | null; // v2.0.16 — "green"/"red"/null (à la sortie)
   duration_seconds?: number | null; // v2.0.16 — durée exacte en secondes
