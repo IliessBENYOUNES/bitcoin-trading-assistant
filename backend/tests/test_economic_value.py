@@ -101,7 +101,7 @@ class TestMinHoldSeconds:
         """min_hold_seconds est dans le schéma TradingProfileParams."""
         # On utilise directement le preset scalping déjà configuré
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_hold_seconds == 30
+        assert p.min_hold_seconds == 300
 
     def test_min_hold_default_none(self):
         """Par défaut, min_hold_seconds est None dans un profil sans scalping."""
@@ -388,7 +388,7 @@ class TestScalpingRecalibratedV191:
     def test_stale_exit_increased(self):
         """Stale exit augmenté de 12→15 min pour laisser les trades respirer."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 5
+        assert p.stale_exit_minutes == 30
 
     def test_risk_reward_ratio(self):
         """Le ratio R/R après coûts doit être > 1."""
@@ -402,9 +402,9 @@ class TestScalpingRecalibratedV191:
         assert net_tp > 0, f"Net TP {net_tp}% est négatif → aucune marge"
 
     def test_description_updated(self):
-        """La description du profil scalping est mise à jour (v2.0.3)."""
+        """La description du profil scalping est mise à jour (v2.0.29)."""
         p = PROFILE_PRESETS["scalping"]
-        assert "seuils" in p.description.lower() or "micro-trend" in p.description.lower()
+        assert "swing court" in p.description.lower() or "v2.0.29" in p.description.lower()
 
 
 # ================================================================

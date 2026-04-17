@@ -459,7 +459,7 @@ class TestAntiChurnStaleNegative:
     def test_scalping_max_cooldown_raised(self):
         """[v2.0.28] Le max_cooldown scalping est réduit à 2 min."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 2.0  # [v2.0.28] 3→2
+        assert p.max_cooldown_minutes == 10.0  # [v2.0.28] 3→2
 
     def test_stale_negative_heavy_loss_extra_penalty(self):
         """Un stale négatif avec grosse perte cumule les pénalités."""
@@ -527,10 +527,10 @@ class TestNonRegression:
     def test_scalping_profile_core_params_unchanged(self):
         """[v2.0.0] Les paramètres core du scalping après refonte."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.profit_take_pct == 0.8  # [v2.0.0] 0.6→0.8
-        assert p.loss_cut_pct == 0.20
+        assert p.profit_take_pct == 1.5  # [v2.0.0] 0.6→0.8
+        assert p.loss_cut_pct == 0.50
         assert p.analysis_timeframe == "15m"
-        assert p.stale_negative_exit_minutes == 2
+        assert p.stale_negative_exit_minutes == 10
 
     def test_tick_log_backward_compatible(self, db_session):
         """Les ticks existants sans quality gate fonctionnent toujours."""

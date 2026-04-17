@@ -71,7 +71,7 @@ class TestMicroStopLossProfileParams:
         """Le profil scalping a un micro_stop_loss_pct configuré."""
         p = PROFILE_PRESETS["scalping"]
         assert p.micro_stop_loss_pct is not None
-        assert p.micro_stop_loss_pct == 0.05
+        assert p.micro_stop_loss_pct == 0.20
 
     def test_balanced_has_no_micro_sl(self):
         """Le profil balanced n'a PAS de micro SL (désactivé par défaut)."""
@@ -81,7 +81,7 @@ class TestMicroStopLossProfileParams:
     def test_aggressive_has_micro_sl(self):
         """[v2.0.28] Le profil aggressive a un micro SL à 0.15% (adapté pour swings)."""
         p = PROFILE_PRESETS["aggressive"]
-        assert p.micro_stop_loss_pct == 0.15
+        assert p.micro_stop_loss_pct == 0.30
 
     def test_default_is_none(self):
         """Le défaut de micro_stop_loss_pct est None (désactivé)."""
@@ -342,8 +342,8 @@ class TestMicroStopLossNonRegression:
     def test_scalping_loss_cut_still_higher(self):
         """Le loss_cut_pct (0.20%) est 4× plus large que le micro SL (0.05%)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.loss_cut_pct == 0.20
-        assert p.micro_stop_loss_pct == 0.05
+        assert p.loss_cut_pct == 0.50
+        assert p.micro_stop_loss_pct == 0.20
         assert p.loss_cut_pct / p.micro_stop_loss_pct == 4.0
 
 
@@ -384,5 +384,5 @@ class TestMicroStopLossEdgeCases:
             max_leverage=1.5,
             micro_stop_loss_pct=0.05,  # Custom : 0.05% au lieu de 0.01%
         )
-        assert params.micro_stop_loss_pct == 0.05
+        assert params.micro_stop_loss_pct == 0.20
 

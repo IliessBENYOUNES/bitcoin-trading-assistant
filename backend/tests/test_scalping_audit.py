@@ -280,55 +280,55 @@ class TestScalpingRecalibration:
     def test_trailing_stop_activation_increased(self):
         """[v2.0.9] Trailing stop activation abaissé à 0.02% — protège dès ~$0.50."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.04
+        assert p.trailing_stop_activation_pct == 0.40
 
     def test_trailing_stop_trail_increased(self):
         """[v1.9.5] Trailing stop trail resserré de 0.12% à 0.10%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_pct == 0.06
+        assert p.trailing_stop_pct == 0.20
 
     def test_buy_threshold_increased(self):
         """[v2.0.3] Buy threshold augmenté de 25 à 30 pour filtrer le bruit."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.buy_threshold == 30
+        assert p.buy_threshold == 40
 
     def test_sell_threshold_increased(self):
         """[v1.9.5] Sell threshold augmenté de 15 à 20."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.sell_threshold == 20
+        assert p.sell_threshold == 30
 
     def test_min_score_increased(self):
         """[v2.0.3] Min score relevé de 25 à 30."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_score == 30
+        assert p.min_score == 40
 
     def test_cooldown_recalibrated(self):
         """[v2.0.28] Cooldown réduit à 30 sec (micro SL 0.05% casse les boucles churn)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.cooldown_minutes == 0.5  # [v2.0.28] 1.0→0.5
+        assert p.cooldown_minutes == 5  # [v2.0.28] 1.0→0.5
 
     def test_stale_exit_increased(self):
         """Stale exit augmenté de 10 à 15 min."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 5
+        assert p.stale_exit_minutes == 30
 
     def test_max_leverage_reduced(self):
         """Max leverage réduit de 2.0 à 1.5."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_leverage == 1.5
+        assert p.max_leverage == 1.0
 
     def test_unchanged_params(self):
         """Les paramètres scalping reflètent le pivot v2.0.0."""
         p = PROFILE_PRESETS["scalping"]
         # [v2.0.0] TP élargi 0.6→0.8, SL maintenu 0.20
-        assert p.profit_take_pct == 0.8
-        assert p.loss_cut_pct == 0.20
-        assert p.max_trades_per_day == 999  # [v2.0.24] 30→999 (illimité)
+        assert p.profit_take_pct == 1.5
+        assert p.loss_cut_pct == 0.50
+        assert p.max_trades_per_day == 50  # [v2.0.24] 30→999 (illimité)
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
-        assert p.momentum_fade_enabled is True
+        assert p.momentum_fade_enabled is False
         # [v1.9.1] Protection anti-micro-PnL
-        assert p.min_hold_seconds == 30
+        assert p.min_hold_seconds == 300
         assert p.min_economic_pnl_pct == 0.15
 
 

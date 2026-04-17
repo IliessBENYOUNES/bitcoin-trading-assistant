@@ -434,12 +434,12 @@ class TestScalpingProfileSmartCooldown:
     def test_scalping_preset_min_cooldown(self):
         """[v2.0.28] Le preset scalping a min_cooldown_minutes = 0.25 (15 sec)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_cooldown_minutes == 0.25
+        assert p.min_cooldown_minutes == 2.0
 
     def test_scalping_preset_max_cooldown(self):
         """[v2.0.28] Le preset scalping a max_cooldown_minutes = 2.0."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_cooldown_minutes == 2.0  # [v2.0.28] 3→2
+        assert p.max_cooldown_minutes == 10.0  # [v2.0.28] 3→2
 
     def test_conservative_no_smart_cooldown(self):
         """Conservative n'a pas de smart cooldown."""

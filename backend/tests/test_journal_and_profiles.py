@@ -465,7 +465,7 @@ class TestTradingProfileService:
         svc = TradingProfileService(db_session)
         result = svc.set_profile("aggressive")
         assert result.active_profile == TradingProfileType.aggressive
-        assert result.params.max_leverage == 3.0
+        assert result.params.max_leverage == 1.0
 
     def test_set_invalid_profile(self, db_session, paper_account):
         """Profil invalide → erreur."""
@@ -674,7 +674,7 @@ class TestLeverageService:
             profile_params=aggressive_params,
             risk_level="safe",
         )
-        assert rec.final >= 2.0
+        assert rec.final >= 1.0  # [v2.0.29] levier désactivé
         assert rec.final <= aggressive_params.max_leverage
 
     def test_risk_blocked_forces_x1(self, balanced_params):
@@ -916,7 +916,7 @@ class TestSchemas:
     def test_trading_profile_params_aggressive(self):
         """Paramètres Aggressive."""
         p = PROFILE_PRESETS["aggressive"]
-        assert p.leverage_enabled is True
-        assert p.max_leverage == 3.0
-        assert p.min_score == 10
+        assert p.leverage_enabled is False  # [v2.0.29]
+        assert p.max_leverage == 1.0
+        assert p.min_score == 20
 

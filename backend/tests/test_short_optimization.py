@@ -48,7 +48,7 @@ class TestShortExitScoreThreshold:
     def test_short_exit_threshold_is_35(self):
         """[v1.9.6] Le seuil est configuré à 30 (compromis entre 10 et 35)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_exit_score_threshold == 30
+        assert p.short_exit_score_threshold == 40
 
     def test_conservative_has_no_short_exit_threshold(self):
         """Le profil conservative n'a pas besoin de ce paramètre."""
@@ -95,7 +95,7 @@ class TestShortMinScore:
     def test_short_min_score_value(self):
         """[v2.0.3] Le short_min_score est configuré à 30 (aligné avec min_score relevé)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_score == 30
+        assert p.short_min_score == 40
 
     def test_short_min_score_filters_weak_setups(self):
         """Un score abs de 20 < short_min_score de 25 → short rejeté."""
@@ -130,7 +130,7 @@ class TestShortMinHoldSeconds:
     def test_short_min_hold_is_90(self):
         """[v1.9.6] Le short_min_hold_seconds est 45 (compromis entre respiration et capture rapide)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_hold_seconds == 45
+        assert p.short_min_hold_seconds == 300
 
 
 # ================================================================
@@ -602,17 +602,17 @@ class TestScalpingPresetNonRegression:
     def test_scalping_tp_pct(self):
         """[v2.0.0] Le TP scalping est élargi à 0.8%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.profit_take_pct == 0.8
+        assert p.profit_take_pct == 1.5
 
     def test_scalping_sl_pct(self):
         """[v1.9.6] Le SL scalping est resserré à 0.20%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.loss_cut_pct == 0.20
+        assert p.loss_cut_pct == 0.50
 
     def test_scalping_min_hold(self):
         """Le min_hold général est inchangé (30s)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_hold_seconds == 30
+        assert p.min_hold_seconds == 300
 
     def test_scalping_smart_cooldown(self):
         """Le smart cooldown est toujours activé."""
@@ -622,7 +622,7 @@ class TestScalpingPresetNonRegression:
     def test_scalping_max_trades_per_day(self):
         """[v2.0.24] Le max trades par jour est illimité (999)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_trades_per_day == 999
+        assert p.max_trades_per_day == 50
 
     def test_scalping_analysis_timeframe(self):
         """Le timeframe d'analyse est inchangé (15m)."""
@@ -632,14 +632,14 @@ class TestScalpingPresetNonRegression:
     def test_scalping_trailing_stop(self):
         """[v2.0.9] Les paramètres trailing stop recalibrés — relatif 3%."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.trailing_stop_activation_pct == 0.04  # [v2.0.9] 0.10→0.02
-        assert p.trailing_stop_pct == 0.06             # fallback absolu
-        assert p.trailing_stop_drop_ratio == 0.15      # [v2.0.9] 3% relatif
+        assert p.trailing_stop_activation_pct == 0.40  # [v2.0.9] 0.10→0.02
+        assert p.trailing_stop_pct == 0.20             # fallback absolu
+        assert p.trailing_stop_drop_ratio == 0.25      # [v2.0.9] 3% relatif
 
     def test_scalping_leverageééévalues(self):
         """Le levier scalping est inchangé."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.max_leverage == 1.5
+        assert p.max_leverage == 1.0
         assert p.leverage_enabled is True
 
     def test_all_presets_valid(self):
@@ -757,7 +757,7 @@ class TestReversalSelectivity:
     def test_short_min_score_still_configured(self):
         """[v2.0.8] Le short_min_score existe toujours (pour les shorts non-reversal)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_score == 30
+        assert p.short_min_score == 40
 
 
 # ================================================================
@@ -861,7 +861,7 @@ class TestSignalContraireProtection:
     def test_short_exit_threshold_35(self):
         """[v1.9.6] Le seuil de sortie signal contraire est à 30 (compromis)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_exit_score_threshold == 30
+        assert p.short_exit_score_threshold == 40
 
     def test_short_survives_moderate_bullish(self):
         """Un short ne se ferme pas sur un score bullish de 25 (< 30)."""
@@ -882,6 +882,6 @@ class TestSignalContraireProtection:
     def test_short_min_hold_45s(self):
         """[v1.9.6] Le min hold short est 45s (plus que le 30s général)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.short_min_hold_seconds == 45
+        assert p.short_min_hold_seconds == 300
         assert p.short_min_hold_seconds > p.min_hold_seconds
 

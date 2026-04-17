@@ -201,7 +201,7 @@ def manual_tick(db: Session = Depends(get_db)):
 
 @router.get("/trades", response_model=PaperTradeListResponse)
 def get_trades(
-    limit: int = Query(default=50, ge=1, le=500),
+    limit: int = Query(default=10000, ge=1, le=10000),
     offset: int = Query(default=0, ge=0),
     status: str = Query(default=None, description="Filtre: open, closed, closed_tp, closed_sl, etc."),
     db: Session = Depends(get_db),

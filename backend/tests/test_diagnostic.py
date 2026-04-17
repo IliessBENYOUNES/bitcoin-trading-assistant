@@ -279,24 +279,27 @@ class TestScalpingProfile:
     """Tests pour le profil Scalping."""
 
     def test_scalping_preset_exists(self):
-        """Le preset scalping existe avec les bons paramètres (v2.0.3 recalibré)."""
+        """Le preset scalping existe avec les bons paramètres (v2.0.29 swing court)."""
         assert "scalping" in PROFILE_PRESETS
         p = PROFILE_PRESETS["scalping"]
-        assert p.min_score == 30           # [v2.0.3] 25→30
-        assert p.cooldown_minutes == 0.5    # [v2.0.28] 1.0→0.5 (cooldown réduit)
-        assert p.max_trades_per_day == 999  # [v2.0.24] 30→999 (illimité)
-        # [v2.0.0] TP élargi, SL maintenu
-        assert p.profit_take_pct == 0.8    # [v2.0.0] 0.6→0.8
-        assert p.loss_cut_pct == 0.20      # maintenu
+        assert p.min_score == 40           # [v2.0.29] 30→40
+        assert p.cooldown_minutes == 5      # [v2.0.29] 0.5→5 (réduire fréquence)
+        assert p.max_trades_per_day == 50   # [v2.0.29] 999→50
+        assert p.profit_take_pct == 1.5    # [v2.0.29] 0.8→1.5 (couvrir frais)
+        assert p.loss_cut_pct == 0.50      # [v2.0.29] 0.20→0.50 (respiration)
         assert p.max_position_duration_hours == 2
         assert p.analysis_timeframe == "15m"
-        assert p.buy_threshold == 30       # [v2.0.3] recalibré 25→30
-        assert p.sell_threshold == 20      # [v1.9.5] recalibré 15→20
-        assert p.momentum_fade_enabled is True
-        assert p.stale_exit_minutes == 5
-        # [v1.9.1] min_hold et min_economic_pnl
-        assert p.min_hold_seconds == 30
+        assert p.buy_threshold == 40       # [v2.0.29] 30→40
+        assert p.sell_threshold == 30      # [v2.0.29] 20→30
+        assert p.momentum_fade_enabled is False  # [v2.0.29] désactivé
+        assert p.stale_exit_minutes == 30  # [v2.0.29] 5→30
+        assert p.min_hold_seconds == 300   # [v2.0.29] 30→300 (5 min)
         assert p.min_economic_pnl_pct == 0.15
+        assert p.candle_reversal_exit_enabled is False  # [v2.0.29] désactivé
+        assert p.tick_momentum_override_direction is False  # [v2.0.29] score décide
+        assert p.leverage_enabled is False  # [v2.0.29] pas de levier
+        assert p.economic_gate_enabled is True  # [v2.0.29] gate obligatoire
+        assert p.min_ev_multiple == 2.0    # [v2.0.29] 1.5→2.0
 
     def test_scalping_in_enum(self):
         """TradingProfileType inclut scalping."""
@@ -321,22 +324,22 @@ class TestScalpingProfile:
     def test_scalping_params_buy_threshold(self):
         """Scalping a un seuil BUY recalibré (v2.0.3: 25→30)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.buy_threshold == 30  # [v2.0.3] recalibré 25→30
+        assert p.buy_threshold == 40  # [v2.0.3] recalibré 25→30
 
     def test_scalping_params_sell_threshold(self):
         """Scalping a un seuil SELL recalibré."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.sell_threshold == 20  # [v1.9.5] recalibré 15→20
+        assert p.sell_threshold == 30  # [v1.9.5] recalibré 15→20
 
     def test_scalping_momentum_fade_enabled(self):
         """Scalping active le momentum fade."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.momentum_fade_enabled is True
+        assert p.momentum_fade_enabled is False  # [v2.0.29]
 
     def test_scalping_stale_exit(self):
         """Scalping a un stale exit à 12 minutes (recalibré)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 5
+        assert p.stale_exit_minutes == 30  # [v2.0.29]
 
     def test_conservative_no_new_fields(self):
         """Conservative n'a pas les nouveaux champs activés."""
@@ -560,7 +563,7 @@ class TestFasterExits:
     def test_stale_exit_configured_for_scalping(self):
         """Scalping a stale_exit_minutes = 12 (recalibré v1.8.1)."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.stale_exit_minutes == 5
+        assert p.stale_exit_minutes == 30
 
     def test_momentum_fade_not_on_conservative(self):
         """Conservative n'active pas momentum_fade."""
@@ -570,7 +573,7 @@ class TestFasterExits:
     def test_momentum_fade_on_scalping(self):
         """Scalping active momentum_fade."""
         p = PROFILE_PRESETS["scalping"]
-        assert p.momentum_fade_enabled is True
+        assert p.momentum_fade_enabled is False
 
     def test_paper_service_pnl_at_price(self, db_session):
         """_calc_unrealized_pnl_at_price fonctionne correctement."""

@@ -587,10 +587,18 @@ class PaperTradingService:
                             profile_type=profile_name,
                         )
 
-                if peak_pct >= breakeven_activation and unrealized_pct_now <= 0:
+                # [v2.0.29] Le breakeven inclut les frais de trading.
+                # Un "breakeven" brut à 0% est en réalité une perte nette du montant
+                # des frais round-trip. On relève le seuil pour que la sortie se fasse
+                # quand le PnL brut tombe au niveau du coût des frais.
+                from app.services.trading_cost_service import get_cost_model
+                _be_cost_model = get_cost_model("realistic")
+                _be_fee_pct = _be_cost_model.round_trip_cost_pct()  # ~0.31%
+
+                if peak_pct >= breakeven_activation and unrealized_pct_now <= _be_fee_pct:
                     signal_reason = (
                         f"Breakeven stop : pic {peak_pct:.3f}% (≥ {breakeven_activation:.3f}%), "
-                        f"PnL retombé à {unrealized_pct_now:.3f}% → protection breakeven"
+                        f"PnL retombé à {unrealized_pct_now:.3f}% ≤ frais {_be_fee_pct:.3f}% → protection breakeven net"
                     )
                     closed = self._close_position(open_pos, current_price, signal_reason, "closed_breakeven")
                     _log_tick(action_taken="closed_breakeven", btc_price=current_price,
@@ -2009,8 +2017,17 @@ class PaperTradingService:
         else:
             pnl_pct = (trade.entry_price - exit_price) / trade.entry_price * 100
 
-        # PnL = taille nominale × levier × variation %
-        pnl = trade.position_size_usd * leverage * pnl_pct / 100
+        # [v2.0.29] PnL brut = taille nominale × levier × variation %
+        gross_pnl = trade.position_size_usd * leverage * pnl_pct / 100
+
+        # [v2.0.29] Frais de trading réalistes — round-trip (entrée + sortie)
+        # Coût par côté = 0.155% (taker 0.10% + spread/2 0.025% + slippage 0.03%).
+        # Round-trip = 0.31% de la taille effective.
+        from app.services.trading_cost_service import get_cost_model
+        cost_model = get_cost_model("realistic")
+        effective_size = trade.position_size_usd * leverage
+        trading_fees = cost_model.round_trip_cost_usd(effective_size)
+        pnl = gross_pnl - trading_fees
 
         # Durée
         entry_ts = _ensure_aware(trade.entry_ts)
@@ -2020,6 +2037,8 @@ class PaperTradingService:
         trade.exit_price = exit_price
         trade.pnl = round(pnl, 2)
         trade.pnl_pct = round(pnl_pct, 4)
+        trade.gross_pnl = round(gross_pnl, 2)       # [v2.0.29]
+        trade.trading_fees = round(trading_fees, 2)  # [v2.0.29]
         trade.exit_reason = reason[:500]
         trade.status = status
         trade.exit_ts = now
@@ -2030,6 +2049,7 @@ class PaperTradingService:
         if account:
             account.current_capital += pnl
             account.total_pnl += pnl
+            account.total_fees = (account.total_fees or 0) + trading_fees  # [v2.0.29]
             account.total_trades += 1
             if pnl >= 0:
                 account.winning_trades += 1
@@ -2071,7 +2091,8 @@ class PaperTradingService:
         emoji = "✅" if pnl >= 0 else "❌"
         logger.info(
             f"{emoji} Position fermée ({status}) @ {exit_price:.2f} | "
-            f"PnL={pnl:+.2f} USD ({pnl_pct:+.2f}%) | Levier=x{leverage} | Durée={duration:.1f}h"
+            f"PnL brut={gross_pnl:+.2f} - frais={trading_fees:.2f} = net={pnl:+.2f} USD ({pnl_pct:+.2f}%) | "
+            f"Levier=x{leverage} | Durée={duration:.1f}h"
         )
         return trade
 
@@ -2483,7 +2504,7 @@ class PaperTradingService:
 
     def get_trades(
         self,
-        limit: int = 50,
+        limit: int = 10000,
         offset: int = 0,
         status_filter: Optional[str] = None,
     ) -> tuple[list[PaperTrade], int]:
@@ -2555,6 +2576,7 @@ class PaperTradingService:
             current_capital=account.current_capital,
             total_pnl=account.total_pnl,
             total_pnl_pct=account.total_pnl_pct,
+            total_fees=getattr(account, "total_fees", None) or 0.0,  # [v2.0.29]
             peak_capital=account.peak_capital,
             max_drawdown_pct=account.max_drawdown_pct,
             btc_price_at_start=account.btc_price_at_start,

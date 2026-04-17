@@ -1784,7 +1784,7 @@ class TestAggressiveSlotCalibration:
         from app.services.trading_profile_service import PROFILE_PRESETS
         agg = PROFILE_PRESETS["aggressive"]
         scl = PROFILE_PRESETS["scalping"]
-        assert agg.economic_gate_enabled is False
+        assert agg.economic_gate_enabled is True
         assert scl.economic_gate_enabled is True
 
     def test_aggressive_no_structural_proofs(self):
@@ -1799,7 +1799,7 @@ class TestAggressiveSlotCalibration:
         agg = PROFILE_PRESETS["aggressive"]
         scl = PROFILE_PRESETS["scalping"]
         assert agg.stale_exit_minutes == 180
-        assert scl.stale_exit_minutes == 5
+        assert scl.stale_exit_minutes == 30
         assert agg.stale_exit_minutes > scl.stale_exit_minutes * 5
 
     def test_aggressive_uses_1h_in_tick(self, db_session):

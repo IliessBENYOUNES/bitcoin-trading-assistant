@@ -83,47 +83,47 @@ class TestScalpingParamsV195:
 
     def test_loss_cut_pct(self):
         """SL resserré → 0.20%."""
-        assert PROFILE_PRESETS["scalping"].loss_cut_pct == 0.20
+        assert PROFILE_PRESETS["scalping"].loss_cut_pct == 0.50
 
     def test_profit_take_pct(self):
         """[v2.0.0] TP élargi de 0.6% → 0.8%."""
-        assert PROFILE_PRESETS["scalping"].profit_take_pct == 0.8
+        assert PROFILE_PRESETS["scalping"].profit_take_pct == 1.5
 
     def test_trailing_stop_activation(self):
         """[v2.0.9] Activation trailing abaissée à 0.02% — protège dès ~$0.50."""
-        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.04
+        assert PROFILE_PRESETS["scalping"].trailing_stop_activation_pct == 0.40
 
     def test_trailing_stop_pct(self):
         """Trail fallback absolu à 0.06%."""
-        assert PROFILE_PRESETS["scalping"].trailing_stop_pct == 0.06
+        assert PROFILE_PRESETS["scalping"].trailing_stop_pct == 0.20
 
     def test_trailing_drop_ratio(self):
         """[v2.0.9] Drop ratio relatif à 3% — exit dès que gain baisse de 3% du pic."""
-        assert PROFILE_PRESETS["scalping"].trailing_stop_drop_ratio == 0.15
+        assert PROFILE_PRESETS["scalping"].trailing_stop_drop_ratio == 0.25
 
     def test_buy_threshold(self):
         """[v2.0.3] Buy threshold relevé de 25 → 30."""
-        assert PROFILE_PRESETS["scalping"].buy_threshold == 30
+        assert PROFILE_PRESETS["scalping"].buy_threshold == 40
 
     def test_sell_threshold(self):
         """Sell threshold relevé de 15 → 20."""
-        assert PROFILE_PRESETS["scalping"].sell_threshold == 20
+        assert PROFILE_PRESETS["scalping"].sell_threshold == 30
 
     def test_min_score(self):
         """[v2.0.3] Min score relevé de 25 → 30."""
-        assert PROFILE_PRESETS["scalping"].min_score == 30
+        assert PROFILE_PRESETS["scalping"].min_score == 40
 
     def test_short_min_score(self):
         """[v2.0.3] Short min score aligné à 30 avec min_score relevé."""
-        assert PROFILE_PRESETS["scalping"].short_min_score == 30
+        assert PROFILE_PRESETS["scalping"].short_min_score == 40
 
     def test_short_exit_score_threshold(self):
         """Short exit threshold → 30 (v1.9.6)."""
-        assert PROFILE_PRESETS["scalping"].short_exit_score_threshold == 30
+        assert PROFILE_PRESETS["scalping"].short_exit_score_threshold == 40
 
     def test_short_min_hold_seconds(self):
         """Short min hold → 45 (v1.9.6)."""
-        assert PROFILE_PRESETS["scalping"].short_min_hold_seconds == 45
+        assert PROFILE_PRESETS["scalping"].short_min_hold_seconds == 300
 
     def test_momentum_fade_retention(self):
         """Momentum fade retention configuré à 0.55."""
@@ -131,7 +131,7 @@ class TestScalpingParamsV195:
 
     def test_stale_negative_exit_minutes(self):
         """Stale négatif = 5 min (v1.9.6)."""
-        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 2
+        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 10
 
     def test_rr_ratio_theoretical(self):
         """[v2.0.0] Ratio R:R théorique = TP/SL = 0.8/0.20 = 4.0."""
@@ -442,7 +442,7 @@ class TestStaleNegativeExit:
     def test_param_exists(self):
         """Le paramètre stale_negative_exit_minutes existe."""
         assert hasattr(PROFILE_PRESETS["scalping"], "stale_negative_exit_minutes")
-        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 2
+        assert PROFILE_PRESETS["scalping"].stale_negative_exit_minutes == 10
 
     def test_param_default_none_other_profiles(self):
         """Les autres profils n'ont pas ce paramètre (None)."""
@@ -870,12 +870,12 @@ class TestStaleExitV196:
     def test_stale_negative_exit_minutes_reduced(self):
         """Le stale_negative_exit_minutes est à 5 (au lieu de 8)."""
         params = PROFILE_PRESETS["scalping"]
-        assert params.stale_negative_exit_minutes == 2
+        assert params.stale_negative_exit_minutes == 10
 
     def test_sl_tighter_at_020(self):
         """Le SL est à 0.20% pour limiter les grosses pertes."""
         params = PROFILE_PRESETS["scalping"]
-        assert params.loss_cut_pct == 0.20
+        assert params.loss_cut_pct == 0.50
 
     def test_rr_theoretical_3_to_1(self):
         """[v2.0.0] Le R:R théorique est TP/SL = 0.8/0.20 = 4:1."""
@@ -890,14 +890,14 @@ class TestShortRebalanceV196:
     def test_short_min_score_25(self):
         """[v2.0.3] Short min score aligné à 30 avec min_score relevé."""
         params = PROFILE_PRESETS["scalping"]
-        assert params.short_min_score == 30
+        assert params.short_min_score == 40
 
     def test_short_exit_threshold_30(self):
         """Short exit score threshold remonté à 30 pour laisser respirer."""
         params = PROFILE_PRESETS["scalping"]
-        assert params.short_exit_score_threshold == 30
+        assert params.short_exit_score_threshold == 40
 
     def test_short_min_hold_45(self):
         """Short min hold à 45s pour compromis capture rapide."""
         params = PROFILE_PRESETS["scalping"]
-        assert params.short_min_hold_seconds == 45
+        assert params.short_min_hold_seconds == 300

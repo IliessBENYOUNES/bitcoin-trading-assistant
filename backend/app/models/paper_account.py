@@ -33,6 +33,8 @@ class PaperAccount(Base):
     win_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     max_drawdown_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     sharpe_ratio: Mapped[float] = mapped_column(Float, nullable=True)
+    # [v2.0.29] Cumul des frais de trading payés
+    total_fees: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
     # --- Configuration ---
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -142,6 +144,9 @@ class PaperTrade(Base):
     # --- PnL ---
     pnl: Mapped[float] = mapped_column(Float, nullable=True)
     pnl_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    # [v2.0.29] Frais de trading réalistes — gross_pnl avant frais, trading_fees déduits
+    gross_pnl: Mapped[float] = mapped_column(Float, nullable=True)
+    trading_fees: Mapped[float] = mapped_column(Float, nullable=True, default=0.0)
 
     # --- Raisons ---
     entry_reason: Mapped[str] = mapped_column(String(500), nullable=False)

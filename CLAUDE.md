@@ -419,6 +419,48 @@ class TestXxxEndpoint:
 
 ---
 
+## Règle n°13 — Relancer les serveurs (procédure obligatoire)
+
+> Quand l'utilisateur dit **"relance les serveurs"**, appliquer cette procédure **exactement** :
+
+### Étape 1 : Kill tout
+```powershell
+taskkill /F /IM python.exe 2>$null ; taskkill /F /IM node.exe 2>$null ; Start-Sleep 2
+```
+
+### Étape 2 : Lancer les 4 serveurs (chacun dans sa propre fenêtre PowerShell)
+```powershell
+# Backend MAIN (port 8000)
+Start-Process powershell -ArgumentList "-Command","cd C:\Users\ilies\git\bitcoin-trading-assistant\backend; .\venv\Scripts\activate; python -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
+
+# Backend EXPERIMENTAL (port 8001)
+Start-Process powershell -ArgumentList "-Command","cd C:\Users\ilies\git\bitcoin-trading-v2-experiment\backend; .\venv\Scripts\activate; python -m uvicorn app.main:app --host 127.0.0.1 --port 8001"
+
+# Frontend MAIN (port 5173)
+Start-Process powershell -ArgumentList "-Command","cd C:\Users\ilies\git\bitcoin-trading-assistant\frontend; npx vite --port 5173"
+
+# Frontend EXPERIMENTAL (port 5174)
+Start-Process powershell -ArgumentList "-Command","cd C:\Users\ilies\git\bitcoin-trading-v2-experiment\frontend; npx vite --port 5174"
+```
+
+### Étape 3 : Vérifier (attendre ~10s puis)
+```powershell
+netstat -ano | findstr "LISTENING" | findstr "8000"
+netstat -ano | findstr "LISTENING" | findstr "8001"
+netstat -ano | findstr "LISTENING" | findstr "5173"
+netstat -ano | findstr "LISTENING" | findstr "5174"
+```
+
+### Mapping des ports
+```
+MAIN :          Backend 8000  ←→  Frontend 5173
+EXPERIMENTAL :  Backend 8001  ←→  Frontend 5174
+```
+
+> ⚠️ **Utiliser `Start-Process powershell`** pour chaque serveur (fenêtre séparée). Ne PAS utiliser les terminaux background de l'IDE qui s'engorgent. Voir `docs/SERVERS.md` pour la documentation complète.
+
+---
+
 ## Commandes utiles
 
 ```bash

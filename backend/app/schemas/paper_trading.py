@@ -128,6 +128,8 @@ class PaperTradeExportItem(BaseModel):
     exit_candle_direction: Optional[str] = None  # v2.0.16 — "green"/"red"/null
     pnl: Optional[float] = None
     pnl_pct: Optional[float] = None
+    gross_pnl: Optional[float] = None       # [v2.0.29] PnL avant frais
+    trading_fees: Optional[float] = None     # [v2.0.29] Frais de trading déduits
     entry_reason: str
     exit_reason: Optional[str] = None
     decision_score: Optional[float] = None
@@ -151,6 +153,7 @@ class PaperExportAccountSummary(BaseModel):
     current_capital: float
     total_pnl: float
     total_pnl_pct: float
+    total_fees: float = 0.0  # [v2.0.29] Cumul des frais de trading
     peak_capital: float
     max_drawdown_pct: float
     btc_price_at_start: Optional[float] = None
