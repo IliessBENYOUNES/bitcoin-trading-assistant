@@ -1233,9 +1233,7 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
             value={formatPnl(account.total_pnl_pct, '%')}
             color={pnlColor(account.total_pnl_pct)}
           />
-          {account.total_fees != null && account.total_fees > 0 && (
-            <MetricBox label="Frais payés" value={`-${account.total_fees.toFixed(2)} $`} color="#ff9800" />
-          )}
+          {<MetricBox label="Frais payés" value={`-${(account.total_fees ?? 0).toFixed(2)} $`} color="#ff9800" />}
           <MetricBox label="Trades" value={`${metrics.total_trades}`} />
           <MetricBox
             label="Win Rate"
