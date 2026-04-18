@@ -1202,6 +1202,11 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
             value={formatPnl(account.total_pnl_pct, '%')}
             color={pnlColor(account.total_pnl_pct)}
           />
+          <MetricBox
+            label="Frais payés"
+            value={`-${(account.total_fees ?? 0).toFixed(2)} $`}
+            color="#ff9800"
+          />
           <MetricBox label="Trades" value={`${metrics.total_trades}`} />
           <MetricBox
             label="Win Rate"
@@ -1525,7 +1530,9 @@ export default function PaperTradingPanel({ onTradeExecuted, onResetComplete }: 
                 <TableCell>Direction</TableCell>
                 <TableCell align="right">Entrée</TableCell>
                 <TableCell align="right">Sortie</TableCell>
-                <TableCell align="right">PnL</TableCell>
+                <TableCell align="right">Brut</TableCell>
+                <TableCell align="right">Frais</TableCell>
+                <TableCell align="right">Net</TableCell>
                 <TableCell align="right">PnL %</TableCell>
                 <TableCell align="right">Durée</TableCell>
                 <TableCell>Heure</TableCell>
@@ -1597,6 +1604,12 @@ function TradeRow({ trade }: { trade: PaperTradeItem }) {
       <TableCell align="right">${trade.entry_price.toLocaleString()}</TableCell>
       <TableCell align="right">
         {trade.exit_price ? `$${trade.exit_price.toLocaleString()}` : '—'}
+      </TableCell>
+      <TableCell align="right" sx={{ color: pnlColor(trade.gross_pnl ?? trade.pnl) }}>
+        {formatPnl(trade.gross_pnl ?? trade.pnl, '$')}
+      </TableCell>
+      <TableCell align="right" sx={{ color: '#ff9800' }}>
+        {trade.trading_fees != null ? `-${trade.trading_fees.toFixed(2)}` : '—'}
       </TableCell>
       <TableCell align="right" sx={{ color: pnlColor(trade.pnl), fontWeight: 700 }}>
         {formatPnl(trade.pnl, '$')}

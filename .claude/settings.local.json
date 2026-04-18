@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/ilies/git/bitcoin-trading-v2-experiment/backend/**)"
+    ]
+  }
+}

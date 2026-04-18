@@ -680,6 +680,8 @@ export interface PaperTradeItem {
   exit_candle_direction?: string | null; // v2.0.16 — "green"/"red"/null (à la sortie)
   duration_seconds?: number | null; // v2.0.16 — durée exacte en secondes
   reversal_delay_seconds?: number | null; // v2.0.18 — délai reversal (sec entre color flip et exit)
+  gross_pnl?: number | null; // v2.0.30 — PnL brut (avant frais)
+  trading_fees?: number | null; // v2.0.30 — frais de trading déduits
 }
 
 export interface PaperAccountItem {
@@ -700,6 +702,7 @@ export interface PaperAccountItem {
   active_profile?: string; // v2.0.6 — profil actif certifié par le backend
   btc_price_at_start: number | null;
   peak_capital: number;
+  total_fees?: number | null; // v2.0.30 — total frais payés
   created_at: string | null;
   updated_at: string | null;
   open_position: PaperTradeItem | null;
