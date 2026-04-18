@@ -2,6 +2,8 @@
 
 ## Date : 18 avril 2026 — v2.0.30 (experimental multi-strategy)
 
+> **Push test 2026-04-18 01:28 UTC** — Identité IliessBENYOUNES confirmée sur experiment/v2-fees-and-1m.
+
 ---
 
 ## Problème
