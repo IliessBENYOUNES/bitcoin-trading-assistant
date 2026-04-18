@@ -68,10 +68,11 @@ class TestMicroStopLossProfileParams:
     """Vérifier que le paramètre est bien configuré sur le profil scalping."""
 
     def test_scalping_has_micro_sl(self):
-        """Le profil scalping a un micro_stop_loss_pct configuré."""
+        """[v2.0.30] Le profil scalping a DÉSACTIVÉ le micro SL (audit: 184 coupures, -$364).
+        Le SL classique à 0.50% reste actif comme filet de sécurité.
+        """
         p = PROFILE_PRESETS["scalping"]
-        assert p.micro_stop_loss_pct is not None
-        assert p.micro_stop_loss_pct == 0.20
+        assert p.micro_stop_loss_pct is None
 
     def test_balanced_has_no_micro_sl(self):
         """Le profil balanced n'a PAS de micro SL (désactivé par défaut)."""

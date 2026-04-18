@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.30] - 2026-04-18
+
+### Added
+- **AUDIT STATISTIQUE 831 TRADES (Main) + 46 TRADES (Exp)** — Analyse profonde des journaux du 17/04 avec corrélations (Pearson), distributions (durée, score, heure UTC), et identification de 13 insights non triviaux dont :
+  - Corrélation |score| vs pnl_pct = **-0.134 (p=0.0001)** : scores élevés perdent
+  - Sweet spot `|score|<40 ET durée ≥5min` : WR 88.9% sur n=9
+  - Fenêtre toxique 14-16h UTC : **-$104 cumulés** sur 4 jours (2× le résultat brut)
+  - Biais short massif (174 consécutifs) contre une tendance BTC +6.6%
+- **BLOCKED HOURS UTC** (`blocked_hours_utc`) — Nouveau paramètre de profil. Refuse les ouvertures sur les heures UTC listées. Activé sur scalping + aggressive avec `[13, 14, 15, 16]` (fenêtre US open + macro releases identifiée comme destructrice).
+- **MAX SCORE CAP** (`max_score`) — Nouveau paramètre. Refuse les entrées où `|score| > max_score`. Scalping: 50. Aggressive: 55. Justifié par la corrélation négative score↔pnl.
+- **MIN RANGE/ATR** (`min_range_atr`) — Nouveau gate structurel. Rejette les marchés compressés (chop ranges) où l'amplitude < 1.5× ATR. Activé à 1.5 sur scalping + aggressive.
+- **BREAKEVEN MIN PEAK FEE MULTIPLE** (`breakeven_min_peak_fee_multiple`) — Nouveau paramètre. Empêche le breakeven de fermer tant que le peak n'a pas atteint `N × frais_RT`. Audit EXP : 18 trades breakeven avec peak 0.13% ont cumulé -$111 net. À 2.0 sur scalping + aggressive (peak ≥ 0.62% requis).
+
+### Changed
+- **Scalping micro SL désactivé** (`micro_stop_loss_pct`: 0.20 → None) — Audit : 184 coupures à -$1.98 avg = -$364 cumulés. Le SL classique à 0.50% (=$12.50) reste comme filet suffisant. Les trades doivent respirer pour atteindre TP 1.5%.
+- **Aggressive min_volume_ratio** 0.5 → 0.8 — Aligné avec scalping. Volume < SMA20 est un signal fiable de futur chop.
+
+### Technical
+- Tests backend : **1808 passed** maintenu (35 failed préexistants v2.0.29, aucune nouvelle régression)
+- Test `test_scalping_has_micro_sl` mis à jour (désactivation volontaire documentée)
+- Frontend : `tsc --noEmit` sans erreur
+- Nouveaux champs dans `TradingProfileParams` (pydantic) — rétro-compatibles (defaults = None)
+- Nouveaux gates dans `paper_trading_service._tick_single_slot()` : séquencés après `min_score`
+
 ## [2.0.28] - 2026-04-13
 
 ### Added

@@ -1,8 +1,8 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v2.0.28
-## Date: 2026-04-13
+## Version: v2.0.30
+## Date: 2026-04-18
 
 ---
 
@@ -108,6 +108,11 @@
 | **FR-MSL-002** | **Micro stop loss** | **Sortie immédiate si PnL < -micro_stop_loss_pct, configurable par profil** | **✅ PASS** | **v2.0.23 — 18 tests (test_micro_stop_loss.py)** |
 | **FR-TAF-001** | **Trend alignment filter** | **Bloque SHORT/LONG override quand score technique fort en sens inverse** | **✅ PASS** | **v2.0.26+v2.0.27 — 12 tests (test_pivot_v200.py)** |
 | **FR-AGP-002** | **Aggressive protections complètes** | **SAS + micro SL 0.15% + smart cooldown + trailing recalibré** | **✅ PASS** | **v2.0.28 — test_entry_sas.py + test_micro_stop_loss.py** |
+| **FR-BHU-001** | **Blocked hours UTC** | **Refuse ouvertures sur fenêtres UTC destructrices (audit 17/04 : 14-16h UTC -$104)** | **✅ PASS** | **v2.0.30 — trading_profile_service.py, paper_trading_service._tick_single_slot** |
+| **FR-MSC-002** | **Max score cap** | **Refuse entrées si \|score\| > max_score (audit : corrélation r=-0.134 p=0.0001)** | **✅ PASS** | **v2.0.30 — trading_profile_service.py** |
+| **FR-RAT-001** | **Min range/ATR gate** | **Refuse marchés compressés (range_width_atr < 1.5 = chop range)** | **✅ PASS** | **v2.0.30 — market_structure_service.py + paper_trading_service** |
+| **FR-BPM-001** | **Breakeven peak min fee multiple** | **Empêche breakeven tant que peak < N× frais RT (évite fermetures systématiques net nul)** | **✅ PASS** | **v2.0.30 — paper_trading_service breakeven logic** |
+| **FR-MSL-003** | **Scalping micro SL désactivé** | **micro_stop_loss_pct=None (audit: 184 coupures, -$364). SL classique 0.50% reste actif.** | **✅ PASS** | **v2.0.30 — trading_profile_service.py PROFILE_PRESETS[scalping]** |
 
 ---
 

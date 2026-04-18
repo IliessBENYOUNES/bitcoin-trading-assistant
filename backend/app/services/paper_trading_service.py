@@ -595,9 +595,15 @@ class PaperTradingService:
                 _be_cost_model = get_cost_model("realistic")
                 _be_fee_pct = _be_cost_model.round_trip_cost_pct()  # ~0.31%
 
-                if peak_pct >= breakeven_activation and unrealized_pct_now <= _be_fee_pct:
+                # [v2.0.30] Gate sur l'amplitude du pic — audit EXP: 18 breakevens avec peak moyen
+                # 0.13% ont tous fini net négatif (-$111 cum). Le breakeven ne doit se déclencher
+                # que si le trade a eu une réelle poche de profit (pic > N× frais).
+                _be_peak_mult = getattr(profile_params, "breakeven_min_peak_fee_multiple", None) if profile_params else None
+                _be_peak_min_pct = (_be_peak_mult * _be_fee_pct) if _be_peak_mult else breakeven_activation
+
+                if peak_pct >= _be_peak_min_pct and unrealized_pct_now <= _be_fee_pct:
                     signal_reason = (
-                        f"Breakeven stop : pic {peak_pct:.3f}% (≥ {breakeven_activation:.3f}%), "
+                        f"Breakeven stop : pic {peak_pct:.3f}% (≥ {_be_peak_min_pct:.3f}%), "
                         f"PnL retombé à {unrealized_pct_now:.3f}% ≤ frais {_be_fee_pct:.3f}% → protection breakeven net"
                     )
                     closed = self._close_position(open_pos, current_price, signal_reason, "closed_breakeven")
@@ -1538,6 +1544,37 @@ class PaperTradingService:
                         non_trade_reason="bearish_veto",
                     )
 
+            # [v2.0.30] MIN RANGE/ATR GATE — Rejet des marchés compressés (chop range).
+            # Audit 17/04/2026 : aucun trade gagnant significatif n'a eu lieu en range < 1.5x ATR.
+            # Le range_width_atr est fourni par MarketStructureService, déjà calculé plus haut.
+            # Gate placé après le veto bearish pour bénéficier de mq_data sans recalcul.
+            min_range_atr_req = getattr(profile_params, "min_range_atr", None) if profile_params else None
+            if min_range_atr_req is not None and mq_data:
+                rw_atr = mq_data.get("range_width_atr", 0) or 0
+                if rw_atr < min_range_atr_req:
+                    detail = (
+                        f"Gate ATR : range {rw_atr:.2f}x ATR < {min_range_atr_req:.2f} requis — "
+                        f"marché compressé, amplitude insuffisante pour couvrir les frais"
+                    )
+                    _log_tick(action_taken="hold", btc_price=current_price,
+                              decision_score=score, decision_action=action,
+                              decision_confidence=confidence,
+                              reason_no_trade="range_too_tight",
+                              reason_detail=detail[:500],
+                              quality_gate_passed=True,
+                              rejection_category="structure",
+                              **_qg_log, **_econ_log)
+                    return PaperTickResult(
+                        action_taken="hold",
+                        detail=detail,
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        decision_score=score,
+                        decision_action=action,
+                        profile_type=profile_name,
+                        non_trade_reason="range_too_tight",
+                    )
+
             # [v2.0.13] TICK MOMENTUM CONFIRMATION — Gate d'entrée par micro price-action.
             # [v2.0.14] SKIPPÉ quand override est actif (la direction est déjà confirmée).
             # En mode non-override (profils classiques), ce gate vérifie que le prix va
@@ -1604,6 +1641,55 @@ class PaperTradingService:
                     profile_type=profile_name,
                     non_trade_reason=reason,
                 )
+
+            # [v2.0.30] MAX SCORE CAP — Refuser les entrées où le score est TROP élevé.
+            # Audit stats 17/04/2026 : corrélation |score| vs pnl_pct = -0.134 (p=0.0001).
+            # Les scores 60-80 (n=705 sur MAIN) ont WR 48% = pur aléatoire.
+            # Les scores 20-40 (n=26) ont WR 65% = vrai edge. Le score élevé = signal déjà
+            # consommé par le marché → entrée au sommet. Le cap force les signaux EN FORMATION.
+            max_score_cap = getattr(profile_params, "max_score", None) if profile_params else None
+            if max_score_cap is not None and abs(score) > max_score_cap and not scalping_reversal:
+                reason = "score_too_high"
+                detail = f"Score {score} > cap profil {max_score_cap} (signal probablement déjà consommé par le marché)"
+                _log_tick(action_taken="hold", btc_price=current_price,
+                          decision_score=score, decision_action=action,
+                          decision_confidence=confidence,
+                          reason_no_trade=reason, reason_detail=detail)
+                return PaperTickResult(
+                    action_taken="hold",
+                    detail=f"Signal saturé pour profil {profile_name} : {detail}",
+                    current_price=current_price,
+                    timestamp=now.isoformat(),
+                    decision_score=score,
+                    decision_action=action,
+                    profile_type=profile_name,
+                    non_trade_reason=reason,
+                )
+
+            # [v2.0.30] BLOCKED HOURS UTC — Refuser les ouvertures dans les fenêtres toxiques.
+            # Audit temporel 17/04/2026 sur MAIN : les heures 13-16h UTC ont cumulé -$104
+            # soit 2× le résultat brut de la période. 14h UTC seule = -$55 (US open + macro).
+            # Les positions DÉJÀ ouvertes ne sont PAS affectées (sorties normales).
+            blocked_hours = getattr(profile_params, "blocked_hours_utc", None) if profile_params else None
+            if blocked_hours:
+                current_hour_utc = now.astimezone(timezone.utc).hour
+                if current_hour_utc in blocked_hours:
+                    reason = "blocked_hour_utc"
+                    detail = f"Heure UTC {current_hour_utc}h dans fenêtre bloquée {sorted(blocked_hours)} (audit: perte systémique)"
+                    _log_tick(action_taken="hold", btc_price=current_price,
+                              decision_score=score, decision_action=action,
+                              decision_confidence=confidence,
+                              reason_no_trade=reason, reason_detail=detail)
+                    return PaperTickResult(
+                        action_taken="hold",
+                        detail=f"Fenêtre horaire toxique : {detail}",
+                        current_price=current_price,
+                        timestamp=now.isoformat(),
+                        decision_score=score,
+                        decision_action=action,
+                        profile_type=profile_name,
+                        non_trade_reason=reason,
+                    )
 
             # [v1.5] Vérification cooldown
             cooldown_min = profile_params.cooldown_minutes if profile_params else 120

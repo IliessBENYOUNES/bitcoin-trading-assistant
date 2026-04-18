@@ -104,7 +104,9 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # = $0.40 brut = $-7.35 net. Catastrophique avec les frais.
         gain_erosion_ratio=None,
         min_market_quality=25,
-        min_volume_ratio=0.5,
+        # [v2.0.30] Volume ratio relevé 0.5→0.8 — aligné avec scalping. L'audit montre que
+        # le volume faible (< SMA20) est systématiquement un signal de futur chop.
+        min_volume_ratio=0.8,
         # [v2.0.29] Gate économique ACTIVÉ : obligatoire maintenant que les frais
         # sont intégrés. Chaque trade doit pouvoir couvrir 2× les frais.
         economic_gate_enabled=True,
@@ -121,6 +123,16 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         smart_cooldown_enabled=True,
         min_cooldown_minutes=5.0,
         max_cooldown_minutes=15.0,
+        # [v2.0.30] MAX SCORE CAP — audit r=-0.134 significatif. Les scores >50 sur les
+        # swings 1h aggressive arrivent trop tard (signal déjà digéré). Cap à 55 pour
+        # laisser une marge d'écart de mesure tout en éliminant le cluster destructeur.
+        max_score=55,
+        # [v2.0.30] Blocked hours UTC — US open + macro. Audit MAIN: -$104 cum sur 14-16h.
+        blocked_hours_utc=[13, 14, 15, 16],
+        # [v2.0.30] Breakeven peak min = 2× frais = 0.62%.
+        breakeven_min_peak_fee_multiple=2.0,
+        # [v2.0.30] Min range/ATR — rejette les chop ranges où 0.62% est inatteignable.
+        min_range_atr=1.5,
     ),
     # [v2.0.29] REFONTE COMPLETE — Scalping transformé en "swing court".
     # AUDIT 17/04/2026 :
@@ -209,10 +221,24 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         entry_sas_duration_seconds=15.0,
         entry_sas_min_positive_seconds=10.0,
         entry_sas_range_caution=True,
-        # [v2.0.29] Micro SL élargi 0.05→0.20% : respiration sur des trades de 5-30 min
-        # 0.20% = $5 de perte max avant SL classique à 0.50% = $12.50
-        micro_stop_loss_pct=0.20,
+        # [v2.0.30] MICRO SL DÉSACTIVÉ — audit: 184 coupures à -$1.98 avg = -$364 cumulés
+        # sur scalping MAIN. Le micro_sl à 0.20% coupe avant que le trade puisse se
+        # développer. Le SL classique à 0.50% (=$12.50) reste actif et suffit comme filet.
+        # Les trades doivent avoir le droit de respirer pour atteindre le TP 1.5%.
+        micro_stop_loss_pct=None,
         trend_alignment_score_threshold=50,
+        # [v2.0.30] MAX SCORE CAP — audit: bande score 60-80 représente 85% des trades MAIN
+        # et a WR 48% (aléatoire). Bande 20-50 a WR 55-65%. Cap à 50 pour canaliser les
+        # entrées vers la zone à edge statistique avéré.
+        max_score=50,
+        # [v2.0.30] Blocked hours UTC — fenêtre US open macro (NFP/CPI/FOMC).
+        blocked_hours_utc=[13, 14, 15, 16],
+        # [v2.0.30] Breakeven peak min = 2× frais = 0.62%. Empêche les breakevens sur peak
+        # < 0.31% (identifiés comme 100% net-loss dans l'audit EXP : 18 trades, -$111 cum).
+        breakeven_min_peak_fee_multiple=2.0,
+        # [v2.0.30] Min range/ATR 1.5 — rejette les marchés compressés où aucun trade
+        # scalping ne peut capturer > 0.62% (nécessaire pour couvrir 2× frais).
+        min_range_atr=1.5,
     ),
 }
 

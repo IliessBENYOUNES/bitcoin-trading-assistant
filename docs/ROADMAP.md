@@ -80,9 +80,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v2.0.28 livré — Refonte protections aggressive + cooldown scalping optimisé
+### État actuel : v2.0.30 livré — 4 nouveaux gates issus de l'audit statistique 831 trades
 
-> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. Les versions v2.0.1 à v2.0.28 ont itéré sur les protections runtime : SAS d'entrée, micro stop loss, trend alignment filter, candle direction override, momentum stability, downtrend protection, aggressive slot protection, cooldown recalibrés. **1808 tests passing.**
+> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. Les versions v2.0.1 à v2.0.30 ont itéré sur les protections runtime. **v2.0.30** introduit 4 nouveaux gates fondés sur une analyse statistique profonde (corrélations Pearson, distributions, heatmaps) de 831+46 trades : `blocked_hours_utc` (14-16h UTC = -$104 cum), `max_score` (r=-0.134 significatif), `min_range_atr` (chop range filter), `breakeven_min_peak_fee_multiple` (corrige la destruction nette systématique des breakevens EXP). Le micro_sl scalping (184 coupures, -$364 cum) est désactivé. **1773 passing / 35 régressions v2.0.29 préexistantes** — aucune régression nouvelle.
 
 | Composant | Status |
 |-----------|--------|
@@ -691,6 +691,8 @@ Aujourd'hui, le moteur de décision est **rule-based** : 8 règles écrites à l
 │       ├── [✅] v2.0.19-v2.0.22 — Aggressive protection, override anti-churn, SAS d'entrée sécurisé
 │       ├── [✅] v2.0.23-v2.0.25 — Micro stop loss, cooldown recalibré, SL/TP stop-limit
 │       └── [✅] v2.0.26-v2.0.28 — Trend alignment filter symétrique, mini chart, refonte protections aggressive
+│       └── [✅] v2.0.29 — Integration frais réalistes Binance 0.31% RT, refonte profils scalping/aggressive
+│       └── [✅] v2.0.30 — 4 gates audit statistique : blocked_hours_utc, max_score, min_range_atr, breakeven_min_peak_fee_multiple + micro_sl scalping OFF
 │
 ├── Mai — Juin
 │   └── [ ] v2.1+ — INFINI Mode Autonome réel (exécution exchange)

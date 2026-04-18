@@ -399,6 +399,29 @@ Avec les nouvelles regles :
 
 ## 6. Historique des corrections
 
+### v2.0.30 — 18 avril 2026 — Gates statistiques
+
+**Contexte :** Audit statistique approfondi des 2 journaux (831 + 46 trades) avec corrélations Pearson,
+distributions, heatmaps score×duree, et identification de 13 insights non triviaux.
+
+**Modifications livrées :**
+- [x] `blocked_hours_utc=[13,14,15,16]` sur scalping + aggressive (audit : -$104 cum sur ces 3h)
+- [x] `max_score=50` (scalping) / `55` (aggressive) — corrélation r=-0.134 p=0.0001 significative
+- [x] `min_range_atr=1.5` — rejette chop ranges (amplitude insuffisante pour couvrir 2× frais)
+- [x] `breakeven_min_peak_fee_multiple=2.0` — empêche fermetures breakeven à net nul (18 trades EXP, -$111)
+- [x] `micro_stop_loss_pct=None` sur scalping — désactive 184 coupures destructrices (-$364 cum)
+- [x] `min_volume_ratio=0.8` aggressive (aligné scalping) — volume faible = chop à venir
+- [x] Tests : 1773 passed / 35 failed (baseline préservée, aucune régression nouvelle)
+
+**Metriques de succes attendues (à valider en Session 4 sur 7j laptop perso) :**
+- PnL net positif sur 7j de trading
+- 10-20 trades/jour scalping (au lieu de 200)
+- Moins de 20 trades/jour aggressive
+- WR net > 50% (au lieu de 4% sur EXP / 48% sur MAIN)
+- Durée moyenne > 5 min (au lieu de 82s)
+- Aucun trade ouvert entre 13-16h UTC
+- Aucun trade ouvert avec |score| > 50 (scalping) / 55 (aggressive)
+
 ### v2.0.29-fees — 17 avril 2026 (PLANIFIE)
 
 **Objectif :** Rendre le moteur MAIN realiste et viable economiquement.

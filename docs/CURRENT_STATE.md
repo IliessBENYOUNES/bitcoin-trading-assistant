@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
-> **Dernière mise à jour :** 13 avril 2026
-> **Version :** v2.0.28
+> **Dernière mise à jour :** 18 avril 2026
+> **Version :** v2.0.30
 > **Branche :** `master`
-> **Dernier commit :** feat(profiles): refonte protections aggressive + cooldown scalping réduit v2.0.28
+> **Dernier commit :** feat(trading): v2.0.30 — 4 gates issus de l'audit statistique 831 trades (blocked hours, max score, min range/ATR, breakeven peak min)
 
 ---
 
@@ -13,13 +13,13 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.28** |
+| Version courante | **v2.0.30** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1808 tests**, tous passing ✅ |
+| Tests backend | **1773 passed / 35 régressions v2.0.29 préexistantes** (aucune régression nouvelle introduite par v2.0.30) |
 | Frontend build | **tsc + vite build** sans erreur ✅ |
-| Phase courante | **v2.0.28 livré** — Refonte protections aggressive + cooldown scalping optimisé |
+| Phase courante | **v2.0.30 livré** — 4 nouveaux gates issus de l'audit statistique 831 trades (blocked_hours_utc, max_score, min_range_atr, breakeven_min_peak_fee_multiple) + micro_sl scalping désactivé |
 
 ### ⚠️ État de maturité honnête
 

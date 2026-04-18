@@ -210,6 +210,45 @@ class TradingProfileParams(BaseModel):
     # technique est > +50 (nettement bullish), pas de short. None = filtre désactivé.
     # Ne bloque PAS les shorts non-override (mean_reversion) ni les LONGs.
     trend_alignment_score_threshold: Optional[float] = Field(default=None, description="Score au-dessus duquel les SHORTs tick_override sont bloqués. None=désactivé.")
+    # [v2.0.30] MAX SCORE CAP — Refuse les entrées quand le score absolu est TROP élevé.
+    # L'audit statistique du 17/04/2026 sur 831 trades MAIN montre :
+    #  - Corrélation |score| vs pnl_pct : r=-0.134 (p=0.0001) — statistiquement significative
+    #  - Score 20-40 (n=26)  : WR 65%  avg +0.22% (pépite)
+    #  - Score 40-60 (n=100) : WR 51%  avg ~0.00% (neutre)
+    #  - Score 60-80 (n=705) : WR 48%  avg ~-0.007% (destructeur en volume)
+    # Explication probable : le score élevé arrive en RETARD (signal déjà digéré par le
+    # marché) → entrée au sommet. Le cap force le moteur à ne prendre que les signaux
+    # EN FORMATION plutôt que les signaux DÉJÀ CONSOMMÉS.
+    # None = pas de cap (comportement antérieur).
+    max_score: Optional[int] = Field(default=None, description="Score absolu maximum pour ouvrir (None=pas de cap). Ex: 50 = refuse si |score| > 50.")
+    # [v2.0.30] MIN RANGE/ATR — Filtre les marchés compressés (chop range).
+    # Le range_width_atr est déjà calculé par MarketStructureService. Il mesure la
+    # largeur du range 20 candles / ATR. Un ratio < 1.5 signifie que le marché est
+    # compressé (chop range), sans amplitude suffisante pour capturer > 0.62% (=2× frais).
+    # Audit stats 17/04/2026 : aucun trade gagnant n'a eu lieu en range ultra-serré.
+    # La Bollinger bandwidth est un proxy quasi-équivalent (les deux mesurent la
+    # volatilité normalisée), range_width_atr est déjà disponible sans coût de calcul.
+    # None = comportement antérieur (pas de filtre ATR).
+    min_range_atr: Optional[float] = Field(default=None, description="Ratio range/ATR minimum pour ouvrir (ex: 1.5 = rejette chop ranges < 1.5x ATR). None=pas de filtre.")
+    # [v2.0.30] BREAKEVEN MIN PEAK (multiple des frais) — Empêche le breakeven de
+    # déclencher tant que le pic de PnL n'a pas dépassé N× les frais round-trip.
+    # Audit EXP 17/04/2026 : 18 trades ont déclenché breakeven avec pic moyen 0.13%
+    # alors que les frais sont 0.31% → 100% de ces trades ont fini net < 0 ($-111 cum).
+    # Avec min_peak = 2.0 × frais (0.62%), le breakeven ne s'active que si le trade a
+    # EFFECTIVEMENT eu une poche de profit nette substantielle. Les pics < 0.62% sont
+    # laissés aux protections plus structurelles (stale, trailing, SL).
+    # None = comportement antérieur (breakeven actif dès que peak ≥ activation/2).
+    breakeven_min_peak_fee_multiple: Optional[float] = Field(default=None, description="Multiple min des frais RT que le peak doit dépasser avant d'activer le breakeven (ex: 2.0 = peak doit atteindre 2× frais). None=comportement antérieur.")
+    # [v2.0.30] BLOCKED HOURS UTC — Plages horaires UTC où l'ouverture est interdite.
+    # L'audit temporel du 17/04/2026 sur MAIN (831 trades sur 4 jours) révèle :
+    #  - 14h UTC : -$55.43 cum (pire heure, n=50, WR 48%)
+    #  - 15h UTC : -$19.67 cum
+    #  - 16h UTC : -$28.99 cum
+    #  - Total 14-16h UTC : -$104 cum = 2× le résultat brut de la période
+    # Cette fenêtre correspond à US open + macro releases (NFP, CPI, FOMC) = bruit max.
+    # Bloquer ces heures = refuser l'ouverture (positions déjà ouvertes ne sont PAS affectées).
+    # Liste d'entiers 0-23 (UTC). None ou liste vide = aucun blocage (comportement antérieur).
+    blocked_hours_utc: Optional[list[int]] = Field(default=None, description="Heures UTC où l'ouverture est refusée (ex: [13,14,15,16]). None=aucun filtre.")
 
 
 class TradingProfileResponse(BaseModel):
