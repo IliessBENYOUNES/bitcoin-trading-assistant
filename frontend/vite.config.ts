@@ -9,10 +9,10 @@ export default defineConfig({
   // Évite les problèmes CORS en développement
   server: {
     host: true,
-    port: 5173,
+    port: 5174,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8001',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }
