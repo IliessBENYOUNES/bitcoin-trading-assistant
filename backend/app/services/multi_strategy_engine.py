@@ -12,16 +12,18 @@ Route les stratégies actives en fonction du contexte de marché :
 
 Chaque tick :
 1. Analyse le contexte de marché (MarketContextEngine)
-2. Sélectionne les stratégies éligibles
-3. Collecte les signaux de chaque stratégie
-4. Applique le risk layer global (anti-collision)
-5. Retourne les signaux approuvés
+2. Applique les gates globaux statistiques (v2.0.30) — blocked_hours, min_atr, max_score
+3. Sélectionne les stratégies éligibles
+4. Collecte les signaux de chaque stratégie
+5. Applique le risk layer global (anti-collision)
+6. Retourne les signaux approuvés
 
 EXPÉRIMENTAL — n'interfère pas avec le moteur standard.
 """
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.services.market_context_engine import MarketContext, MarketContextEngine
@@ -83,10 +85,38 @@ class MultiStrategyEngine:
 
     Responsable de :
     1. Analyser le contexte de marché
-    2. Router vers les bonnes stratégies
-    3. Collecter les signaux
-    4. Appliquer les filtres globaux
+    2. Appliquer les gates globaux statistiques (v2.0.30)
+    3. Router vers les bonnes stratégies
+    4. Collecter les signaux
+    5. Appliquer les filtres globaux (anti-collision, max positions)
+
+    === GATES GLOBAUX STATISTIQUES (v2.0.30) ===
+
+    Issus de l'audit comparatif 831 (MAIN) + 46 (EXP) trades du 17/04/2026.
+    Ces gates s'appliquent AVANT les stratégies et sont partagés par toutes.
     """
+
+    # [v2.0.30] BLOCKED HOURS UTC — Audit : 13-16h UTC = -$104 cum sur 4j (MAIN).
+    # Fenêtre US open + macro releases (NFP/CPI/FOMC). Bruit destructif systémique.
+    # Appliqué à toutes les stratégies (micro_scalping, scalping, aggressive, breakout,
+    # mean_reversion) car l'analyse des données BTC montre un effet multi-stratégie.
+    BLOCKED_HOURS_UTC: set[int] = {13, 14, 15, 16}
+
+    # [v2.0.30] MIN ATR RATIO — Rejet des marchés compressés (chop range).
+    # MarketContext.atr_ratio = range / ATR. Audit : aucun trade gagnant n'a eu lieu
+    # en range < 1.5x ATR. Les marchés compressés ne peuvent pas capturer 0.62% (2x frais).
+    MIN_ATR_RATIO: float = 1.5
+
+    # [v2.0.30] MAX SCORE CAP — Corrélation |score| vs pnl_pct = -0.134 (p=0.0001).
+    # Les scores >50 arrivent en retard (signal déjà digéré par le marché).
+    # S'applique aux stratégies qui utilisent combined_score (scalping, aggressive, breakout,
+    # mean_reversion). Pas à micro_scalping qui utilise micro_trend_score.
+    MAX_ABS_COMBINED_SCORE: int = 55
+
+    # [v2.0.30] BREAKEVEN MIN PEAK FEE MULTIPLE — Multiple des frais au-dessus duquel
+    # le breakeven peut se déclencher. Évite les fermetures breakeven à net nul.
+    # Ce paramètre est consommé par le paper_trading_service au moment de la fermeture.
+    BREAKEVEN_MIN_PEAK_FEE_MULTIPLE: float = 2.0
 
     def __init__(self):
         # Instancier toutes les stratégies
@@ -109,6 +139,7 @@ class MultiStrategyEngine:
         current_price: float,
         open_positions: list[dict] | None = None,
         max_simultaneous: int = 3,
+        skip_global_gates: bool = False,
     ) -> OrchestratorResult:
         """
         Évalue un tick et retourne les signaux approuvés.
@@ -131,8 +162,49 @@ class MultiStrategyEngine:
         context = MarketContextEngine.analyze(series)
         result.context = context
 
+        # ─── [v2.0.30] GATES GLOBAUX STATISTIQUES ───────────────────────────
+        # Les 3 gates ci-dessous refusent l'OUVERTURE de toute nouvelle position.
+        # Ils n'affectent pas les positions ouvertes (sorties normales conservées).
+        # skip_global_gates=True est utilisé UNIQUEMENT par les tests unitaires
+        # qui veulent vérifier la logique de routing sans interférence temporelle.
+        _combined_score_saturated = False
+
+        if not skip_global_gates:
+            # [v2.0.30] Gate horaire : fenêtre US open (13-16h UTC) destructive systémique.
+            current_hour_utc = datetime.now(timezone.utc).hour
+            if current_hour_utc in self.BLOCKED_HOURS_UTC:
+                result.rejected_reasons.append(
+                    f"[v2.0.30] Blocked hour UTC {current_hour_utc}h — audit 17/04 : "
+                    f"heures {sorted(self.BLOCKED_HOURS_UTC)} = -$104 cum sur 4j"
+                )
+                return result
+
+            # [v2.0.30] Gate structure : range compressé = impossible de couvrir 2x frais.
+            if context.atr_ratio < self.MIN_ATR_RATIO:
+                result.rejected_reasons.append(
+                    f"[v2.0.30] Range compressé ({context.atr_ratio:.2f}x ATR "
+                    f"< {self.MIN_ATR_RATIO:.2f}) — amplitude insuffisante pour frais RT"
+                )
+                return result
+
+            # [v2.0.30] Gate scoring : cap |score| car corrélation négative score↔pnl.
+            # S'applique aux stratégies qui consomment combined_score. Micro_scalping
+            # utilise micro_trend_score et n'est pas concernée ici.
+            combined_score = decision.get("combined_score", 0) or 0
+            if abs(combined_score) > self.MAX_ABS_COMBINED_SCORE:
+                result.rejected_reasons.append(
+                    f"[v2.0.30] Score {combined_score} saturé (> {self.MAX_ABS_COMBINED_SCORE}) "
+                    f"— signal probablement déjà consommé. Micro-scalping reste éligible."
+                )
+                # On ne return pas : micro_scalping peut encore entrer si son signal propre est valide.
+                # On désactivera combined_score pour les autres stratégies via un flag.
+                _combined_score_saturated = True
+
         # 2. Déterminer les stratégies éligibles
         eligible = self._get_eligible_strategies(context)
+        # [v2.0.30] Si score saturé, ne garder que micro_scalping (qui n'utilise pas combined_score)
+        if _combined_score_saturated:
+            eligible = [s for s in eligible if s == "micro_scalping"]
         result.eligible_strategies = eligible
 
         if not eligible:

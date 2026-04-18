@@ -58,6 +58,9 @@ class MicroScalpingStrategy(BaseStrategy):
     def get_params(self, context: MarketContext, direction: str) -> StrategyParams:
         # Petites positions, sortie rapide mais pas trop serrée
         # $500 × 1.0x = frais RT $1.55 → il faut capturer > 0.31%
+        # [v2.0.30] micro_sl désactivé (0.0) — audit master : micro_sl = destructeur net
+        # (184 coupures, -$364 cum sur scalping). Le SL classique à 0.25% reste actif
+        # comme filet. Les trades ont besoin de respirer pour atteindre TP 0.50%.
         return StrategyParams(
             stop_loss_pct=0.25,       # Élargi 0.10→0.25%
             take_profit_pct=0.50,     # Élargi 0.30→0.50%
@@ -65,7 +68,7 @@ class MicroScalpingStrategy(BaseStrategy):
             leverage=1.0,             # Pas de levier
             trailing_activation_pct=0.15,   # Élargi 0.05→0.15%
             trailing_drop_ratio=0.25,       # 25% de recul = sortie
-            micro_sl_pct=0.10,        # Élargi 0.03→0.10%
+            micro_sl_pct=0.0,         # [v2.0.30] DÉSACTIVÉ (était 0.10)
             max_hold_seconds=600,     # 10 min max (était 5)
             min_hold_seconds=30,      # 30s min (était 10)
             stale_negative_seconds=120, # 2min en perte → sortie (était 1min)

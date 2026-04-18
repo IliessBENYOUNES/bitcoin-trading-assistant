@@ -587,10 +587,24 @@ class PaperTradingService:
                             profile_type=profile_name,
                         )
 
-                if peak_pct >= breakeven_activation and unrealized_pct_now <= 0:
+                # [v2.0.30] BREAKEVEN DURCI — Audit 17/04/2026 sur journal EXP :
+                # 18 trades ont fermé en "closed_breakeven" avec peak moyen 0.13%.
+                # 100% de ces 18 trades ont fini NET NÉGATIF : -$111 cum (frais 0.31% > peak).
+                #
+                # Deux corrections simultanées :
+                # 1. Le peak doit avoir dépassé 2× les frais avant d'activer le breakeven
+                #    (pas de breakeven sur une micro-bosse de 0.05%).
+                # 2. Le seuil de sortie devient "pnl <= frais" au lieu de "pnl <= 0",
+                #    cohérent avec la version master (l'ancien seuil <=0 = perte garantie net).
+                from app.services.trading_cost_service import get_cost_model
+                _be_cost = get_cost_model("realistic")
+                _be_fee_pct = _be_cost.round_trip_cost_pct()  # ~0.31%
+                _be_peak_min = 2.0 * _be_fee_pct  # 0.62%
+
+                if peak_pct >= _be_peak_min and unrealized_pct_now <= _be_fee_pct:
                     signal_reason = (
-                        f"Breakeven stop : pic {peak_pct:.3f}% (≥ {breakeven_activation:.3f}%), "
-                        f"PnL retombé à {unrealized_pct_now:.3f}% → protection breakeven"
+                        f"[v2.0.30] Breakeven stop net : pic {peak_pct:.3f}% (≥ {_be_peak_min:.3f}% = 2× frais), "
+                        f"PnL retombé à {unrealized_pct_now:.3f}% ≤ frais {_be_fee_pct:.3f}%"
                     )
                     closed = self._close_position(open_pos, current_price, signal_reason, "closed_breakeven")
                     _log_tick(action_taken="closed_breakeven", btc_price=current_price,

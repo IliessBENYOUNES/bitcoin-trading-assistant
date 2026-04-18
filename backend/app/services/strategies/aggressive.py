@@ -79,6 +79,10 @@ class AggressiveStrategy(BaseStrategy):
 
         # Position plus petite → frais plus bas → breakeven plus facile
         # $1000 × 1.5x = $1500 effectif → frais RT = $4.65 au lieu de $23.25
+        # [v2.0.30] micro_sl désactivé (0.0) — audit : les swings aggressive ont
+        # besoin d'encore plus de respiration que le scalping (mouvements 1-2%).
+        # Le SL classique 1.5% reste le seul filet de perte, ce qui est cohérent
+        # avec un horizon de 2min-48h.
         return StrategyParams(
             stop_loss_pct=1.5,              # Élargi 1.0→1.5% (laisse respirer le trade)
             take_profit_pct=2.0,            # Élargi 1.0→2.0% (vise des vrais mouvements)
@@ -86,7 +90,7 @@ class AggressiveStrategy(BaseStrategy):
             leverage=leverage,
             trailing_activation_pct=0.60,   # Élargi 0.25→0.60% (ne pas couper trop tôt)
             trailing_drop_ratio=0.30,       # Garde 70% du pic (20→30% de recul toléré)
-            micro_sl_pct=0.50,              # Élargi 0.15→0.50% (0.15% = bruit de marché)
+            micro_sl_pct=0.0,               # [v2.0.30] DÉSACTIVÉ (était 0.50)
             max_hold_seconds=172800,        # 48h
             min_hold_seconds=120,           # 2min minimum (avant 60s)
             stale_negative_seconds=900,     # 15 min en perte → sortie (avant 10 min)

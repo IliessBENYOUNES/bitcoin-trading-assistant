@@ -60,6 +60,9 @@ class ScalpingStrategy(BaseStrategy):
     def get_params(self, context: MarketContext, direction: str) -> StrategyParams:
         # Position réduite : $800 × 1.0x = $800 effectif → frais RT = $2.48
         # Il faut capturer > 0.62% pour être rentable → target 0.80% OK
+        # [v2.0.30] micro_sl désactivé (0.0) — même rationale que master :
+        # les micro coupures arrivent avant que le trade puisse se développer.
+        # Le SL classique 0.40% reste comme filet de sécurité.
         return StrategyParams(
             stop_loss_pct=0.40,             # Élargi 0.20→0.40% (0.20 = micro bruit)
             take_profit_pct=0.80,           # Gardé à 0.80% (bon ratio risque/gain)
@@ -67,7 +70,7 @@ class ScalpingStrategy(BaseStrategy):
             leverage=1.0,                   # Pas de levier (levier amplifie les frais)
             trailing_activation_pct=0.30,   # Élargi 0.10→0.30% (laisser le trade respirer)
             trailing_drop_ratio=0.25,       # Garde 75% du pic
-            micro_sl_pct=0.20,              # Élargi 0.05→0.20% (0.05% = tick noise)
+            micro_sl_pct=0.0,               # [v2.0.30] DÉSACTIVÉ (était 0.20)
             max_hold_seconds=7200,          # 2h max
             min_hold_seconds=60,            # 1min minimum (avant 30s)
             stale_negative_seconds=300,     # 5min en perte → sortie (avant 3min)

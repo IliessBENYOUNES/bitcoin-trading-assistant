@@ -184,7 +184,9 @@ class TestScalpingStrategy:
         strategy = ScalpingStrategy()
         params = strategy.get_params(MarketContext(), "long")
         assert params.stop_loss_pct == 0.40
-        assert params.micro_sl_pct == 0.20
+        # [v2.0.30] micro_sl désactivé (0.0) — audit master : 184 coupures = -$364 cum.
+        # Le SL classique reste seul filet de sécurité.
+        assert params.micro_sl_pct == 0.0
         assert params.leverage == 1.0
         assert params.position_size_usd == 800.0
 
@@ -377,8 +379,13 @@ class TestMultiStrategyEngine:
         engine = MultiStrategyEngine()
         series = make_range_series()
         decision = {"combined_score": 30, "_series": series}
+        # [v2.0.30] skip_global_gates=True : on teste la logique de routing,
+        # pas les gates horaires/ATR (le make_range_series produit un ATR compressé
+        # qui serait rejeté par MIN_ATR_RATIO=1.5, et le test peut tourner à une
+        # heure UTC bloquée ; on isole la logique testée).
         result = engine.evaluate_tick(
             series=series, decision=decision, current_price=73000.0,
+            skip_global_gates=True,
         )
         assert len(result.eligible_strategies) > 0
         # Le résultat peut avoir des signaux ou non selon les seuils
