@@ -513,9 +513,9 @@ Plus on a raison sur la direction (WR brut 67%), plus on perd net (WR net 0%).
 
 | # | Fix | Repo | Impact $ estime | Risque | Status |
 |---|-----|------|-----------------|--------|--------|
-| **F1** | Toggle `opposite_signal_exit_enabled=False` sur scalping + aggressive | MAIN + EXP | +$275 | Faible | ✅ MAIN livre v2.0.31 |
-| **F2** | Monitoring auto-mode utilise `open_pos.profile_type` au lieu de re-resoudre | MAIN | +$200 | Faible | ✅ MAIN livre v2.0.31 |
-| **F8** | `min_hold_seconds=300` explicite sur aggressive (defense en profondeur) | MAIN | Empeche churn residuel | Faible | ✅ MAIN livre v2.0.31 |
+| **F1** | Toggle `opposite_signal_exit_enabled=False` sur scalping + aggressive | MAIN + EXP | +$275 | Faible | ✅ MAIN v2.0.31 + EXP v2.0.31-fees |
+| **F2** | Monitoring auto-mode utilise `open_pos.profile_type` au lieu de re-resoudre | MAIN | +$200 | Faible | ✅ MAIN v2.0.31 + EXP v2.0.31-fees |
+| **F8** | `min_hold_seconds=300` explicite sur aggressive (defense en profondeur) | MAIN | Empeche churn résiduel | Faible | ✅ MAIN v2.0.31 + EXP v2.0.31-fees |
 | F3 | Desactiver `micro_stop_loss` sur aggressive (comme scalping) | EXP | +$300 | Moyen | ⏳ Batch 2 |
 | F4 | Trailing : drop_ratio 50% du pic + min_peak ≥ 3× fees | MAIN + EXP | +$80 | Moyen | ⏳ Batch 2 |
 | F5 | Gate macro : refuser SHORT si BTC > EMA50(4h) sauf reversal confirme | MAIN + EXP | +$200 | Eleve | ⏳ Batch 2 |
