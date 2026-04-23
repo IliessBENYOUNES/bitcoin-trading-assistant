@@ -80,9 +80,15 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### État actuel : v2.0.30 livré — 4 nouveaux gates issus de l'audit statistique 831 trades
+### État actuel : v2.0.31 livré — Fix bug critique auto-mode + opposite_signal_exit_enabled (Option A — batch 1/2)
 
-> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. Les versions v2.0.1 à v2.0.30 ont itéré sur les protections runtime. **v2.0.30** introduit 4 nouveaux gates fondés sur une analyse statistique profonde (corrélations Pearson, distributions, heatmaps) de 831+46 trades : `blocked_hours_utc` (14-16h UTC = -$104 cum), `max_score` (r=-0.134 significatif), `min_range_atr` (chop range filter), `breakeven_min_peak_fee_multiple` (corrige la destruction nette systématique des breakevens EXP). Le micro_sl scalping (184 coupures, -$364 cum) est désactivé. **1773 passing / 35 régressions v2.0.29 préexistantes** — aucune régression nouvelle.
+> ✅ **L'Étape 2b (Reality Gap Closure) est complète.** Le pivot stratégique v2.0.0 a été livré avec economic viability gate, structural proofs, momentum fade restricted, et scoring refondu. Les versions v2.0.1 à v2.0.31 ont itéré sur les protections runtime.
+>
+> **v2.0.31 (23 avril 2026)** corrige un **bug critique** détecté par l'audit du run 18-23/04/2026 (51 trades MAIN — WR net 0/51 = 0% — perte -$338 dont $292 de frais) : en mode `auto`, le profil utilisé pour le monitoring d'une position était re-résolu dynamiquement à chaque tick selon le score courant, ignorant le profil d'entrée. Conséquence : un trade ouvert sur le slot scalping pouvait être monitoré avec les params d'aggressive (pas de min_hold) et fermé en 5 min par "Signal contraire" → -$7.71 net systématique. Désormais, le monitoring utilise `open_pos.profile_type`. Ajout d'un nouveau toggle `opposite_signal_exit_enabled` (désactivé sur scalping + aggressive) qui supprime la sortie sur signal contraire (responsable de la conversion mécanique de 67 % WR brut en 0 % WR net). **1775 passing / 33 régressions préexistantes** — +2 vs v2.0.30, -2 failures.
+>
+> **v2.0.30 (18 avril 2026)** avait introduit 4 gates fondés sur une analyse statistique profonde (corrélations Pearson, distributions, heatmaps) de 831+46 trades : `blocked_hours_utc`, `max_score`, `min_range_atr`, `breakeven_min_peak_fee_multiple` + micro_sl scalping désactivé.
+>
+> **Prochaine étape (batch 2 — Option A) :** corrections F3-F7 sur le moteur EXPERIMENTAL (désactivation micro_stop_loss aggressive, trailing drop_ratio 50%, gate macro-tendance anti-SHORT en uptrend, bug `account.total_fees=0`).
 
 | Composant | Status |
 |-----------|--------|
@@ -693,6 +699,7 @@ Aujourd'hui, le moteur de décision est **rule-based** : 8 règles écrites à l
 │       └── [✅] v2.0.26-v2.0.28 — Trend alignment filter symétrique, mini chart, refonte protections aggressive
 │       └── [✅] v2.0.29 — Integration frais réalistes Binance 0.31% RT, refonte profils scalping/aggressive
 │       └── [✅] v2.0.30 — 4 gates audit statistique : blocked_hours_utc, max_score, min_range_atr, breakeven_min_peak_fee_multiple + micro_sl scalping OFF
+│       └── [✅] v2.0.31 — Fix bug critique auto-mode (profil ré-résolu) + opposite_signal_exit_enabled toggle (Option A — batch 1/2)
 │
 ├── Mai — Juin
 │   └── [ ] v2.1+ — INFINI Mode Autonome réel (exécution exchange)

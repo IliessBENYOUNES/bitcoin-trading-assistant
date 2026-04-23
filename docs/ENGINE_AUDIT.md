@@ -1,7 +1,7 @@
 # Audit Comparatif & Suivi d'Amelioration des Moteurs de Trading
 
 > **Document vivant** — Mis a jour a chaque iteration d'amelioration.
-> Derniere mise a jour : 17 avril 2026
+> Derniere mise a jour : 23 avril 2026 (post v2.0.31, Option A batch 1/2)
 
 ---
 
@@ -444,4 +444,112 @@ distributions, heatmaps score×duree, et identification de 13 insights non trivi
 
 ---
 
-*Document cree le 17 avril 2026. Sera mis a jour apres chaque iteration de correction.*
+## 7. Audit du 23 avril 2026 — Run du 18-23/04 (post v2.0.30)
+
+### 7.1 Chiffres bruts (51+52 trades)
+
+| Metrique | MAIN (5173) | EXP (5174) |
+|----------|-------------|------------|
+| Periode | 18/04 04:16 → 18/04 13:11 (8.9h) | 18/04 13:02 → 22/04 21:56 (105h) |
+| Profil | auto (95% scalping) | scalping (en realite : 51 aggressive + 1 breakout) |
+| Capital final | $9,661.73 (-3.38%) | $9,563.58 (-4.36%) |
+| **PnL net** | **-$338.27** | **-$436.42** |
+| PnL gross | -$45.77 | +$9.96 |
+| **Frais payes** | **$292.51** (86% de la perte) | **$446.34** (102% de la perte) |
+| Trades | 51 | 52 |
+| **WR net** | **0/51 = 0.0%** | 6/52 = 11.5% |
+| WR gross | 34/51 = 66.7% | 20/52 = 38.5% |
+| Duree moyenne | 1721 s (28.7 min) — biaisee par 1 trade balanced 20h | 1689 s (28 min) |
+| Duree mediane | 324 s (5.4 min) | 1188 s (19.8 min) |
+| Bug detecte | — | `account.total_fees=0` mais sum=$446 → **agrégation cassee** |
+
+### 7.2 Repartition des sorties (MAIN)
+
+| Exit reason | n | gross | fees | net |
+|-------------|---|-------|------|-----|
+| **Signal contraire : acheter (score=62)** | **30** | **+$4.49** | **$223.60** | **-$219.10** |
+| **Signal contraire : acheter (score=63)** | **20** | **+$5.81** | **$61.17** | **-$55.35** |
+| Signal contraire : vendre (score=-38) | 1 | -$56.07 | $7.75 | -$63.82 |
+
+**100 % des trades MAIN sortent via "Signal contraire"**, dont 50/51 sur le slot scalping. Ces trades font +$0.04 brut moyen → -$7.71 net moyen (frais $7.75).
+
+### 7.3 Causes racines identifiees
+
+#### 7.3.1 BUG CRITIQUE — Auto-mode re-resout le profil pendant le monitoring
+
+Code incrimine (`paper_trading_service._tick_single_slot`, ligne 837 pre-fix) :
+
+```python
+if is_auto_mode:
+    resolved_profile = TradingProfileService.auto_select_profile(score, confidence)
+    profile_params = PROFILE_PRESETS[resolved_profile]
+    profile_name = f"auto→{resolved_profile}"
+```
+
+Probleme : ce code tourne a CHAQUE tick sur une position deja ouverte. Selon le score courant, le profil resoud peut differer du profil d'entree :
+- Trade ouvert sur slot **scalping** (min_hold=300s, opposite_signal_exit=False)
+- 3 min plus tard, score = 62 + confidence "high" → resoud "**aggressive**"
+- Aggressive (avant fix) n'avait **ni** `min_hold_seconds` **ni** `short_min_hold_seconds`
+- Donc `min_hold = None` → `trade_too_young = False` → "Signal contraire" peut fermer immediatement
+- Resultat : 50/51 trades MAIN fermes en 5 min avec -$7.71 net systematique
+
+#### 7.3.2 Sortie "Signal contraire" = piege fees mecanique
+
+Sur scalping/aggressive avec frais integres :
+- Capture moyenne avant signal contraire : 0.04% = $1.00 brut
+- Frais round-trip x1 : 0.31% = $7.75
+- Net systematique : **-$6.75**
+
+Plus on a raison sur la direction (WR brut 67%), plus on perd net (WR net 0%).
+
+#### 7.3.3 EXP — Bugs cosmetiques + fees ratio 17×
+
+- `account.total_fees` retourne 0 alors que la somme `trade.trading_fees` = $446 (agregation perdue)
+- Profil affiche `scalping` alors que les trades sont etiquetes `aggressive` / `breakout`
+- Micro_stop_loss aggressive (0.15%) **plus serre que le cout d'entree (0.155%)** → ferme avant que le trade puisse meme couvrir le slippage : 24 trades, -$304 net
+- Trailing drop_ratio 80% laisse partir 80% du gain en moyenne, frais sortie 0.155% finissent le job
+
+### 7.4 Plan de correction (Option A — itative, batch 1/2)
+
+| # | Fix | Repo | Impact $ estime | Risque | Status |
+|---|-----|------|-----------------|--------|--------|
+| **F1** | Toggle `opposite_signal_exit_enabled=False` sur scalping + aggressive | MAIN + EXP | +$275 | Faible | ✅ MAIN livre v2.0.31 |
+| **F2** | Monitoring auto-mode utilise `open_pos.profile_type` au lieu de re-resoudre | MAIN | +$200 | Faible | ✅ MAIN livre v2.0.31 |
+| **F8** | `min_hold_seconds=300` explicite sur aggressive (defense en profondeur) | MAIN | Empeche churn residuel | Faible | ✅ MAIN livre v2.0.31 |
+| F3 | Desactiver `micro_stop_loss` sur aggressive (comme scalping) | EXP | +$300 | Moyen | ⏳ Batch 2 |
+| F4 | Trailing : drop_ratio 50% du pic + min_peak ≥ 3× fees | MAIN + EXP | +$80 | Moyen | ⏳ Batch 2 |
+| F5 | Gate macro : refuser SHORT si BTC > EMA50(4h) sauf reversal confirme | MAIN + EXP | +$200 | Eleve | ⏳ Batch 2 |
+| F6 | Gate economique strict : `expected_capture_pct ≥ 2 × fees_pct = 0.65%` pre-trade | MAIN + EXP | -X trades | Faible | ⏳ Batch 2 |
+| F7 | Bug : `account.total_fees` agregation cote EXP | EXP | $0 (cosmetique) | Trivial | ⏳ Batch 2 |
+
+### 7.5 v2.0.31 — Modifications livrees (23/04/2026)
+
+**Backend :**
+- `app/schemas/journal.py` : nouveau champ `TradingProfileParams.opposite_signal_exit_enabled: bool = True`
+- `app/services/trading_profile_service.py` :
+  - `scalping.opposite_signal_exit_enabled = False`
+  - `aggressive.opposite_signal_exit_enabled = False`, `min_hold_seconds = 300`, `short_min_hold_seconds = 300`
+- `app/services/paper_trading_service.py` (`_tick_single_slot`) :
+  - Mode `auto` → utilise `PROFILE_PRESETS[open_pos.profile_type]` (slot d'entree)
+  - Bloc "Signal contraire" gate sur `opposite_signal_exit_enabled` ; si False, le bloc est skippe entierement (les SL/TP/trailing/breakeven/stale en aval restent actifs)
+
+**Tests :**
+- 1775 passed (+2 vs baseline v2.0.30 1773), 33 failed (-2 vs baseline 35) — aucune regression nouvelle
+
+**Metriques de succes attendues sur prochain run (a valider) :**
+- 0 trade scalping/aggressive ferme via "Signal contraire"
+- Duree moyenne scalping > 5 min (vs 326 s actuel)
+- WR net > 30 % (vs 0 % actuel)
+- PnL net > -$50 sur 24 h (vs -$338 actuel)
+
+### 7.6 Batch 2 (a livrer apres validation 1 nuit du batch 1)
+
+- **F3** EXP : `micro_stop_loss_pct = None` sur aggressive (comme scalping). Audit : 24 trades EXP fermes par micro_sl à 0.15% (cout d'entree 0.155%) → -$304 net.
+- **F4** : `trailing_stop_drop_ratio = 0.50` (au lieu de 0.20-0.25) + nouveau `trailing_min_peak_fee_multiple = 3.0` (le pic doit valoir 3× les frais avant que le trailing puisse declencher).
+- **F5** : nouveau `macro_trend_filter_enabled` qui consulte EMA50 4h ; refuse les SHORTs scalping/aggressive si BTC > EMA50 (sauf si reversal confirme par RSI > 70 + bearish divergence).
+- **F6** : durcir le gate economique pour exiger `expected_capture_pct ≥ 0.65%` (2× frais) au lieu de 0.50%.
+- **F7** : corriger l'agregation `account.total_fees` cote EXP (chercher l'increment lors du `_close_position`).
+
+---
+
+*Document cree le 17 avril 2026. Mis a jour le 23 avril 2026 — section 7 ajoutee post v2.0.31.*

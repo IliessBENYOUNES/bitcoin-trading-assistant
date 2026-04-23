@@ -1,8 +1,8 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v2.0.30
-## Date: 2026-04-18
+## Version: v2.0.31
+## Date: 2026-04-23
 
 ---
 
@@ -113,6 +113,9 @@
 | **FR-RAT-001** | **Min range/ATR gate** | **Refuse marchés compressés (range_width_atr < 1.5 = chop range)** | **✅ PASS** | **v2.0.30 — market_structure_service.py + paper_trading_service** |
 | **FR-BPM-001** | **Breakeven peak min fee multiple** | **Empêche breakeven tant que peak < N× frais RT (évite fermetures systématiques net nul)** | **✅ PASS** | **v2.0.30 — paper_trading_service breakeven logic** |
 | **FR-MSL-003** | **Scalping micro SL désactivé** | **micro_stop_loss_pct=None (audit: 184 coupures, -$364). SL classique 0.50% reste actif.** | **✅ PASS** | **v2.0.30 — trading_profile_service.py PROFILE_PRESETS[scalping]** |
+| **FR-OSE-001** | **Opposite signal exit toggle** | **Nouveau paramètre `opposite_signal_exit_enabled` désactive la fermeture sur "Signal contraire" pour scalping + aggressive (audit 23/04 : 50/51 trades MAIN, -$338 cum)** | **✅ PASS** | **v2.0.31 — schemas/journal.py + paper_trading_service._tick_single_slot (gate sur opposite_signal_exit_enabled)** |
+| **FR-AME-001** | **Auto-mode monitoring fix** | **En mode auto, le profil utilisé pour évaluer la sortie d'une position ouverte doit être celui du SLOT D'ENTRÉE (`open_pos.profile_type`), PAS le profil re-résolu dynamiquement selon le score courant** | **✅ PASS** | **v2.0.31 — paper_trading_service._tick_single_slot (lookup PROFILE_PRESETS[open_pos.profile_type] avec fallback)** |
+| **FR-AGG-MHL-001** | **Aggressive min_hold_seconds explicite** | **`min_hold_seconds=300` et `short_min_hold_seconds=300` sur aggressive (défense en profondeur contre fermetures-éclair même si une logique tierce essaie de fermer)** | **✅ PASS** | **v2.0.31 — trading_profile_service.py PROFILE_PRESETS[aggressive]** |
 
 ---
 

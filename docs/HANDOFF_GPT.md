@@ -1,128 +1,139 @@
-# 🔄 HANDOFF GPT — Dernière intervention
+﻿# ðŸ”„ HANDOFF GPT â€” DerniÃ¨re intervention
 
-## Date : 18 avril 2026 — v2.0.30
+## Date : 23 avril 2026 â€” v2.0.31 (Option A â€” batch 1/2)
 
-> **Push test 2026-04-18 01:28 UTC** — Identité IliessBENYOUNES confirmée sur master.
+> Session dÃ©clenchÃ©e par l'audit du run du 18-23/04 : **MAIN -$338 (WR net 0/51) + EXP -$436 (WR net 6/52)**.
 
 ---
 
-## Problème
+## ProblÃ¨me
 
-Les deux moteurs (MAIN et EXPERIMENTAL) perdent de l'argent sur une période où BTC a fait **+6.6%** :
-- MAIN : **-$51 brut** (831 trades) — mais **-$6 158 simulé avec frais** (98.8% des trades < 0.31% = bruit pur)
-- EXPERIMENTAL : **-$468 net** (46 trades) — frais cumulés **$442** soit **17× la perte brute** de $26
+Audit des 2 nouveaux journaux (51 + 52 trades) post v2.0.30 :
 
-Le problème central : trop de churn, signaux technique mal calibrés, entrées aux pires moments horaires, breakeven qui ferme systématiquement au niveau des frais.
+- **MAIN (5173, profil auto)** : capital $10 000 â†’ $9 661 (**-3.38 %**), 51 trades en 8.9 h, **WR net = 0/51**, **WR brut = 67 %**, frais $292 = 86 % de la perte. **100 % des trades sortent via "Signal contraire"** avec gross +$0.04 â†’ net -$7.71 systÃ©matique.
+- **EXP (5174, profil scalping)** : capital $10 000 â†’ $9 564 (**-4.36 %**), 52 trades en 105 h, WR net 11.5 %, frais $446 = 102 % de la perte. Bug : `account.total_fees=0` alors que sum(`trade.trading_fees`)=$446. Profil affichÃ© `scalping` mais trades Ã©tiquetÃ©s `aggressive`/`breakout`. Micro_sl Ã  0.15 % (= cout d'entree) ferme 24 trades pour -$304 net.
 
 ## Diagnostic
 
-Analyse statistique profonde de 831+46 trades avec corrélations Pearson, distributions, heatmaps :
-
-1. **Corrélation |score| vs pnl_pct = -0.134 (p=0.0001)** — statistiquement significative. Scores >60 (n=705) : WR 48% (aléatoire). Scores 20-40 (n=26) : WR 65% (vrai edge). → le score élevé arrive trop tard (signal déjà digéré par le marché).
-2. **Fenêtre toxique 13-16h UTC** — cumule -$104 sur 4 jours (2× le résultat brut). Heure 14h UTC seule = -$55 (US open + macro releases).
-3. **Micro SL scalping destructeur** — 184 coupures à -$1.98 avg = -$364 cumulés. Coupe avant que les trades puissent se développer vers le TP.
-4. **Breakeven systématiquement net négatif** — 18 trades EXP fermés en breakeven avec peak moyen 0.13% (< frais 0.31%), 100% net-negative, -$111 cumulés.
-5. **Chop ranges non filtrés** — aucun filtre sur la largeur du range (range_width_atr). Les marchés compressés (< 1.5× ATR) sont mathématiquement incapables de capturer 0.62% nécessaires pour couvrir 2× frais.
+1. **BUG CRITIQUE auto-mode** : dans `paper_trading_service._tick_single_slot`, le profil utilisÃ© pour Ã©valuer la sortie d'une position Ã©tait re-rÃ©solu **Ã  chaque tick** via `auto_select_profile(score, confidence)` au lieu d'utiliser le profil d'entrÃ©e. ConsÃ©quence :
+   - Trade ouvert sur slot **scalping** (min_hold=300, opposite_signal_exit=False)
+   - 3 min plus tard, score=62 + confidence=high â†’ resolve = **aggressive** (qui n'avait pas de min_hold)
+   - `trade_too_young = False` â†’ "Signal contraire" dÃ©clenche â†’ -$7.71 net
+2. **Sortie "Signal contraire" = piÃ¨ge fees mÃ©canique** : la capture moyenne avant ce signal (0.04 % = $1) est < frais round-trip ($7.75) â‡’ chaque trade est une perte garantie mÃªme quand la direction est correcte.
+3. **EXP** : micro_stop_loss aggressive (0.15 %) plus serrÃ© que le coÃ»t d'entrÃ©e (0.155 %) ; trailing drop 80 % laisse partir 80 % du gain ; bug d'agrÃ©gation total_fees cÃ´tÃ© account.
 
 ## Cause racine
 
-Le moteur n'intégrait pas les apprentissages tirés de l'échantillon statistique propre. Les gates existants (economic, structural, SAS) filtrent correctement sur l'amplitude attendue mais pas sur :
-- Le **timing horaire** (14h UTC = destructeur systémique)
-- La **saturation du score** (>50 = signal consommé)
-- La **structure du marché** (chop range = impossible à scalper)
-- L'**amplitude réelle du peak** avant breakeven (< 2× frais = perte garantie)
+Le mÃ©canisme de **re-rÃ©solution dynamique du profil** en mode auto a Ã©tÃ© introduit pour adapter les seuils d'entrÃ©e selon la force du signal. Il a Ã©tÃ© appliquÃ© par erreur **aussi pendant le monitoring**, ce qui faisait basculer un trade vers les params d'un autre profil sans respecter les contrats d'entrÃ©e (notamment `min_hold_seconds` et `opposite_signal_exit_enabled`).
 
-De plus, le micro SL scalping à 0.20% était trop serré par rapport aux frais 0.31% : coupe avant même d'atteindre le seuil de rentabilité.
+## Corrections appliquÃ©es (v2.0.31 â€” Option A batch 1/2)
 
-## Corrections appliquées
-
-### Fichiers modifiés
+### Fichiers modifiÃ©s
 
 | Fichier | Changement |
 |---------|------------|
-| `backend/app/schemas/journal.py` | +4 nouveaux champs `TradingProfileParams` : `max_score`, `blocked_hours_utc`, `min_range_atr`, `breakeven_min_peak_fee_multiple` |
-| `backend/app/services/paper_trading_service.py` | +3 nouveaux gates dans `_tick_single_slot()` : max_score, blocked_hours_utc, min_range_atr + intégration `breakeven_min_peak_fee_multiple` dans la logique breakeven existante |
-| `backend/app/services/trading_profile_service.py` | Activation des 4 gates sur profils `scalping` et `aggressive` + désactivation micro_sl scalping + relève volume_ratio aggressive |
-| `backend/tests/test_micro_stop_loss.py` | `test_scalping_has_micro_sl` adapté à la désactivation volontaire |
+| `backend/app/schemas/journal.py` | +1 champ `TradingProfileParams.opposite_signal_exit_enabled: bool = True` |
+| `backend/app/services/trading_profile_service.py` | `scalping.opposite_signal_exit_enabled = False` ; `aggressive.opposite_signal_exit_enabled = False`, `min_hold_seconds = 300`, `short_min_hold_seconds = 300` |
+| `backend/app/services/paper_trading_service.py` | Mode `auto` â†’ utilise `PROFILE_PRESETS[open_pos.profile_type]` (slot d'entrÃ©e, fallback ancien si profile_type inconnu) ; bloc "Signal contraire" gatÃ© par `opposite_signal_exit_enabled` |
 
-### Nouveaux paramètres — Scalping
+### Avant / AprÃ¨s â€” `_tick_single_slot` (extrait)
 
-| Paramètre | Avant | Après | Justification |
-|-----------|-------|-------|---------------|
-| `micro_stop_loss_pct` | 0.20 | **None** | audit : 184 coupures, -$364 cum ; SL classique 0.50% reste |
-| `max_score` | — | **50** | corrélation r=-0.134 ; scores >60 = WR 48% aléatoire |
-| `blocked_hours_utc` | — | **[13,14,15,16]** | audit : -$104 cum sur 3h (US open + macro) |
-| `min_range_atr` | — | **1.5** | rejette chop ranges où 0.62% est inatteignable |
-| `breakeven_min_peak_fee_multiple` | — | **2.0** | peak doit atteindre 0.62% (2× frais) avant breakeven |
+**Avant :**
+```python
+if is_auto_mode:
+    resolved_profile = TradingProfileService.auto_select_profile(score, confidence)
+    profile_params = PROFILE_PRESETS[resolved_profile]
+```
 
-### Nouveaux paramètres — Aggressive
+**AprÃ¨s :**
+```python
+if is_auto_mode:
+    entry_profile = (open_pos.profile_type or "").strip()
+    if entry_profile in PROFILE_PRESETS:
+        profile_params = PROFILE_PRESETS[entry_profile]
+    else:
+        # Fallback ancien comportement
+        resolved_profile = TradingProfileService.auto_select_profile(score, confidence)
+        profile_params = PROFILE_PRESETS[resolved_profile]
+```
 
-| Paramètre | Avant | Après | Justification |
-|-----------|-------|-------|---------------|
-| `min_volume_ratio` | 0.5 | **0.8** | volume < SMA20 = signal fiable de futur chop |
-| `max_score` | — | **55** | scores >55 sur swings 1h = signal trop tardif |
-| `blocked_hours_utc` | — | **[13,14,15,16]** | même fenêtre destructive |
-| `min_range_atr` | — | **1.5** | scalping 1h nécessite amplitude |
-| `breakeven_min_peak_fee_multiple` | — | **2.0** | audit EXP aggressive : 18 trades breakeven tous net négatifs |
+Et le bloc "Signal contraire" :
+```python
+opposite_signal_exit_enabled = bool(getattr(profile_params, "opposite_signal_exit_enabled", True))
+if not opposite_signal_exit_enabled:
+    pass  # skip toute la logique de sortie sur signal contraire
+elif open_pos.direction == "long":
+    ...
+```
 
-## Ce qui n'a PAS été touché
+## Ce qui n'a PAS Ã©tÃ© touchÃ©
 
-- Le frontend (aucun changement — la config vit dans les presets backend)
-- Les profils `conservative` et `balanced` (inchangés)
-- Les mécanismes de sortie existants (trailing, stale, SL/TP, gain_erosion, candle_reversal)
-- Le micro SL aggressive (maintenu à 0.30%)
-- Le SAS d'entrée (inchangé)
-- Les gates économique, structural, trend alignment, tick momentum
-- Le pipeline de décision / scoring composite
-- Le moteur expérimental (worktree séparé `bitcoin-trading-v2-experiment`, non touché)
-- Les fichiers `binance_service.py`, `coingecko_service.py`, `cryptocompare_service.py`, `news_service.py`, `price_service.py` (modifications visibles dans git status = uniquement CRLF, aucun changement de contenu)
+- âœ… Frontend (aucun changement UI dans cette intervention)
+- âœ… Profils `conservative` et `balanced` (`opposite_signal_exit_enabled=True` par dÃ©faut â†’ comportement antÃ©rieur)
+- âœ… SL / TP / trailing / breakeven / stale / micro_sl / gain_erosion / candle_reversal (tous intacts)
+- âœ… Moteur expÃ©rimental (worktree `bitcoin-trading-v2-experiment`) â€” corrections F3-F7 prÃ©vues en batch 2
+- âœ… Frais dÃ©jÃ  intÃ©grÃ©s (v2.0.29) â€” aucun changement de la formule `_close_position`
+- âœ… SchÃ©mas Pydantic rÃ©tro-compatibles (`opposite_signal_exit_enabled` a un default `True`)
 
 ## Validations
 
-- ✅ **1773 tests backend passent** (baseline préservée)
-- ✅ **35 tests failed** identiques à avant les changements (régressions v2.0.29 préexistantes sur anciens seuils — déjà documentées dans le commit 261b83f)
-- ✅ `tsc --noEmit` frontend sans erreur (exit 0)
-- ✅ Diff baseline/après : **0 régression nouvelle** introduite par v2.0.30
-- ✅ Aucun import manquant, aucun schéma Pydantic cassé (defaults None garantissent la rétrocompatibilité)
+- âœ… **1775 tests backend passent** (+2 vs baseline v2.0.30 1773)
+- âœ… **33 failed** (-2 vs baseline 35) â€” aucune nouvelle rÃ©gression
+- âœ… `tsc --noEmit` frontend exit 0
+- âœ… Validation runtime des presets : `scalping.opposite_signal_exit_enabled=False`, `aggressive.opposite_signal_exit_enabled=False, min_hold_seconds=300, short_min_hold_seconds=300`, `balanced.opposite_signal_exit_enabled=True`
 
-## Documentation mise à jour
+## Documentation mise Ã  jour
 
 | Document | Changements |
 |----------|-------------|
-| `CHANGELOG.md` | Entrée [2.0.30] complète (Added : audit stats + 4 gates ; Changed : micro_sl off, volume_ratio 0.8 ; Technical : 1773/35) |
-| `docs/CURRENT_STATE.md` | En-tête version 2.0.30 / date 2026-04-18 / tests 1773 passing, ligne phase courante mise à jour |
-| `docs/ROADMAP.md` | État actuel v2.0.30 + timeline v2.0.29/v2.0.30 ajoutée |
-| `docs/requirements_traceability.md` | Version v2.0.30, date 18/04, **5 nouveaux FRs** (FR-BHU-001, FR-MSC-002, FR-RAT-001, FR-BPM-001, FR-MSL-003) |
-| `docs/ENGINE_AUDIT.md` | Section "v2.0.30 — Gates statistiques" ajoutée dans historique corrections (avant v2.0.29) |
-| `docs/HANDOFF_GPT.md` | Ce fichier (édité, pas recréé) |
+| `CHANGELOG.md` | EntrÃ©e [2.0.31] (Fixed : bug auto-mode ; Added : opposite_signal_exit_enabled + aggressive.min_hold ; Changed : _tick_single_slot ; Technical : 1775/33) |
+| `docs/CURRENT_STATE.md` | Version 2.0.31, date 23/04, tests 1775/33, ligne phase courante |
+| `docs/ROADMAP.md` | Ã‰tat actuel v2.0.31 + ligne timeline v2.0.31 |
+| `docs/ENGINE_AUDIT.md` | Section 7 ajoutÃ©e â€” Audit run 23/04 + corrections v2.0.31 (option A batch 1/2) + plan batch 2 (F3-F7) |
+| `docs/HANDOFF_GPT.md` | Ce fichier (Ã©ditÃ©, pas recrÃ©Ã©) |
 
-## État actuel
+## Ã‰tat actuel
 
-- **Version** : v2.0.30
-- **Tests backend** : 1773 passed / 35 failed (régressions préexistantes v2.0.29)
-- **Frontend** : tsc clean ✅
-- **Audit statistique** : 13 insights non triviaux documentés (disponibles dans la session)
-- **Prochaine action (Session 4)** : Validation runtime sur 7 jours depuis le laptop perso
-  - Pull du code v2.0.30
-  - Reset comptes paper trading
-  - Laisser tourner 7 jours en mode auto
-  - Métriques cibles : PnL net > 0, 10-20 trades/j scalping, WR net > 50%, durée moy > 5 min, aucun trade 13-16h UTC, aucun trade |score| > 50
+- **Version** : v2.0.31
+- **Tests backend** : 1775 passed / 33 failed (rÃ©gressions prÃ©existantes v2.0.29-v2.0.30)
+- **Frontend** : tsc clean âœ…
+- **StratÃ©gie** : Option A â€” itÃ©rative en 2 batches
+  - **Batch 1 livrÃ© (v2.0.31)** : F1 (opposite_signal_exit toggle) + F2 (fix monitoring auto-mode) + F8 (min_hold aggressive)
+  - **Batch 2 Ã  livrer aprÃ¨s validation 1 nuit** : F3 (micro_sl aggressive OFF), F4 (trailing drop 50% + min_peak 3Ã— fees), F5 (gate macro anti-SHORT en uptrend), F6 (capture â‰¥ 0.65%), F7 (bug total_fees EXP)
+
+## Prochaine action recommandÃ©e
+
+1. **Reset les comptes paper trading** des 2 moteurs (MAIN + EXP)
+2. **Relancer 1 nuit** (au moins 12 h) en mode auto
+3. **Exporter les journaux** au matin
+4. **VÃ©rifier les mÃ©triques de succÃ¨s** :
+   - 0 trade scalping/aggressive fermÃ© via "Signal contraire"
+   - DurÃ©e moyenne scalping > 5 min (vs 326 s actuel)
+   - WR net > 30 % (vs 0 % actuel)
+   - PnL net > -$50 sur 24 h (vs -$338 actuel)
+5. Si succÃ¨s â†’ enchaÃ®ner batch 2 (F3-F7). Sinon â†’ analyser les logs pour identifier le prochain destructeur de valeur.
 
 ## Commandes de relance
 
-```bash
-# Backend
-cd backend && .\venv\Scripts\activate && uvicorn app.main:app --reload --port 8000
+```powershell
+# Voir docs/SERVERS.md pour la procÃ©dure complÃ¨te des 4 serveurs
 
-# Frontend
-cd frontend && npm run dev
+# MAIN
+Start-Process powershell -ArgumentList "-NoExit","-Command","cd C:\Users\ilies\git\bitcoin-trading-assistant\backend; .\venv\Scripts\activate; python -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
+Start-Process powershell -ArgumentList "-NoExit","-Command","cd C:\Users\ilies\git\bitcoin-trading-assistant\frontend; npx vite --port 5173"
+
+# EXPERIMENTAL
+Start-Process powershell -ArgumentList "-NoExit","-Command","cd C:\Users\ilies\git\bitcoin-trading-v2-experiment\backend; .\venv\Scripts\activate; python -m uvicorn app.main:app --host 127.0.0.1 --port 8001"
+Start-Process powershell -ArgumentList "-NoExit","-Command","cd C:\Users\ilies\git\bitcoin-trading-v2-experiment\frontend; npx vite --port 5174"
 
 # Tests
-cd backend && .\venv\Scripts\python.exe -m pytest tests/ -q --no-header --tb=no
+cd backend ; .\venv\Scripts\python.exe -m pytest tests/ -q --no-header --tb=no
 
-# Lancer le robot (mode headless)
+# Reset paper trading + start robot autonome MAIN
+curl -X POST http://localhost:8000/paper/account/reset
 curl -X POST http://localhost:8000/paper/autonomous/start -H "Content-Type: application/json" -d '{"interval_seconds": 5, "profile": "auto"}'
 
-# Export journal post-validation (7j)
-curl http://localhost:8000/paper/journal/export > journal_v2.0.30_day7.json
+# Export journal aprÃ¨s run
+curl http://localhost:8000/paper/journal/export > docs/journaux/btc-trading-journal-2026-04-24-PORT5173.json
+curl http://localhost:8001/paper/journal/export > docs/journaux/btc-trading-journal-2026-04-24-PORT5174.json
 ```

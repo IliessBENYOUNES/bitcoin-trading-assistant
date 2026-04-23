@@ -133,6 +133,15 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         breakeven_min_peak_fee_multiple=2.0,
         # [v2.0.30] Min range/ATR — rejette les chop ranges où 0.62% est inatteignable.
         min_range_atr=1.5,
+        # [v2.0.31] OPPOSITE SIGNAL EXIT DÉSACTIVÉ — Audit 23/04/2026 (run du 18/04, 51 trades MAIN) :
+        # 50/51 trades fermés via "Signal contraire" → +$0.04 brut → -$7.71 net systématique.
+        # WR brut 67% → WR net 0%. Cette règle est le principal destructeur de valeur en mode auto.
+        # SL/TP/trailing/stale gèrent les sorties ; le score n'a plus le droit de fermer.
+        opposite_signal_exit_enabled=False,
+        # [v2.0.31] min_hold_seconds=300 explicite : protège contre la re-résolution du profil
+        # en mode auto qui pouvait précédemment basculer sur des params sans min_hold.
+        min_hold_seconds=300,
+        short_min_hold_seconds=300,
     ),
     # [v2.0.29] REFONTE COMPLETE — Scalping transformé en "swing court".
     # AUDIT 17/04/2026 :
@@ -239,6 +248,11 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # [v2.0.30] Min range/ATR 1.5 — rejette les marchés compressés où aucun trade
         # scalping ne peut capturer > 0.62% (nécessaire pour couvrir 2× frais).
         min_range_atr=1.5,
+        # [v2.0.31] OPPOSITE SIGNAL EXIT DÉSACTIVÉ — Audit 23/04/2026 (run scalping MAIN) :
+        # tous les trades scalping étaient fermés via "Signal contraire" pour des trades
+        # qui auraient autrement atteint le TP ou le breakeven structurel. Le score est
+        # un signal d'OUVERTURE, pas un signal de fermeture sur des positions de 5-30 min.
+        opposite_signal_exit_enabled=False,
     ),
 }
 

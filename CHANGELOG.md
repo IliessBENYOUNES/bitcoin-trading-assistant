@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.31] - 2026-04-23
+
+### Fixed
+- **BUG CRITIQUE auto-mode : profil ré-résolu pendant le monitoring** — En mode `auto`, le profil utilisé pour évaluer la sortie d'une position ouverte était ré-résolu à chaque tick selon le score courant (`auto_select_profile(score, confidence)`). Conséquence : un trade ouvert sur le slot scalping (avec `min_hold_seconds=300`, `opposite_signal_exit_enabled=False`) pouvait être monitoré avec les params d'aggressive (qui n'avait ni `min_hold` ni `short_min_hold`) et fermé en 5 min par "Signal contraire" → -$7.71 net systématique. Désormais le monitoring utilise `open_pos.profile_type` (le slot d'entrée), garantissant la cohérence entrée/sortie. **Audit 23/04/2026 : 50/51 trades MAIN détruits par ce bug.**
+
+### Added
+- **OPPOSITE SIGNAL EXIT TOGGLE** (`opposite_signal_exit_enabled: bool = True`) — Nouveau paramètre de profil. Quand `False`, la règle "Signal contraire" (sortie quand le DecisionService recommande l'action opposée à la position) est entièrement désactivée ; les sorties dépendent uniquement de SL/TP/trailing/breakeven/stale. **Désactivé sur scalping + aggressive** : audit 23/04/2026 prouve que cette règle convertit mécaniquement 67 % de WR brut en 0 % de WR net (la capture est plus petite que les frais round-trip).
+- **AGGRESSIVE `min_hold_seconds=300` + `short_min_hold_seconds=300`** — Filet de sécurité explicite : empêche les fermetures-éclair en moins de 5 min même si une logique tierce essaie de fermer le trade.
+
+### Changed
+- `_tick_single_slot()` (paper_trading_service) :
+  - Mode `auto` → utilise `PROFILE_PRESETS[open_pos.profile_type]` pour le monitoring (au lieu de re-résoudre dynamiquement).
+  - Bloc "Signal contraire" gaté par `opposite_signal_exit_enabled` ; quand False, le bloc est skippé entièrement.
+
+### Technical
+- Tests backend : **1775 passed** (+2 vs v2.0.30 baseline 1773), **33 failed** (-2 vs baseline 35) → aucune nouvelle régression.
+- Frontend : `tsc --noEmit` zéro erreur.
+- Documents mis à jour : `ENGINE_AUDIT.md` (section 7 — audit run 23/04 + corrections v2.0.31), `CURRENT_STATE.md`, `ROADMAP.md`, `requirements_traceability.md`, `HANDOFF_GPT.md`.
+
+### Notes méthodologiques
+- Cette livraison est l'**Option A** d'un plan de corrections en 2 batches (F1+F2+F8 d'abord, puis F3-F7 après validation par run 1 nuit).
+- Métriques de succès attendues sur le prochain run :
+  - Aucun trade scalping/aggressive fermé via "Signal contraire"
+  - Durée moyenne scalping > 5 min (vs 326 s actuel)
+  - WR net > 30 % (vs 0 % actuel)
+
 ## [2.0.30] - 2026-04-18
 
 ### Added

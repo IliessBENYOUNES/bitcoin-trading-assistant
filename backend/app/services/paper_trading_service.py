@@ -834,10 +834,24 @@ class PaperTradingService:
                 unrealized_pnl_pct = (unrealized_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
 
                 # [v1.6] Mode auto : résoudre le profil réel pour les seuils de sortie
+                # [v2.0.31] FIX CRITIQUE — Auparavant on ré-résolvait dynamiquement le profil
+                # à chaque tick selon le score courant. Conséquence : un trade ouvert sur le
+                # slot scalping (min_hold=300, opposite_signal_exit=False) pouvait être monitoré
+                # avec les params de "aggressive" (min_hold absent dans l'ancien preset, opposite
+                # signal exit actif) et fermé en 5 min par "Signal contraire" → -$7.71 net.
+                # Désormais : le profil utilisé pour le monitoring est celui du SLOT D'ENTRÉE
+                # (open_pos.profile_type), garantissant la cohérence des règles de sortie avec
+                # les règles d'entrée. Audit 23/04/2026 : 50/51 trades MAIN détruits par ce bug.
                 if is_auto_mode:
-                    resolved_profile = TradingProfileService.auto_select_profile(score, confidence)
-                    profile_params = PROFILE_PRESETS[resolved_profile]
-                    profile_name = f"auto→{resolved_profile}"
+                    entry_profile = (open_pos.profile_type or "").strip()
+                    if entry_profile in PROFILE_PRESETS:
+                        profile_params = PROFILE_PRESETS[entry_profile]
+                        profile_name = f"auto→{entry_profile}"
+                    else:
+                        # Fallback ancien comportement si pas de profile_type stocké
+                        resolved_profile = TradingProfileService.auto_select_profile(score, confidence)
+                        profile_params = PROFILE_PRESETS[resolved_profile]
+                        profile_name = f"auto→{resolved_profile}"
 
                 # [v1.9.1] Protection anti-micro-PnL — min_hold_seconds
                 # Si la position est trop jeune, on ne ferme PAS sur signal contraire.
@@ -857,7 +871,21 @@ class PaperTradingService:
                 close_signal = False
                 signal_reason = ""
 
-                if open_pos.direction == "long":
+                # [v2.0.31] OPPOSITE SIGNAL EXIT GATE — Désactivable par profil.
+                # Quand False, le bloc "Signal contraire" est entièrement skippé : le profil
+                # délègue ses sorties au SL/TP/trailing/breakeven/stale. Audit 23/04/2026 :
+                # 50/51 trades MAIN ferment via cette règle à -$7.71 net (frais > capture brute).
+                opposite_signal_exit_enabled = True
+                if profile_params is not None:
+                    opposite_signal_exit_enabled = bool(getattr(
+                        profile_params, "opposite_signal_exit_enabled", True
+                    ))
+
+                if not opposite_signal_exit_enabled:
+                    # Skip toute la logique de fermeture sur signal contraire.
+                    # Profit/loss take en bas du bloc restent évalués via close_signal=False.
+                    pass
+                elif open_pos.direction == "long":
                     # [v2.0.11] Protection reversal LONG : un mean_reversion_long est
                     # ouvert PARCE QUE le score est négatif (survente). Le signal contraire
                     # ne doit fermer que si le score bearish s'est INTENSIFIÉ au-delà du

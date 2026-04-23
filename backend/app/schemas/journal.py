@@ -221,6 +221,13 @@ class TradingProfileParams(BaseModel):
     # EN FORMATION plutôt que les signaux DÉJÀ CONSOMMÉS.
     # None = pas de cap (comportement antérieur).
     max_score: Optional[int] = Field(default=None, description="Score absolu maximum pour ouvrir (None=pas de cap). Ex: 50 = refuse si |score| > 50.")
+    # [v2.0.31] OPPOSITE SIGNAL EXIT — Permet de désactiver la sortie automatique
+    # sur "Signal contraire" (action recommandée par le DecisionService devient l'opposé
+    # de la position). Audit 23/04/2026 : 50/51 trades MAIN ferment via cette règle à
+    # +$0.04 brut → -$7.71 net systématique (gross WR 67%, net WR 0%). Cette règle
+    # convertit mécaniquement des signaux corrects en pertes garanties par les frais.
+    # Désactivé sur scalping + aggressive ; SL/TP/trailing/stale gèrent les sorties.
+    opposite_signal_exit_enabled: bool = Field(default=True, description="Active la sortie sur signal contraire (DecisionService inverse). Désactivé = seuls SL/TP/trailing/stale ferment.")
     # [v2.0.30] MIN RANGE/ATR — Filtre les marchés compressés (chop range).
     # Le range_width_atr est déjà calculé par MarketStructureService. Il mesure la
     # largeur du range 20 candles / ATR. Un ratio < 1.5 signifie que le marché est
