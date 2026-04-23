@@ -77,6 +77,13 @@ class TradingProfileParams(BaseModel):
     # Durée minimale de détention avant que les sorties par signal soient autorisées.
     # Empêche les "fermetures éclair" à 0.00$ qui churnent sans valeur.
     min_hold_seconds: Optional[int] = Field(default=None, description="Durée min en secondes avant sortie signal (None=pas de minimum)")
+    # [EXP v2.0.31-fees] Toggle "Signal contraire" — quand False, le bloc de sortie
+    # par signal contraire (action=acheter sur short / vendre sur long) est ENTIÈREMENT
+    # désactivé. Sur scalping/aggressive avec frais intégrés, ces sorties capturent
+    # 0.04% brut ($1) → -$6.75 NET après frais ($7.75) : 50/51 trades MAIN sont morts
+    # ainsi (audit 23/04/2026, run 18/04 04h-13h). Les SL/TP/trailing/breakeven/stale
+    # restent actifs pour gérer la sortie naturellement.
+    opposite_signal_exit_enabled: bool = Field(default=True, description="Active la sortie 'Signal contraire' (False = piège fees désactivé)")
     # Seuil de mouvement économique minimum : en dessous, le trade n'a presque aucune
     # chance de survivre au cost model realistic. Utilisé pour le learning et les stats.
     min_economic_pnl_pct: Optional[float] = Field(default=None, description="Mouvement % minimum pour qu'un trade soit économiquement utile")

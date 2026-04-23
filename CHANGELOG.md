@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.31-fees] - 2026-04-23
+
+### Fixed
+- **F1 — Désactivation "Signal contraire" sur scalping & aggressive** : ajout du toggle `opposite_signal_exit_enabled` (défaut `True`, mis à `False` sur scalping et aggressive). L'audit du run 18-22/04 (52 trades EXP) montre que les sorties Signal contraire capturent ~0.04% brut → -$6.75 NET après frais ($7.75) — c'était un piège fees mécanique. Les SL/TP/trailing/breakeven/stale en aval restent actifs et gèrent la sortie naturellement.
+- **F2 — Bug auto-mode (re-résolution profil sur position ouverte)** : `_tick_single_slot` re-résolvait le profil à chaque tick selon le score courant. Une position ouverte sur scalping (`min_hold=300s`, `opposite_signal=False`) pouvait basculer sur aggressive (sans `min_hold`, `opposite_signal=True` historique) → fermée immédiatement par Signal contraire. Fix : on lit désormais `open_pos.profile_type` (profil d'entrée) au lieu de re-résoudre.
+- **F8 — `min_hold_seconds=300` explicite sur aggressive** (defense en profondeur — empêche le churn résiduel < 5 min même si une régression réintroduit le bug auto-mode).
+
+### Technical
+- Schema : nouveau champ `TradingProfileParams.opposite_signal_exit_enabled: bool = True`
+- Tests : **1856 passed, 1 skipped, 0 failed** (aucune régression vs baseline v2.0.30)
+
 ## [2.0.28] - 2026-04-13
 
 ### Added

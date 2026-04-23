@@ -1,5 +1,121 @@
 # 🔄 HANDOFF GPT — Dernière intervention (branche experimental)
 
+## Date : 23 avril 2026 — v2.0.31-fees (Option A, Batch 1/2 sur EXP)
+
+> Application au moteur EXPERIMENTAL des fixes F1+F2+F8 déjà livrés sur le moteur MAIN (v2.0.31, commit `master`). Les deux moteurs convergent désormais sur la même logique de Signal contraire.
+
+---
+
+## Problème
+
+Journal EXP du 18/04 13h → 22/04 22h (52 trades) : **-$436 net** alors que BTC montait. WR net = **11.5%**, frais cumulés **$446** > 100% de la perte. 50/52 trades fermés via "Signal contraire" sur scalping/aggressive (audit `docs/ENGINE_AUDIT.md` §7).
+
+Causes racines identifiées (audit §7.3) :
+1. **Bug auto-mode** : `_tick_single_slot` re-résolvait le profil à chaque tick sur une position déjà ouverte. Trade ouvert sur scalping (`min_hold=300s`) → 3 min plus tard, score=62 résoud "aggressive" (sans `min_hold` historique) → fermeture immédiate Signal contraire.
+2. **Sortie "Signal contraire" = piège fees mécanique** : capture moyenne 0.04% brut = $1 → -$6.75 NET après frais $7.75. Plus le moteur a raison sur la direction, plus il perd net.
+
+## Diagnostic
+
+Cross-référence du log JSON `btc-trading-journal-2026-04-22-Moteur Expérimental.json` avec `paper_trading_service._tick_single_slot` (ligne 836-840 pré-fix) → confirmation que `auto_select_profile(score, confidence)` est appelé sur position ouverte. Tous les trades scalping/aggressive fermés via Signal contraire correspondent à des ouvertures min_hold mais re-résolution → perte du min_hold.
+
+## Cause racine
+
+```python
+# AVANT (paper_trading_service.py L836-840)
+if is_auto_mode:
+    resolved_profile = TradingProfileService.auto_select_profile(score, confidence)
+    profile_params = PROFILE_PRESETS[resolved_profile]   # ← change le profil sur position ouverte
+    profile_name = f"auto→{resolved_profile}"
+```
+
+## Correction appliquée
+
+### Fichiers modifiés (3)
+
+1. **`backend/app/schemas/journal.py`** — Nouveau champ schema :
+   ```python
+   opposite_signal_exit_enabled: bool = Field(default=True, ...)
+   ```
+
+2. **`backend/app/services/trading_profile_service.py`** :
+   - `scalping.opposite_signal_exit_enabled = False`
+   - `aggressive.opposite_signal_exit_enabled = False`
+   - `aggressive.min_hold_seconds = 300` (F8 — defense en profondeur)
+   - `aggressive.short_min_hold_seconds = 300`
+
+3. **`backend/app/services/paper_trading_service.py`** (`_tick_single_slot`, monitoring branch) :
+   - F2 : auto-mode lit désormais `open_pos.profile_type` (profil d'entrée) au lieu de re-résoudre à chaque tick. Fallback sur l'ancien comportement si le profil d'entrée est inconnu.
+   - F1 : nouveau gate `opposite_signal_enabled = getattr(profile_params, "opposite_signal_exit_enabled", True)`. Si `False`, les blocs `if direction=="long"` / `elif direction=="short"` sont skippés entièrement → SL/TP/trailing/breakeven/stale en aval restent actifs.
+
+## Ce qui n'a PAS été touché
+
+- Aucune modification du modèle de coûts (`trading_cost_service.py`)
+- Aucune modification du `_close_position()` (calcul net inchangé)
+- Aucune modification de `decision_service`, `signal_service`, `tick_momentum_service`
+- Aucune migration DB nécessaire (pas de nouvelle colonne)
+- Frontend non touché (le toggle n'est pas exposé en UI pour l'instant)
+- Profils `conservative` et `balanced` non modifiés (gardent `opposite_signal_exit_enabled=True` par défaut)
+
+## Validations
+
+| Check | Résultat |
+|-------|----------|
+| Import `PROFILE_PRESETS` | ✅ scalping.opposite_signal_exit_enabled = False |
+|  | ✅ aggressive.opposite_signal_exit_enabled = False |
+|  | ✅ aggressive.min_hold_seconds = 300 |
+|  | ✅ aggressive.short_min_hold_seconds = 300 |
+| `pytest tests/ -q` | ✅ **1856 passed, 1 skipped, 0 failed** (vs baseline 1856 — aucune régression) |
+| `get_errors` 3 fichiers | ✅ aucune erreur |
+
+## Documentation mise à jour
+
+| Doc | Section modifiée |
+|-----|------------------|
+| `CHANGELOG.md` | Nouvelle entrée `[2.0.31-fees] - 2026-04-23` (Fixed F1/F2/F8 + Technical) |
+| `docs/CURRENT_STATE.md` | Header version 2.0.28 → 2.0.31-fees, tests 1808 → 1856, branche `master` → `experiment/v2-fees-and-1m` |
+| `docs/HANDOFF_GPT.md` | Ce fichier (édité, jamais recréé) |
+| `docs/ENGINE_AUDIT.md` (repo MAIN) | Section 7 déjà à jour côté MAIN ; Batch 2 EXP à venir (F3/F4/F5/F6/F7) |
+
+## Commit
+
+```
+fix(profiles): F1+F2+F8 EXP — désactiver Signal contraire scalping/aggressive + fix bug auto-mode v2.0.31-fees
+```
+
+## État actuel
+
+- Version : **v2.0.31-fees** (branche `experiment/v2-fees-and-1m`)
+- Tests : 1856 passed / 1 skipped / 0 failed
+- Prochaine action recommandée : **lancer 1 nuit de paper trading** (port 8001/5174) pour valider :
+  - 0 trade scalping/aggressive fermé via "Signal contraire"
+  - Durée moyenne scalping > 5 min (vs 326 s actuel)
+  - WR net > 30% (vs 11.5% actuel)
+  - PnL net > -$50 sur 24h
+- Si validé → livrer Batch 2 (F3 micro_sl OFF aggressive, F4 trailing 50% + min_peak 3× fees, F5 macro trend filter, F6 economic gate 0.65%, F7 fix `account.total_fees` agrégation).
+
+## Commandes de relance
+
+```powershell
+# Kill tout
+taskkill /F /IM python.exe 2>$null ; taskkill /F /IM node.exe 2>$null ; Start-Sleep 2
+
+# Backend EXPERIMENTAL (port 8001)
+Start-Process powershell -ArgumentList "-Command","cd C:\Users\ilies\git\bitcoin-trading-v2-experiment\backend; .\venv\Scripts\activate; python -m uvicorn app.main:app --host 127.0.0.1 --port 8001"
+
+# Frontend EXPERIMENTAL (port 5174)
+Start-Process powershell -ArgumentList "-Command","cd C:\Users\ilies\git\bitcoin-trading-v2-experiment\frontend; npx vite --port 5174"
+
+# Vérifier
+netstat -ano | findstr "LISTENING" | findstr "8001"
+netstat -ano | findstr "LISTENING" | findstr "5174"
+```
+
+---
+
+> **Historique précédent** archivé ci-dessous (intervention v2.0.30 du 18/04).
+
+---
+
 ## Date : 18 avril 2026 — v2.0.30 (experimental multi-strategy)
 
 > **Push test 2026-04-18 01:28 UTC** — Identité IliessBENYOUNES confirmée sur experiment/v2-fees-and-1m.

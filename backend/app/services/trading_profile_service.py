@@ -146,6 +146,15 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         smart_cooldown_enabled=True,
         min_cooldown_minutes=1.0,
         max_cooldown_minutes=5.0,
+        # [EXP v2.0.31-fees] F8 — min_hold explicite sur aggressive (300s = 5 min).
+        # Defense en profondeur : même si une régression réintroduit le bug auto-mode,
+        # min_hold protège contre les fermetures-éclair Signal contraire (<5 min).
+        min_hold_seconds=300,
+        short_min_hold_seconds=300,
+        # [EXP v2.0.31-fees] F1 — Désactivation Signal contraire sur aggressive.
+        # Les sorties Signal contraire capturent ~0.04% brut → -$6.75 net après frais.
+        # Le SL/TP/trailing/breakeven/stale gèrent la sortie naturellement.
+        opposite_signal_exit_enabled=False,
     ),
     "scalping": TradingProfileParams(
         profile_type=TradingProfileType.scalping,
@@ -321,6 +330,9 @@ PROFILE_PRESETS: dict[str, TradingProfileParams] = {
         # short est fermé en perte par "signal contraire". Seuil 50 = bloque les
         # shorts quand le score est nettement bullish (≥4 indicateurs convergent).
         trend_alignment_score_threshold=50,
+        # [EXP v2.0.31-fees] F1 — Désactivation Signal contraire sur scalping.
+        # Mêmes raisons qu'aggressive : capture brute < frais → perte nette systématique.
+        opposite_signal_exit_enabled=False,
     ),
 }
 

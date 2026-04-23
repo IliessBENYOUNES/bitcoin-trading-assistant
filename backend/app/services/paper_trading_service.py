@@ -834,10 +834,23 @@ class PaperTradingService:
                 unrealized_pnl_pct = (unrealized_pnl / open_pos.position_size_usd * 100) if open_pos.position_size_usd > 0 else 0
 
                 # [v1.6] Mode auto : résoudre le profil réel pour les seuils de sortie
+                # [EXP v2.0.31-fees] F2 — BUG FIX : ne PAS re-résoudre le profil sur une
+                # position déjà ouverte. Le profil d'entrée détermine les règles de sortie.
+                # Sinon : trade ouvert sur scalping (min_hold=300s, opposite_signal=False)
+                # → 3 min plus tard score=62 résoud "aggressive" → règles aggressive
+                # appliquées → fermeture immédiate via Signal contraire (-$7 net).
+                # On utilise le profil d'entrée stocké dans open_pos.profile_type.
                 if is_auto_mode:
-                    resolved_profile = TradingProfileService.auto_select_profile(score, confidence)
-                    profile_params = PROFILE_PRESETS[resolved_profile]
-                    profile_name = f"auto→{resolved_profile}"
+                    entry_profile = (open_pos.profile_type or "scalping").split("→")[-1]
+                    if entry_profile in PROFILE_PRESETS:
+                        profile_params = PROFILE_PRESETS[entry_profile]
+                        profile_name = f"auto→{entry_profile}"
+                    else:
+                        # Fallback : si le profil d'entrée n'est plus connu, garder l'ancien
+                        # comportement (re-résolution) plutôt que de planter.
+                        resolved_profile = TradingProfileService.auto_select_profile(score, confidence)
+                        profile_params = PROFILE_PRESETS[resolved_profile]
+                        profile_name = f"auto→{resolved_profile}"
 
                 # [v1.9.1] Protection anti-micro-PnL — min_hold_seconds
                 # Si la position est trop jeune, on ne ferme PAS sur signal contraire.
@@ -857,7 +870,13 @@ class PaperTradingService:
                 close_signal = False
                 signal_reason = ""
 
-                if open_pos.direction == "long":
+                # [EXP v2.0.31-fees] F1 — Toggle global du bloc Signal contraire.
+                # Si désactivé pour ce profil (scalping, aggressive), on saute toute la
+                # logique de fermeture par retournement de signal. Les SL/TP/trailing/
+                # breakeven/stale en aval continuent de fonctionner normalement.
+                opposite_signal_enabled = getattr(profile_params, "opposite_signal_exit_enabled", True) if profile_params else True
+
+                if opposite_signal_enabled and open_pos.direction == "long":
                     # [v2.0.11] Protection reversal LONG : un mean_reversion_long est
                     # ouvert PARCE QUE le score est négatif (survente). Le signal contraire
                     # ne doit fermer que si le score bearish s'est INTENSIFIÉ au-delà du
@@ -892,7 +911,7 @@ class PaperTradingService:
                                 close_signal = True
                                 signal_reason = f"Signal nettement contraire : attendre (score={score})"
 
-                elif open_pos.direction == "short":
+                elif opposite_signal_enabled and open_pos.direction == "short":
                     # [v1.9.3] Seuil configurable pour fermer un short par signal contraire.
                     # Le moteur ne tue plus un short dès que le signal principal redevient
                     # légèrement bullish. Il exige un vrai retournement (score >= threshold).
