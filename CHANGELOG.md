@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.31-fees-batch2] - 2026-04-23
+
+> **Réorientation Batch 2 EXP** — l'inspection du code a révélé que le moteur EXP en mode `experimental` (multi-strategy) **n'emprunte PAS** `_tick_single_slot` ni `PROFILE_PRESETS`. Les fixes F1/F2/F8 v2.0.31-fees sont donc inactifs en mode multi-strategy (gardés comme filet pour le mode standard). Ce batch corrige les VRAIS bugs du chemin multi-strategy (`experimental_engine._manage_open_position`).
+
+### Fixed
+- **F3 — BUGFIX CRITIQUE micro_sl `0.0` qui ferme à la moindre perte** (`experimental_engine.py` L394) : la "désactivation" v2.0.30 (`micro_sl_pct=0.0` sur scalping/aggressive/micro_scalping) faisait passer la condition `if unrealized_pct <= -params.micro_sl_pct` à `if unrealized_pct <= 0` → fermait dès la moindre perte latente. Cause directe des **24 trades EXP fermés à -0.15%** sur le journal du 23/04 (-$304 cum). Fix : ne déclencher le micro_sl QUE si le seuil est strictement positif (`if params.micro_sl_pct > 0 and ...`).
+- **F4 — Trailing min_peak = 2× round-trip fees** (`experimental_engine.py` L424) : le trailing pouvait s'activer dès `trailing_activation_pct` (0.15-0.40% selon strategy) alors que les frais RT sont 0.31% → trailing-out net-négatifs garantis. Ajout du gate `peak_pct >= max(trailing_activation_pct, 2 × fee_pct)` (= 0.62% mini). Affecte scalping, micro_scalping, mean_reversion, breakout (aggressive 0.60% déjà borderline OK).
+
+### Technical
+- 2 lignes patchées dans `_manage_open_position` (gate micro_sl + min_peak trailing)
+- Tests : **1856 passed, 1 skipped, 0 failed** (vs baseline 1856 — aucune régression)
+- Aucun changement de schema, aucune migration DB
+- F5 (macro trend filter), F6 (economic gate 0.65%), F7 (`account.total_fees` agrégation) reportés à un Batch 3 après validation par paper run
+
 ## [2.0.31-fees] - 2026-04-23
 
 ### Fixed

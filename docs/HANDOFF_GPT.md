@@ -1,5 +1,131 @@
 # 🔄 HANDOFF GPT — Dernière intervention (branche experimental)
 
+## Date : 23 avril 2026 — v2.0.31-fees-batch2 (Batch 2 EXP réorienté)
+
+> **Important — réorientation stratégique** : l'inspection du code a confirmé que le moteur EXP en mode `experimental` (multi-strategy, celui que l'utilisateur lance via le frontend port 5174) **n'emprunte PAS** `paper_trading_service._tick_single_slot` ni `PROFILE_PRESETS`. Tout passe par `ExperimentalPaperTradingService._experimental_tick()` → `_manage_open_position()` qui consomme les `StrategyParams` de `strategies/*.py`. Les fixes F1+F2+F8 du commit précédent (v2.0.31-fees) sont donc **inactifs en mode multi-strategy** ; ils restent en place comme filet de sécurité au cas où on bascule en mode standard. Ce batch corrige les **vrais** bugs du chemin multi-strategy.
+
+---
+
+## Problème
+
+Journal EXP du 18/04 → 23/04 (52 trades, port 5174 multi-strategy) :
+- **-$436 net** (-4.36%) alors que BTC montait
+- WR net = **11.5%**, frais cumulés **$446** > 100% de la perte
+- **24 trades fermés via "Micro stop loss : PnL latent -0.15%"** pour -$304 cum
+- Plusieurs trailing-out net-négatifs (peak < 2× frais)
+
+## Diagnostic — 2 bugs critiques dans `experimental_engine._manage_open_position`
+
+### Bug F3 (CRITIQUE) — micro_sl `0.0` ferme à la moindre perte
+
+```python
+# AVANT (experimental_engine.py L394)
+if unrealized_pct <= -params.micro_sl_pct:   # quand micro_sl_pct=0.0 → if pct <= 0
+```
+
+La "désactivation" v2.0.30 fixait `micro_sl_pct = 0.0` sur scalping/aggressive/micro_scalping en croyant désactiver le mécanisme. Mais la condition devient `if unrealized_pct <= -0.0` = `if unrealized_pct <= 0` → **fermeture instantanée dès que le PnL latent passe sous zéro**. Sur un tick 5s, la première lecture négative est typiquement -0.05 à -0.20% sur BTC → cohérent avec les 24 fermetures observées à -0.15%.
+
+> 💡 Le moteur MAIN (`paper_trading_service._tick_single_slot` L455-456) gate déjà correctement avec `if micro_sl_pct is not None and micro_sl_pct > 0:`. Le bug est exclusif au chemin multi-strategy EXP.
+
+### Bug F4 — Trailing s'active avant 2× frais
+
+```python
+# AVANT (experimental_engine.py L424)
+if peak_pct >= params.trailing_activation_pct and unrealized_pct > 0:
+```
+
+Les `trailing_activation_pct` des strategies vont de 0.15% (micro_scalping) à 0.60% (aggressive). Avec frais RT = 0.31%, tout trailing activé en dessous de **0.62% (= 2 × frais)** garantit un trailing-out net-négatif (le pic ne couvre même pas les frais).
+
+## Cause racine
+
+Les commits v2.0.30 ont introduit l'idée "micro_sl=0.0 = désactivé" sans modifier la condition de gate, et le trailing n'a jamais eu de garde-fou économique.
+
+## Correction appliquée
+
+### Fichier modifié (1)
+
+**`backend/app/services/experimental_engine.py`** (`_manage_open_position`) :
+
+```python
+# F3 — gate micro_sl uniquement si seuil strictement positif
+if params.micro_sl_pct > 0 and unrealized_pct <= -params.micro_sl_pct:
+    ...
+
+# F4 — gate trailing min_peak = 2× round-trip fees
+from app.services.trading_cost_service import get_cost_model
+_fee_pct = get_cost_model("realistic").round_trip_cost_pct()  # ~0.31%
+_trailing_min_peak = max(params.trailing_activation_pct, 2.0 * _fee_pct)  # ≥ 0.62%
+if peak_pct >= _trailing_min_peak and unrealized_pct > 0:
+    ...
+```
+
+## Ce qui n'a PAS été touché
+
+- Aucune modification des `strategies/*.py` (les valeurs `micro_sl_pct=0.0` v2.0.30 restent telles quelles → simplement plus interprétées comme "désactivé")
+- Aucune modification de `MultiStrategyEngine` (gates globaux v2.0.30 inchangés)
+- Aucune modification du `_close_position()` ou du `trading_cost_service`
+- Aucune modification de `TradingProfileService` / PROFILE_PRESETS
+- Frontend non touché
+- Bug F7 (`account.total_fees` agrégation visible dans le journal) **non corrigé** dans ce batch — c'est cosmétique (le PnL net est correct, seul l'agrégat affiché est faux). Reporté Batch 3.
+- F5 (macro trend filter) et F6 (economic gate 0.65%) reportés Batch 3 après validation paper run F3+F4.
+
+## Validations
+
+| Check | Résultat |
+|-------|----------|
+| `pytest tests/ -q` | ✅ **1856 passed, 1 skipped, 0 failed** (baseline conservée) |
+| `get_errors experimental_engine.py` | ✅ aucune erreur |
+| Vérification MAIN ne souffre pas du même bug | ✅ MAIN gate déjà avec `if micro_sl_pct is not None and micro_sl_pct > 0` |
+
+## Documentation mise à jour
+
+| Doc | Section modifiée |
+|-----|------------------|
+| `CHANGELOG.md` (EXP) | Nouvelle entrée `[2.0.31-fees-batch2] - 2026-04-23` (Fixed F3/F4 + note réorientation) |
+| `docs/HANDOFF_GPT.md` (EXP) | Ce fichier (édité, pas recréé) |
+| `docs/CURRENT_STATE.md` (EXP) | Version → v2.0.31-fees-batch2 (à faire dans le commit) |
+
+## Commit (à venir)
+
+```
+fix(multi-strategy): F3 bug micro_sl=0.0 + F4 trailing min_peak 2× fees v2.0.31-fees-batch2
+```
+
+## État actuel
+
+- **Branche** : `experiment/v2-fees-and-1m`
+- **Version** : v2.0.31-fees-batch2
+- **Tests** : 1856 passed / 1 skipped / 0 failed
+- **Mode utilisateur** : multi-strategy (port 5174) — F3+F4 sont actifs sur ce chemin ✅
+- **Prochaine action recommandée** : laisser tourner le multi-strategy 1 nuit pour valider :
+  - 0 trade fermé via "Micro stop loss" sur scalping/aggressive/micro_scalping (où `micro_sl_pct=0.0`)
+  - 0 trailing-out avec peak < 0.62%
+  - PnL net > -$50 sur 24h
+- Si validé → Batch 3 (F5 macro trend filter, F6 economic gate 0.65%, F7 fix `account.total_fees` agrégation cosmétique)
+
+## Commandes de relance
+
+```powershell
+# Kill tout
+taskkill /F /IM python.exe 2>$null ; taskkill /F /IM node.exe 2>$null ; Start-Sleep 2
+
+# Backend EXPERIMENTAL (port 8001)
+Start-Process powershell -ArgumentList "-Command","cd C:\Users\ilies\git\bitcoin-trading-v2-experiment\backend; .\venv\Scripts\activate; python -m uvicorn app.main:app --host 127.0.0.1 --port 8001"
+
+# Frontend EXPERIMENTAL (port 5174)
+Start-Process powershell -ArgumentList "-Command","cd C:\Users\ilies\git\bitcoin-trading-v2-experiment\frontend; npx vite --port 5174"
+
+# Vérifier
+netstat -ano | findstr "LISTENING" | findstr "8001"
+netstat -ano | findstr "LISTENING" | findstr "5174"
+```
+
+---
+
+> **Historique précédent** archivé ci-dessous (intervention v2.0.31-fees du 23/04 — Batch 1, fixes désormais inactifs en mode multi-strategy mais conservés comme filet pour le mode standard).
+
+---
+
 ## Date : 23 avril 2026 — v2.0.31-fees (Option A, Batch 1/2 sur EXP)
 
 > Application au moteur EXPERIMENTAL des fixes F1+F2+F8 déjà livrés sur le moteur MAIN (v2.0.31, commit `master`). Les deux moteurs convergent désormais sur la même logique de Signal contraire.

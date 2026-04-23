@@ -391,7 +391,13 @@ class ExperimentalPaperTradingService:
             MarketContext(), trade.direction,
         ) if strategy else StrategyParams()
 
-        if unrealized_pct <= -params.micro_sl_pct:
+        # [v2.0.31-fees-batch2 / F3] BUGFIX CRITIQUE :
+        # Avant : `if unrealized_pct <= -params.micro_sl_pct` →
+        # quand `micro_sl_pct=0.0` (la "désactivation" v2.0.30), la condition
+        # devenait `if unrealized_pct <= 0` → fermait dès la moindre perte latente.
+        # Cause directe des 24 trades EXP fermés à -0.15% sur le journal du 23/04.
+        # Fix : ne déclencher le micro_sl QUE si le seuil est strictement positif.
+        if params.micro_sl_pct > 0 and unrealized_pct <= -params.micro_sl_pct:
             reason = (
                 f"Micro stop loss : PnL latent {unrealized_pct:.3f}% "
                 f"(≤ -{params.micro_sl_pct}%) → sortie immédiate"
@@ -421,7 +427,15 @@ class ExperimentalPaperTradingService:
                 trade.lowest_price_since_entry = current_price
                 self.db.commit()
 
-        if peak_pct >= params.trailing_activation_pct and unrealized_pct > 0:
+        # [v2.0.31-fees-batch2 / F4] Gate trailing min_peak = 2× round-trip fees.
+        # Sans cette protection, le trailing pouvait s'activer dès 0.15-0.40% (selon
+        # strategy) alors que les frais RT sont 0.31% → trailing-out net-négatifs
+        # garantis. On force le pic à atteindre AU MOINS 2× frais (0.62%) avant
+        # toute activation, en plus du seuil propre à la stratégie.
+        from app.services.trading_cost_service import get_cost_model
+        _fee_pct = get_cost_model("realistic").round_trip_cost_pct()
+        _trailing_min_peak = max(params.trailing_activation_pct, 2.0 * _fee_pct)
+        if peak_pct >= _trailing_min_peak and unrealized_pct > 0:
             trailing_threshold = peak_pct * (1 - params.trailing_drop_ratio)
             if unrealized_pct <= trailing_threshold:
                 reason = (
