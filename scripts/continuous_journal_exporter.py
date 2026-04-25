@@ -233,7 +233,7 @@ def export_engine(
 
     captured_at = utc_now()
     git_info = get_git_info(engine.repo_path or main_repo_root)
-    endpoint = engine.backend_url.rstrip("/") + "/paper/journal/export"
+    endpoint = engine.backend_url.rstrip("/") + "/paper/trades/export"
 
     meta = {
         "snapshot_id": f"{sanitize_slug(engine.name.upper())}-{iso_for_filename(captured_at)}",
