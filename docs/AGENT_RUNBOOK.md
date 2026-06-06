@@ -92,9 +92,11 @@ Préfixe API = **`/paper`** (pas `/paper-trading`). PostgreSQL tourne en service
 > ```
 > Elle : (1) lance les **4 serveurs** dans des fenêtres **persistantes** (survivent à la fermeture de la console → runs multi-jours) ;
 > (2) **active les moteurs** (EXP = multi-stratégie, MAIN = scalping) ; (3) démarre le **journal exporter** en continu
-> (capture horaire dans `docs/journaux/`). Le routage DB (`bitcoin_experiment`/`bitcoin_assistant`) est géré par
+> (capture horaire dans `docs/journaux/`) ; (4) lance un **superviseur Claude temps réel** (`start-monitor.ps1` :
+> `claude --effort max --permission-mode auto`) qui surveille les 2 moteurs en boucle (`/loop`) et écrit son analyse
+> dans `docs/journaux/live-analysis-claude.md`. Le routage DB (`bitcoin_experiment`/`bitcoin_assistant`) est géré par
 > `scripts/launch_backend.py` — **pas besoin de toucher `.env`**.
-> Options : `-TickSeconds 60 -ExportIntervalSeconds 1800 -NoKill -NoExporter`.
+> Options : `-TickSeconds 60 -ExportIntervalSeconds 1800 -NoKill -NoExporter -NoMonitor -MonitorEffort xhigh`.
 
 > Détail manuel ci-dessous (fallback). Les lanceurs `scripts/launch_backend.py --engine {exp,main}` (repo MAIN) routent la DB sans modifier `.env`.
 
@@ -214,6 +216,7 @@ Pour une preuve de rentabilité chiffrée : backtest comparatif (`tests/test_bac
 
 ## 9. Journal de session (le plus récent en haut)
 
+- **2026-06-06 (suite 2) — superviseur Claude temps réel** : créé `scripts/start-monitor.ps1` + `scripts/claude-monitor-prompt.md` (repo MAIN, commit `2fd0507` sur branche `feat/start-all-journal-tooling`) — lance un Claude `--effort max --permission-mode auto --model claude-opus-4-8` qui surveille les 2 moteurs via `/loop` et écrit dans `docs/journaux/live-analysis-claude.md`. Intégré dans `start-all.ps1` (switch `-NoMonitor`). Flags vérifiés sur l'install 2.1.167 (`--effort max`, `--permission-mode auto/dontAsk` existent) + smoke-test `claude -p` OK. **L'utilisateur a fait un full reset des 2 comptes** (EXP id 11, MAIN id 60 — 0 trade, base propre) pour observer v2.1.0 depuis zéro. ⚠️ Feed toujours HS au moment du build (bougies 01/05) → le superviseur tournera surtout en mode "attente feed" tant que les données ne sont pas fraîches.
 - **2026-06-06 (suite) — pipeline de capture** : créé `scripts/start-all.ps1` (lance 4 serveurs + active les moteurs + démarre le journal exporter en continu, en 1 commande) et `scripts/launch_backend.py` (routage DB sans toucher `.env`) dans le repo MAIN. Journal exporter testé (`--once` OK : MAIN trades=0, EXP trades=97). Confirmé : **aucune connectivité externe depuis l'environnement de l'agent** → lancer via `start-all.ps1` dans le terminal de l'utilisateur pour le feed live. Correctif `.env` **bloqué par le garde-fou** (contourné par les lanceurs). **Prochaine action** : l'utilisateur lance `start-all.ps1`, laisse tourner quelques jours (feed live requis), puis « analyse les chiffres » (procédure §5).
 - **2026-06-06 — v2.1.0** : gate économique pré-trade + trailing fee-aware + cap 2 stratégies + recalibration des 4 stratégies.
   Commit `716ee44` poussé. 4 serveurs lancés, MAIN=scalping / EXP=multi-stratégie. Découvert : `.env` → societe_saas
