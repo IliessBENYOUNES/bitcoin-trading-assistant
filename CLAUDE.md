@@ -19,9 +19,20 @@
 | Phase courante | **v2.0.0 livré** — Pivot stratégique déployé, scalping débloqué |
 
 **Documents à lire en premier :**
-1. Ce fichier (`CLAUDE.md`) — Règles de l'agent
-2. `docs/CURRENT_STATE.md` — État technique complet
-3. `docs/ROADMAP.md` — Roadmap par phases
+1. 🚦 **`docs/AGENT_RUNBOOK.md`** — **Reprise de session : à lire AVANT tout.** État courant, serveurs/ports/bases, pièges environnementaux, relance complète, analyse des journaux.
+2. Ce fichier (`CLAUDE.md`) — Règles de l'agent
+3. `docs/CURRENT_STATE.md` — État technique complet
+4. `docs/ROADMAP.md` — Roadmap par phases
+
+---
+
+## 🚦 Règle de reprise — Lire `docs/AGENT_RUNBOOK.md` AVANT toute action
+
+> **Déclencheurs : début de session, ou quand l'utilisateur dit « analyse le projet », « reprends », « où on en est ».**
+
+1. **TOUJOURS** lire `docs/AGENT_RUNBOOK.md` en premier. Il contient l'état courant exact (dernier commit, version, ce qui tourne), les **4 serveurs** (ports/bases), les **pièges environnementaux** (`.env` mal configuré → routage DB `bitcoin_assistant`/`bitcoin_experiment` ; feed de données externe possiblement HS ; gate horaire 13-16h UTC ; WIP v2.0.32 non-commitée), les **commandes de relance** des 2 moteurs (MAIN=scalping, EXP=multi-stratégie), et la **procédure d'analyse des journaux/trades**.
+2. Puis vérifier l'état RÉEL (ne jamais supposer) : `git status`/`log`, serveurs (`netstat` + `/health`), moteurs (`/paper/autonomous/status`, `/paper/engine-mode`).
+3. **Mettre à jour `docs/AGENT_RUNBOOK.md` à la FIN de chaque session** (§1 état + §9 journal de session + prochaine action). C'est ce fichier qui permet la reprise instantanée après un reboot ou la fermeture du terminal.
 
 ---
 
