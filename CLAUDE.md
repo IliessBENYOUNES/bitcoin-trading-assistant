@@ -421,6 +421,12 @@ class TestXxxEndpoint:
 
 ## Règle n°13 — Relancer les serveurs (procédure obligatoire)
 
+> ✅ **MÉTHODE RECOMMANDÉE (1 commande)** — lance les 4 serveurs + active les moteurs (EXP=multi-stratégie, MAIN=scalping) + démarre le **journal exporter** en continu, avec routage DB correct (les `.env` pointent par erreur vers `societe_saas` ; `scripts/launch_backend.py` route vers `bitcoin_assistant`/`bitcoin_experiment` sans toucher `.env`) :
+> ```powershell
+> .\scripts\start-all.ps1            # options : -TickSeconds 60 -ExportIntervalSeconds 3600 -NoKill -NoExporter
+> ```
+> ⚠️ Les commandes manuelles ci-dessous lancent `uvicorn app.main:app` directement, ce qui utiliserait le mauvais `.env` (→ `societe_saas`). Préférer `start-all.ps1`, ou corriger d'abord les `.env`.
+
 > Quand l'utilisateur dit **"relance les serveurs"**, appliquer cette procédure **exactement** :
 
 ### Étape 1 : Kill tout
@@ -458,6 +464,17 @@ EXPERIMENTAL :  Backend 8001  ←→  Frontend 5174
 ```
 
 > ⚠️ **Utiliser `Start-Process powershell`** pour chaque serveur (fenêtre séparée). Ne PAS utiliser les terminaux background de l'IDE qui s'engorgent. Voir `docs/SERVERS.md` pour la documentation complète.
+
+---
+
+## Règle n°14 — Capture continue des journaux + « analyse les chiffres »
+
+> Objectif : capturer automatiquement les données des runs pour pouvoir les analyser et optimiser le moteur plus tard.
+
+1. **Le journal exporter** (`scripts/continuous_journal_exporter.py`, lanceur `scripts/start-journal-exporter.ps1`) capture les 2 moteurs (MAIN 8000 + EXP 8001) via `/paper/trades/export` vers `docs/journaux/` (snapshots horodatés + `.jsonl` append-only + `live-export-manifest.json`), taggés branche/commit.
+2. **`scripts/start-all.ps1` le démarre automatiquement** avec les serveurs (intervalle horaire par défaut). Sinon, à la main : `.\scripts\start-journal-exporter.ps1 -Detached -IntervalSeconds 3600`.
+3. **Quand l'utilisateur dit « analyse les chiffres »** : suivre la procédure détaillée dans `bitcoin-trading-v2-experiment/docs/AGENT_RUNBOOK.md` §5 (lire le manifeste → comparer MAIN scalping vs EXP multi-stratégie sur net/WR net/frais → vérifier l'efficacité du gate v2.1.0 → proposer des optimisations chiffrées re-testées).
+4. **Pré-requis** : les chiffres ne sont exploitables que si les moteurs ont tradé sur un **feed de données frais** (sinon prix statique → trades non significatifs). Vérifier `GET /market/price` (bouge-t-il ?) avant d'analyser.
 
 ---
 
