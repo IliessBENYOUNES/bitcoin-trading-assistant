@@ -24,14 +24,15 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
     return
 }
 
-# Prompt initial : une seule ligne, sans guillemets internes (evite tout souci de quoting).
-$initial = "Tu es le SUPERVISEUR temps reel des 2 moteurs BTC (run apres reset, base propre). Lis le fichier $PromptFile puis applique-le: verifie le lancement des 4 serveurs + moteurs + l etat du feed, puis lance /loop $Interval pour comparer MAIN (scalping) vs EXP (multi-strategie v2.1.0), verifier le gate v2.1.0, et ecris ton analyse horodatee dans docs/journaux/live-analysis-claude.md. Reste factuel et chiffre, lecture seule."
+# Prompt initial : une seule ligne, SANS parentheses ni guillemets internes.
+$initial = "Tu es le SUPERVISEUR temps reel des 2 moteurs BTC, run demarre apres un reset complet base propre. Lis le fichier $PromptFile puis applique-le: verifie le lancement des 4 serveurs + moteurs + l etat du feed, puis lance /loop $Interval pour comparer MAIN scalping vs EXP multi-strategie v2.1.0, verifier le gate v2.1.0, et ecris ton analyse horodatee dans docs/journaux/live-analysis-claude.md. Reste factuel et chiffre, lecture seule."
 
-# Commande de la nouvelle fenetre, construite par concatenation explicite (pas de backtick).
-$title = "`$Host.UI.RawUI.WindowTitle = 'BTC-MONITOR';"
-$claude = "claude --model $Model --effort $Effort --permission-mode auto --add-dir `"$ExpRepo`" -n btc-monitor `"$initial`""
-$inner = "Set-Location `"$MainRepo`"; $title Write-Host '[monitor] Claude superviseur (effort=$Effort)'; $claude"
+# Le prompt est passe en quotes SIMPLES (literal) et toute la commande via -EncodedCommand
+# (base64) : Start-Process -Command mangeait les guillemets internes -> le prompt etait
+# re-parse et '(run ...)' tentait d'executer la commande 'run'. -EncodedCommand est immunise.
+$inner = "Set-Location `"$MainRepo`"; `$Host.UI.RawUI.WindowTitle='BTC-MONITOR'; Write-Host '[monitor] superviseur Claude (effort=$Effort)'; claude --model $Model --effort $Effort --permission-mode auto --add-dir `"$ExpRepo`" -n btc-monitor '$initial'"
+$encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($inner))
 
-Start-Process powershell -ArgumentList @('-NoExit', '-Command', $inner)
+Start-Process powershell -ArgumentList @('-NoExit', '-EncodedCommand', $encoded)
 Write-Host "[monitor] Superviseur Claude lance dans une fenetre (effort=$Effort, intervalle=$Interval)."
 Write-Host "[monitor] Analyse en continu : $MainRepo\docs\journaux\live-analysis-claude.md"
