@@ -1,19 +1,19 @@
 <#
 .SYNOPSIS
-  Lance TOUT en une commande : les 4 serveurs (MAIN + EXP, backends + frontends),
-  active les moteurs (EXP = multi-strategie, MAIN = scalping) ET demarre le
-  journal exporter en continu pour capturer les donnees au fil de l'eau.
+  Lance TOUT en une commande : 4 serveurs (MAIN + EXP, backends + frontends), active les
+  moteurs (EXP = multi-strategie, MAIN = scalping), demarre le journal exporter, et lance
+  le superviseur Claude temps reel.
 
 .DESCRIPTION
-  A lancer dans TON PowerShell (pas via l'agent) pour beneficier du reseau reel
-  -> feed de donnees live. Chaque serveur tourne dans sa propre fenetre et SURVIT
-  a la fermeture de cette console (runs multi-jours). Le exporter ecrit dans
-  docs/journaux/ toutes les heures (snapshots + .jsonl + manifeste).
+  - Ferme d'abord les fenetres/process du run PRECEDENT (par marqueur de ligne de commande),
+    pour ne pas empiler des fenetres -> plus de doublons illisibles.
+  - Chaque serveur tourne dans sa propre fenetre TITREE (BTC-...), persistante (runs multi-jours).
+  Astuce : pour tout faire DANS IntelliJ (onglets terminal in-IDE), utiliser plutot les
+  Run Configurations "BTC ..." (.idea/runConfigurations) + le compound "BTC start-all".
 
 .EXAMPLE
   .\scripts\start-all.ps1
-  .\scripts\start-all.ps1 -TickSeconds 60 -ExportIntervalSeconds 1800
-  .\scripts\start-all.ps1 -NoKill -NoExporter
+  .\scripts\start-all.ps1 -NoKill -NoMonitor -MonitorEffort xhigh
 #>
 param(
     [int]$TickSeconds = 60,
@@ -33,21 +33,39 @@ $MainPy    = "$MainRepo\backend\venv\Scripts\python.exe"
 $ExpPy     = "$ExpRepo\backend\venv\Scripts\python.exe"
 $Launcher  = "$ScriptDir\launch_backend.py"
 
+# ---------------------------------------------------------------------------
+# Fermeture du run precedent : tue les process dont la ligne de commande matche
+# nos marqueurs (ferme aussi les fenetres PowerShell -NoExit qui les hebergent),
+# SANS toucher au shell courant ($PID) ni a des process non lies.
+# ---------------------------------------------------------------------------
 if (-not $NoKill) {
-    Write-Host "[start-all] Kill python.exe / node.exe..."
-    taskkill /F /IM python.exe 2>$null | Out-Null
-    taskkill /F /IM node.exe   2>$null | Out-Null
+    Write-Host "[start-all] Fermeture des fenetres/process du run precedent..."
+    $pattern = 'launch_backend\.py|continuous_journal_exporter|start-journal-exporter|--port 5173|--port 5174|btc-monitor|claude-monitor-prompt|--engine exp|--engine main'
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.ProcessId -ne $PID -and $_.CommandLine -and ($_.CommandLine -match $pattern)
+    } | ForEach-Object {
+        try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+    }
     Start-Sleep -Seconds 2
 }
 
-Write-Host "[start-all] Backends (DB routee vers bitcoin_experiment / bitcoin_assistant)..."
-Start-Process powershell -ArgumentList '-NoExit','-Command',"& '$ExpPy' '$Launcher' --engine exp"
-Start-Process powershell -ArgumentList '-NoExit','-Command',"& '$MainPy' '$Launcher' --engine main"
+# ---------------------------------------------------------------------------
+# Backends (DB routee vers bitcoin_experiment / bitcoin_assistant via launch_backend.py)
+# ---------------------------------------------------------------------------
+Write-Host "[start-all] Backends..."
+Start-Process powershell -ArgumentList @('-NoExit', '-Command', "`$Host.UI.RawUI.WindowTitle='BTC-EXP-BACKEND'; & '$ExpPy' '$Launcher' --engine exp")
+Start-Process powershell -ArgumentList @('-NoExit', '-Command', "`$Host.UI.RawUI.WindowTitle='BTC-MAIN-BACKEND'; & '$MainPy' '$Launcher' --engine main")
 
+# ---------------------------------------------------------------------------
+# Frontends
+# ---------------------------------------------------------------------------
 Write-Host "[start-all] Frontends..."
-Start-Process powershell -ArgumentList '-NoExit','-Command',"Set-Location '$ExpRepo\frontend'; `$env:VITE_API_BASE_URL='http://localhost:8001'; npx vite --port 5174 --strictPort"
-Start-Process powershell -ArgumentList '-NoExit','-Command',"Set-Location '$MainRepo\frontend'; `$env:VITE_API_BASE_URL='http://localhost:8000'; npx vite --port 5173 --strictPort"
+Start-Process powershell -ArgumentList @('-NoExit', '-Command', "`$Host.UI.RawUI.WindowTitle='BTC-EXP-FRONTEND'; Set-Location '$ExpRepo\frontend'; `$env:VITE_API_BASE_URL='http://localhost:8001'; npx vite --port 5174 --strictPort")
+Start-Process powershell -ArgumentList @('-NoExit', '-Command', "`$Host.UI.RawUI.WindowTitle='BTC-MAIN-FRONTEND'; Set-Location '$MainRepo\frontend'; `$env:VITE_API_BASE_URL='http://localhost:8000'; npx vite --port 5173 --strictPort")
 
+# ---------------------------------------------------------------------------
+# Attente des backends (/health)
+# ---------------------------------------------------------------------------
 Write-Host "[start-all] Attente des backends (/health)..."
 foreach ($p in 8001, 8000) {
     $ok = $false
@@ -58,12 +76,18 @@ foreach ($p in 8001, 8000) {
     if ($ok) { Write-Host "  backend $p : OK" } else { Write-Warning "  backend $p : NON joignable" }
 }
 
+# ---------------------------------------------------------------------------
+# Activation des moteurs
+# ---------------------------------------------------------------------------
 Write-Host "[start-all] Activation des moteurs..."
 $body = @{ interval_seconds = $TickSeconds; profile = "scalping" } | ConvertTo-Json
 try { Invoke-RestMethod -Method Post "http://127.0.0.1:8001/paper/engine-mode?mode=experimental" | Out-Null; Write-Host "  EXP  -> multi-strategie" } catch { Write-Warning "  EXP engine-mode: $_" }
 try { Invoke-RestMethod -Method Post "http://127.0.0.1:8001/paper/autonomous/start" -ContentType "application/json" -Body $body | Out-Null; Write-Host "  EXP  -> autonomous ON ($TickSeconds s)" } catch { Write-Warning "  EXP autonomous: $_" }
 try { Invoke-RestMethod -Method Post "http://127.0.0.1:8000/paper/autonomous/start" -ContentType "application/json" -Body $body | Out-Null; Write-Host "  MAIN -> autonomous ON ($TickSeconds s, scalping)" } catch { Write-Warning "  MAIN autonomous: $_" }
 
+# ---------------------------------------------------------------------------
+# Journal exporter (capture continue) + superviseur Claude
+# ---------------------------------------------------------------------------
 if (-not $NoExporter) {
     Write-Host "[start-all] Journal exporter (detache, intervalle ${ExportIntervalSeconds}s)..."
     & "$ScriptDir\start-journal-exporter.ps1" -IntervalSeconds $ExportIntervalSeconds -Detached
