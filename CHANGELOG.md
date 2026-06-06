@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-06-06
+
+> **Moteur EXP v2.1.0 — "fee-positive par construction"** — Livre les items F5/F6 reportés du Batch 2 (gate économique) + recalibration complète des 4 stratégies multi-strategy pour rendre **mathématiquement impossible** un trade fee-négatif. Diagnostic (audit 25-27/04, 59 trades) : gross +$2.32, frais $209.87, **net -$207.55** — les frais écrasaient un gross quasi-nul. Cause racine : aucun gate économique pré-trade + des TP planchers (0.50%) sous le seuil de rentabilité (2× frais RT = 0.62%).
+
+### Added
+- **GATE ÉCONOMIQUE PRÉ-TRADE universel** (`multi_strategy_engine.py`, étape 7 de `evaluate_tick`) : aucun signal ne s'ouvre si son TP ne couvre pas `MIN_EV_MULTIPLE` (2.0) × les frais round-trip (preset `realistic`, RT 0.31% → seuil **0.62%**). S'appuie sur `TradingCostModel.estimate_economic_viability()`. Garantie structurelle qu'aucun trade fee-négatif ne peut s'ouvrir — la pièce manquante du plan d'audit §5.2.D (F6).
+- **CAP STRATÉGIES ÉLIGIBLES** (`MAX_ELIGIBLE_STRATEGIES=2`) : `_get_eligible_strategies` ne garde que les 2 stratégies prioritaires du contexte (avant : jusqu'à 3 stratégies corrélées ouvraient sur le même mouvement → triplaient les frais pour une seule thèse, audit run 13/04).
+- **TRAILING STOP FEE-AWARE** (`experimental_engine._manage_open_position`) : remplace le gate min_peak=2× de F4. (1) Armement à `max(activation_strat, 1.5× frais RT)` ; (2) plancher de sortie qui ne descend JAMAIS sous le niveau des frais RT → un trade devenu gagnant ne peut PLUS sortir net-négatif via trailing. Correctif direct des 21 trades brut+ → net-.
+- **9 tests dédiés** : `TestEconomicGateV210` (5) + `TestEligibleStrategiesCapV210` (2) + assertions params (2) dans `test_multi_strategy.py` (**56 tests** au total dans le fichier, vs 49).
+
+### Changed
+- **scalping** : `MIN_SCORE` 20→28 (bande utile [28,55] ; en-dessous le WR net est aléatoire et les frais dominent).
+- **micro_scalping** : `MIN_MICRO_TREND` 3→5 (≥3 = bruit brownien), TP 0.50→0.65% (franchit le gate), SL 0.25→0.30%, trailing_activation 0.15→0.30%, micro_sl désactivé.
+- **mean_reversion** : géométrie corrigée (TP=0.7×demi-range vers le milieu, SL=0.5×demi-range, R:R ≈ 1.4), TP dérivé du range (le gate filtre les ranges < ~1.8%), micro_sl désactivé.
+- **breakout** : signal "trend-follow" durci (confidence≥70 ET |score|≥30, avant confidence≥60 simple accord de signe), TP=measured move (1× largeur range), plancher TP 0.50→0.40% (le gate filtre les ranges étroits), micro_sl désactivé.
+
+### Technical
+- 6 fichiers moteur : `multi_strategy_engine.py`, `experimental_engine.py`, `strategies/{scalping,micro_scalping,mean_reversion,breakout}.py`.
+- Tests : `test_multi_strategy.py` **56 passed** ; `test_economic_value` + `test_scalping_audit` + `test_micro_stop_loss` + `test_pivot_v200` **228 passed** avec les 6 fichiers moteur (la WIP v2.0.32 mise de côté).
+- Aucun changement de schema, aucune migration DB.
+- **Hors périmètre** : la WIP v2.0.32 (profils standard `balanced`/`aggressive` dans `trading_profile_service.py` + `paper_trading_service.py`) reste non-commitée et orthogonale au moteur multi-strategy.
+
 ## [2.0.31-fees-batch2] - 2026-04-23
 
 > **Réorientation Batch 2 EXP** — l'inspection du code a révélé que le moteur EXP en mode `experimental` (multi-strategy) **n'emprunte PAS** `_tick_single_slot` ni `PROFILE_PRESETS`. Les fixes F1/F2/F8 v2.0.31-fees sont donc inactifs en mode multi-strategy (gardés comme filet pour le mode standard). Ce batch corrige les VRAIS bugs du chemin multi-strategy (`experimental_engine._manage_open_position`).

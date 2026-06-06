@@ -1,5 +1,95 @@
 # 🔄 HANDOFF GPT — Dernière intervention (branche experimental)
 
+## Date : 6 juin 2026 — v2.1.0 (gate économique pré-trade + recalibration multi-strategy)
+
+> **Objectif** : rendre le moteur EXP multi-strategy *fee-positive par construction*. Livre les items F5/F6 reportés du Batch 2 et recalibre les 4 stratégies pour qu'aucun trade ne puisse s'ouvrir si son TP ne couvre pas 2× les frais round-trip.
+
+---
+
+## Problème
+
+Audit EXP 25-27/04 (59 trades, port 5174 multi-strategy) : gross **+$2.32**, frais **$209.87**, **net -$207.55**, WR net 6.78%, 83 % de sorties "stale". Les frais écrasent un gross quasi-nul ; 21 trades brut-positifs sont devenus net-négatifs (gagnants rendus en stale-négatif).
+
+## Diagnostic — 5 fuites économiques
+
+| # | Fuite (preuve) | Correctif |
+|---|----------------|-----------|
+| 1 | Aucun gate économique pré-trade (plan §5.2.D jamais codé) | Gate universel : rejet si TP < 2× frais RT (0.62 %) |
+| 2 | 21 trades brut+ → net- (gagnants rendus en stale-négatif) | Trailing fee-aware : plancher de sortie = niveau des frais |
+| 3 | 83 % sorties stale (entrées de mauvaise qualité) | ↑ sélectivité (scalping 28, micro_trend 5, breakout conf 70 + score 30) |
+| 4 | breakout = pire : TP plancher 0.50 % < frais utiles | TP dérivé du range + gate (ne trade que si range assez large) |
+| 5 | 3 stratégies simultanées multiplient les frais | Cap à 2 stratégies éligibles/contexte |
+
+## Cause racine
+
+Le moteur multi-strategy n'avait aucun garde-fou économique pré-trade, et plusieurs TP planchers étaient calibrés sous le seuil de rentabilité (2× frais RT = 0.62 % avec le preset `realistic` à 0.31 %). Tout trade visant < 0.62 % était structurellement perdant même gagné.
+
+## Correction appliquée (6 fichiers)
+
+- **`multi_strategy_engine.py`** : constantes `MIN_EV_MULTIPLE=2.0`, `COST_PRESET="realistic"`, `MAX_ELIGIBLE_STRATEGIES=2`. Étape 7 de `evaluate_tick` = gate économique (boucle sur les signaux approuvés, rejette si `estimate_economic_viability()["is_viable"]` est faux). `_get_eligible_strategies` → cap `[:2]`.
+- **`experimental_engine.py`** (`_manage_open_position`) : trailing fee-aware — armement `max(activation, 1.5× frais)`, seuil de sortie `max(peak×(1-drop), frais_RT)` → jamais de sortie net-négative depuis un gagnant.
+- **`strategies/scalping.py`** : `MIN_SCORE` 20→28.
+- **`strategies/micro_scalping.py`** : `MIN_MICRO_TREND` 3→5, TP 0.50→0.65 %, SL 0.25→0.30 %, trailing_activation 0.15→0.30 %, micro_sl 0.
+- **`strategies/mean_reversion.py`** : TP = 0.7×demi-range, SL = 0.5×demi-range, micro_sl 0.
+- **`strategies/breakout.py`** : trend-follow durci (conf≥70 ET |score|≥30), TP plancher 0.50→0.40 %, micro_sl 0.
+
+## Ce qui n'a PAS été touché
+
+- **WIP v2.0.32** (`trading_profile_service.py` + `paper_trading_service.py`, profils standard `balanced`/`aggressive`) : laissée **non-commitée**, orthogonale au moteur multi-strategy.
+- `trading_cost_service.py`, `market_context_engine.py`, `multi_strategy_risk.py`, frontend : inchangés.
+- Aucun schema, aucune migration DB.
+
+## Validations
+
+| Check | Résultat |
+|-------|----------|
+| `pytest tests/test_multi_strategy.py -q` | ✅ **56 passed** (49 + 7 nouveaux gate/cap) |
+| `test_economic_value` + `test_scalping_audit` + `test_micro_stop_loss` + `test_pivot_v200` (WIP stashée) | ✅ **228 passed** |
+| Isolation des 72 échecs du run complet | ✅ tous dans la WIP v2.0.32 (disparaissent quand elle est stashée) |
+| Viabilité runtime des params réels | ✅ micro_scalping/scalping/aggressive + ranges larges viables ; ranges étroits rejetés |
+
+## Documentation mise à jour
+
+| Doc | Section |
+|-----|---------|
+| `CHANGELOG.md` | Nouvelle entrée `[2.1.0] - 2026-06-06` |
+| `docs/CURRENT_STATE.md` | En-tête → v2.1.0 + section moteur |
+| `docs/ROADMAP.md` | Batch 3 (gate éco F6) marqué livré |
+| `docs/requirements_traceability.md` | FR gate économique + compteur tests |
+| `docs/HANDOFF_GPT.md` | Ce fichier (édité, pas recréé) |
+
+## Commit
+
+```
+feat(multi-strategy): gate economique pre-trade + trailing fee-aware + recalibration 4 strategies v2.1.0
+```
+
+## État actuel
+
+- **Branche** : `experiment/v2-fees-and-1m`
+- **Version** : v2.1.0
+- **Tests moteur** : 56 passed (`test_multi_strategy`)
+- **Mode utilisateur** : multi-strategy (frontend 5174 / backend 8001)
+- **Prochaine action recommandée** : run paper multi-strategy live — vérifier 0 trade ouvert avec TP < 0.62 %, 0 trailing-out net-négatif depuis un gagnant.
+
+## Commandes de relance
+
+```powershell
+# Backend EXPERIMENTAL (port 8001) — DSN nettoyé du suffixe ?schema Prisma
+Start-Process powershell -ArgumentList "-Command","cd C:\Users\ilies\git\bitcoin-trading-v2-experiment\backend; .\venv\Scripts\activate; python -m uvicorn app.main:app --host 127.0.0.1 --port 8001"
+# Frontend EXPERIMENTAL (port 5174)
+Start-Process powershell -ArgumentList "-Command","cd C:\Users\ilies\git\bitcoin-trading-v2-experiment\frontend; npx vite --port 5174"
+# Activer le multistrategy
+# POST http://127.0.0.1:8001/paper-trading/engine-mode?mode=experimental
+# POST http://127.0.0.1:8001/paper-trading/autonomous/start  {interval_seconds:60, profile:"scalping"}
+```
+
+---
+
+> **Historique précédent** archivé ci-dessous.
+
+---
+
 ## Date : 23 avril 2026 — v2.0.31-fees-batch2 (Batch 2 EXP réorienté)
 
 > **Important — réorientation stratégique** : l'inspection du code a confirmé que le moteur EXP en mode `experimental` (multi-strategy, celui que l'utilisateur lance via le frontend port 5174) **n'emprunte PAS** `paper_trading_service._tick_single_slot` ni `PROFILE_PRESETS`. Tout passe par `ExperimentalPaperTradingService._experimental_tick()` → `_manage_open_position()` qui consomme les `StrategyParams` de `strategies/*.py`. Les fixes F1+F2+F8 du commit précédent (v2.0.31-fees) sont donc **inactifs en mode multi-strategy** ; ils restent en place comme filet de sécurité au cas où on bascule en mode standard. Ce batch corrige les **vrais** bugs du chemin multi-strategy.

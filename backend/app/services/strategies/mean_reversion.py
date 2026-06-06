@@ -102,21 +102,27 @@ class MeanReversionStrategy(BaseStrategy):
         return ExitSignal(should_exit=False, strategy_type=self.name)
 
     def get_params(self, context: MarketContext, direction: str) -> StrategyParams:
-        # SL au-delà du range, TP vers le milieu
+        # [v2.1.0] Géométrie mean-reversion corrigée. On vise le RETOUR vers le milieu
+        # du range (TP ≈ 0.7 × demi-range) avec un SL plus serré (0.5 × demi-range)
+        # juste au-delà de l'extrême → R:R ≈ 1.4. Le TP reste DÉRIVÉ DU RANGE (pas de
+        # plancher artificiel gonflé) : le gate économique (TP ≥ 2× frais = 0.62%)
+        # rejette donc automatiquement les ranges trop étroits (< ~1.8% de large),
+        # où une réversion ne couvrirait jamais les frais. C'est exactement le filtre
+        # voulu : on ne fait du mean-reversion QUE dans des ranges économiquement utiles.
         range_half_pct = context.range_width_pct / 2 if context.range_width_pct > 0 else 0.5
 
         # $800 × 1.0x = frais RT $2.48
         return StrategyParams(
-            stop_loss_pct=max(0.50, range_half_pct * 0.8),   # Élargi min 0.30→0.50%
-            take_profit_pct=max(0.40, range_half_pct * 0.6), # Élargi min 0.20→0.40%
-            position_size_usd=800.0,        # Réduit 2000→800
+            stop_loss_pct=max(0.40, range_half_pct * 0.5),   # Serré (protection cassure)
+            take_profit_pct=max(0.30, range_half_pct * 0.7), # Réversion vers le milieu
+            position_size_usd=800.0,
             leverage=1.0,                   # Pas de levier
-            trailing_activation_pct=0.25,   # Élargi 0.15→0.25%
+            trailing_activation_pct=0.40,   # 0.25→0.40 (au-dessus des frais)
             trailing_drop_ratio=0.25,
-            micro_sl_pct=0.20,              # Élargi 0.10→0.20%
+            micro_sl_pct=0.0,               # [v2.1.0] DÉSACTIVÉ (cohérent : noise-cut destructeur)
             max_hold_seconds=3600,          # 1h max
             min_hold_seconds=60,
-            stale_negative_seconds=600,     # 10 min en perte → sortie (avant 5min)
+            stale_negative_seconds=600,     # 10 min en perte → sortie
         )
 
     @staticmethod

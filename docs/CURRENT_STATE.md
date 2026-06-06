@@ -1,9 +1,9 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernire mise  jour :** 23 avril 2026
-> **Version :** v2.0.31-fees-batch2
+> **Version :** v2.1.0
 > **Branche :** `experiment/v2-fees-and-1m`
-> **Dernier commit :** fix(multi-strategy): F3 bug micro_sl=0.0 + F4 trailing min_peak 2x fees v2.0.31-fees-batch2
+> **Dernier commit :** feat(multi-strategy): gate economique pre-trade + trailing fee-aware + recalibration 4 strategies v2.1.0
 
 ---
 
@@ -13,11 +13,11 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 
 | Élément | Valeur |
 |---------|--------|
-| Version courante | **v2.0.31-fees-batch2** |
+| Version courante | **v2.1.0** |
 | Backend | FastAPI 0.109 + SQLAlchemy 2.0 + Python 3.12 |
 | Frontend | React 18 + TypeScript 5 + Vite 5 + MUI 5 + Framer Motion |
 | Base de données | PostgreSQL (prod) / SQLite (tests) |
-| Tests backend | **1856 tests passing**, 1 skipped, 0 failed |
+| Tests moteur multi-strategy | **56 passed** (`test_multi_strategy`, +7 gate/cap v2.1.0) ; suite complète impactée par la WIP v2.0.32 non-commitée (hors périmètre) |
 | Frontend build | **tsc + vite build** sans erreur |
 | Phase courante | **v2.0.31-fees-batch2 livr** €” F3 bug micro_sl=0.0 + F4 trailing min_peak 2x fees (multi-strategy) |
 
@@ -26,6 +26,7 @@ Bitcoin Trading Assistant (alias **BTC Insight → INFINI v1**) est un outil d'a
 L'Étape 2 (INFINI v1) est **fonctionnellement très avancée** côté simulation et observabilité. Le **pivot stratégique v2.0.0** a posé les fondations d'un moteur économiquement viable.
 
 **Ce qui est solide :**
+- **[v2.1.0] 🔒 Gate économique pré-trade — moteur multi-strategy *fee-positive par construction*** — aucune position ne s'ouvre si son TP ne couvre pas 2× les frais round-trip (seuil 0.62 % avec preset `realistic`). + **trailing fee-aware** (jamais de sortie net-négative depuis un gagnant) + **cap 2 stratégies/contexte** + recalibration des 4 stratégies (scalping MIN_SCORE 28, micro_scalping TP 0.65 %, mean_reversion/breakout TP dérivé du range). Corrige la fuite de l'audit 25-27/04 (net -$207.55, frais $209.87 sur gross +$2.32). 56 tests moteur.
 - Moteur de décision rule-based fonctionnel
 - **[v2.0.0] Slot aggressive sanctuarisé** comme moteur principal de valeur
 - **[v2.0.1] Slot aggressive rendu vivant** — Timeframe 4h→1h (4× plus réactif), buy_threshold 25→20, sell_threshold 20→15. Le slot ne change pas d'identité (TP 1%, SL 1%, durée 48h, pas de trailing, pas de gate économique) mais franchit enfin les seuils d'entrée en runtime. 13 tests dédiés.

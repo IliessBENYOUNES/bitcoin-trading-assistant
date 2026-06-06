@@ -427,20 +427,30 @@ class ExperimentalPaperTradingService:
                 trade.lowest_price_since_entry = current_price
                 self.db.commit()
 
-        # [v2.0.31-fees-batch2 / F4] Gate trailing min_peak = 2× round-trip fees.
-        # Sans cette protection, le trailing pouvait s'activer dès 0.15-0.40% (selon
-        # strategy) alors que les frais RT sont 0.31% → trailing-out net-négatifs
-        # garantis. On force le pic à atteindre AU MOINS 2× frais (0.62%) avant
-        # toute activation, en plus du seuil propre à la stratégie.
+        # [v2.1.0] TRAILING STOP FEE-AWARE (remplace le gate min_peak=2× frais de F4).
+        # Double garantie :
+        #   1. ARMEMENT : le pic doit atteindre max(activation_strat, 1.5× frais RT)
+        #      = max(activation, 0.465%) → laisse le gain respirer avant tout trailing.
+        #   2. PLANCHER DE SORTIE : le seuil de sortie ne descend JAMAIS sous le niveau
+        #      des frais RT (0.31%). Donc un trade qui a été gagnant ne peut PAS sortir
+        #      en perte nette via le trailing — au pire il sort à net ≈ 0.
+        # C'est le correctif direct des "21 trades brut+ devenus net-" : un gagnant qui
+        # se retourne verrouille au moins ses frais au lieu de dériver vers le stale-négatif.
         from app.services.trading_cost_service import get_cost_model
         _fee_pct = get_cost_model("realistic").round_trip_cost_pct()
-        _trailing_min_peak = max(params.trailing_activation_pct, 2.0 * _fee_pct)
-        if peak_pct >= _trailing_min_peak and unrealized_pct > 0:
-            trailing_threshold = peak_pct * (1 - params.trailing_drop_ratio)
+        _trailing_arm = max(params.trailing_activation_pct, 1.5 * _fee_pct)
+        if peak_pct >= _trailing_arm and unrealized_pct > 0:
+            # Le seuil suit le pic (garde 1-drop_ratio du gain) mais ne tombe jamais
+            # sous le coût RT → sortie toujours net ≥ 0 depuis une position gagnante.
+            trailing_threshold = max(
+                peak_pct * (1 - params.trailing_drop_ratio),
+                _fee_pct,
+            )
             if unrealized_pct <= trailing_threshold:
+                _net_pct = unrealized_pct - _fee_pct
                 reason = (
-                    f"Trailing stop : pic {peak_pct:.3f}%, actuel {unrealized_pct:.3f}%, "
-                    f"seuil {trailing_threshold:.3f}%"
+                    f"Trailing fee-aware : pic {peak_pct:.3f}%, actuel {unrealized_pct:.3f}%, "
+                    f"seuil {trailing_threshold:.3f}% (net ≈ {_net_pct:+.3f}%)"
                 )
                 closed = self._standard._close_position(
                     trade, current_price, reason, "closed_trailing_stop",

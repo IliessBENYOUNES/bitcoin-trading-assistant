@@ -690,9 +690,11 @@ Aujourd'hui, le moteur de décision est **rule-based** : 8 règles écrites à l
 │       ├── [✅] v2.0.16-v2.0.18 — Exit candle direction, learning patterns, candle reversal exit
 │       ├── [✅] v2.0.19-v2.0.22 — Aggressive protection, override anti-churn, SAS d'entrée sécurisé
 │       ├── [✅] v2.0.23-v2.0.25 — Micro stop loss, cooldown recalibré, SL/TP stop-limit
-│       └── [✅] v2.0.26-v2.0.28 — Trend alignment filter symétrique, mini chart, refonte protections aggressive
+│       ├── [✅] v2.0.26-v2.0.28 — Trend alignment filter symétrique, mini chart, refonte protections aggressive
+│       └── [✅] v2.0.31-fees (batch 1+2) — Fee fixes : Signal contraire off, micro_sl gate, trailing min_peak 2× frais
 │
 ├── Mai — Juin
+│   ├── [✅] v2.1.0 — Moteur multi-strategy *fee-positive par construction* : gate économique pré-trade universel (TP ≥ 2× frais RT), trailing fee-aware, cap 2 stratégies/contexte, recalibration des 4 stratégies (F5/F6 du plan d'audit livrés)
 │   └── [ ] v2.1+ — INFINI Mode Autonome réel (exécution exchange)
 │
 ├── Q4 2026 — Q1 2027

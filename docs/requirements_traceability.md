@@ -1,8 +1,8 @@
 # Requirements Traceability Matrix (RTM)
 
 ## Project: Bitcoin Trading Assistant
-## Version: v2.0.28
-## Date: 2026-04-13
+## Version: v2.1.0
+## Date: 2026-06-06
 
 ---
 
@@ -89,6 +89,9 @@
 | **FR-GATE-001** | **Gate formelle v2.0** | **Checklist de readiness, status READY/PARTIAL/NOT_READY** | **✅ PASS** | **v1.8.4** |
 | **FR-ECO-001** | **Economic viability gate** | **Évaluation coût RT pré-entrée, refuse si capture < 1.5× RT cost** | **✅ PASS** | **v2.0.0 — 8 tests (test_pivot_v200.py)** |
 | **FR-ECO-002** | **Expected capture calibré** | **expected_capture_pct=0.50 (pas fallback trailing 0.20%)** | **✅ PASS** | **v2.0.0-fix — gate math vérifié: 0.50% > 0.465%** |
+| **FR-ECO-003** | **Gate économique pré-trade universel (multi-strategy)** | **Aucun signal multi-strategy ne s'ouvre si TP < MIN_EV_MULTIPLE (2×) frais RT = 0.62%** | **✅ PASS** | **v2.1.0 — 5 tests (test_multi_strategy.py::TestEconomicGateV210)** |
+| **FR-MSC-001** | **Cap stratégies éligibles** | **Max 2 stratégies/contexte (anti-multiplication des frais corrélés)** | **✅ PASS** | **v2.1.0 — 2 tests (test_multi_strategy.py::TestEligibleStrategiesCapV210)** |
+| **FR-TFA-001** | **Trailing fee-aware** | **Seuil de sortie trailing ≥ frais RT → pas de sortie net-négative depuis un gagnant** | **✅ PASS** | **v2.1.0 — experimental_engine._manage_open_position** |
 | **FR-STR-001** | **Structural proofs gate** | **≥2 preuves structurelles requises pour entrée scalping** | **✅ PASS** | **v2.0.0 — 3 tests (test_pivot_v200.py)** |
 | **FR-MFR-001** | **Momentum fade restricted** | **Momentum fade seulement si pic ≥ 0.35% ET sortie net-positive** | **✅ PASS** | **v2.0.0 — 4 tests (test_pivot_v200.py)** |
 | **FR-RVP-001** | **Protection reversal signal contraire** | **Reversal ne ferme plus par signal contraire au même score** | **✅ PASS** | **v2.0.11 — 12 tests (test_pivot_v200.py)** |

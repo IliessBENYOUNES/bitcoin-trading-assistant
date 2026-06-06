@@ -622,3 +622,83 @@ class TestEngineMode:
         set_engine_mode("experimental")
         set_engine_mode("standard")
         assert get_engine_mode() == "standard"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# [v2.1.0] Gate économique pré-trade + cap stratégies éligibles
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestEconomicGateV210:
+    """
+    [v2.1.0] Le gate économique pré-trade garantit qu'aucune position ne
+    s'ouvre si son take-profit ne couvre pas MIN_EV_MULTIPLE (2×) les frais
+    round-trip. Tests déterministes sur les params RÉELS des stratégies
+    recalibrées vs la primitive estimate_economic_viability (pas de
+    dépendance temporelle — contrairement à evaluate_tick qui passe par les
+    gates horaires).
+    """
+
+    def _viability(self, params):
+        from app.services.trading_cost_service import get_cost_model
+        eng = MultiStrategyEngine()
+        cost = get_cost_model(eng.COST_PRESET)
+        return cost.estimate_economic_viability(
+            position_size_usd=params.position_size_usd,
+            leverage=params.leverage,
+            expected_capture_pct=params.take_profit_pct,
+            min_ev_multiple=eng.MIN_EV_MULTIPLE,
+        )
+
+    def test_micro_scalping_tp_clears_gate(self):
+        """micro_scalping TP 0.65% (≈2.1× frais RT) franchit le gate."""
+        params = MicroScalpingStrategy().get_params(
+            MarketContext(regime="range", zone="mid"), "long"
+        )
+        assert params.take_profit_pct >= 0.65
+        assert self._viability(params)["is_viable"] is True
+
+    def test_narrow_range_mean_reversion_rejected(self):
+        """Range trop étroit (0.5%) → TP dérivé 0.30% < 2× frais → rejeté."""
+        ctx = MarketContext(regime="range", zone="mid", range_width_pct=0.5)
+        params = MeanReversionStrategy().get_params(ctx, "long")
+        v = self._viability(params)
+        assert v["is_viable"] is False
+        assert v["rejection_reason"] is not None
+
+    def test_wide_range_mean_reversion_clears_gate(self):
+        """Range large (3.0%) → réversion mesurée 1.05% couvre 2× frais."""
+        ctx = MarketContext(regime="range", zone="mid", range_width_pct=3.0)
+        params = MeanReversionStrategy().get_params(ctx, "long")
+        assert self._viability(params)["is_viable"] is True
+
+    def test_narrow_range_breakout_rejected(self):
+        """Cassure d'un range étroit (0.4%) → measured move 0.40% < seuil → rejeté."""
+        ctx = MarketContext(regime="breakout", zone="high", range_width_pct=0.4)
+        params = BreakoutStrategy().get_params(ctx, "long")
+        assert self._viability(params)["is_viable"] is False
+
+    def test_fixed_tp_strategies_clear_gate(self):
+        """scalping (0.80%) et aggressive (2.0%) franchissent toujours le gate."""
+        sc = ScalpingStrategy().get_params(MarketContext(regime="range", zone="mid"), "long")
+        ag = AggressiveStrategy().get_params(MarketContext(regime="trend", zone="low"), "long")
+        assert self._viability(sc)["is_viable"] is True
+        assert self._viability(ag)["is_viable"] is True
+
+
+class TestEligibleStrategiesCapV210:
+    """
+    [v2.1.0] Cap à MAX_ELIGIBLE_STRATEGIES (2) : pas plus de 2 stratégies
+    corrélées ouvertes sur le même contexte (anti-multiplication des frais
+    sur un seul mouvement — audit run 13/04).
+    """
+
+    def test_cap_value(self):
+        assert MultiStrategyEngine.MAX_ELIGIBLE_STRATEGIES == 2
+
+    def test_no_context_exceeds_cap(self):
+        eng = MultiStrategyEngine()
+        for regime, zone_map in CONTEXT_STRATEGY_MAP.items():
+            for zone in zone_map:
+                ctx = MarketContext(regime=regime, zone=zone)
+                eligible = eng._get_eligible_strategies(ctx)
+                assert len(eligible) <= 2, f"{regime}/{zone} → {eligible}"

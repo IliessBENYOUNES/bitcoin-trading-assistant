@@ -18,7 +18,11 @@ class ScalpingStrategy(BaseStrategy):
     description = "Scalping classique — signaux 5m, SAS, micro SL"
 
     # Seuils
-    MIN_SCORE = 20       # Relevé 10→20 (trop de trades à score 10-15 = bruit)
+    # [v2.1.0] MIN_SCORE 20→28 : l'audit (831 trades MAIN) montre que la bande de
+    # score la plus rentable est 30-50 ; en-dessous de ~28 le WR net est aléatoire et
+    # les frais dominent. Le gate global MAX_ABS_COMBINED_SCORE=55 borne le haut.
+    # Scalping ne tire donc plus que dans la bande utile [28, 55].
+    MIN_SCORE = 28
     MIN_VOLUME_RATIO = 0.0  # Désactivé (volume_sma_20 absent sur les candles 30m fallback)
 
     def evaluate_entry(

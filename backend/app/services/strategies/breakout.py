@@ -20,6 +20,13 @@ class BreakoutStrategy(BaseStrategy):
 
     MIN_BREAKOUT_STRENGTH = 0.2
     MIN_VOLUME_RATIO = 0.0  # Désactivé (volume_sma_20 absent sur candles 30m fallback)
+    # [v2.1.0] Signal secondaire "trend-follow" DURCI. C'était le sur-déclencheur n°1 :
+    # il entrait dès regime="trend" + confidence≥60 (que le classifier accorde avec
+    # seulement 2 signaux faibles), captant de faux trends → 83% de sorties stale et
+    # le plus gros des pertes du run 25-27/04. On exige maintenant un trend bien
+    # confirmé (confidence≥70) ET une vraie magnitude de score (|score|≥30).
+    TREND_FOLLOW_MIN_CONFIDENCE = 70
+    TREND_FOLLOW_MIN_SCORE = 30
 
     def evaluate_entry(
         self,
@@ -47,12 +54,16 @@ class BreakoutStrategy(BaseStrategy):
 
         # Signal secondaire : début de trend après un range
         # (le context engine peut classer "trend" si le breakout est confirmé)
+        # [v2.1.0] Durci : confidence≥70 ET |score|≥30 (était confidence≥60 + simple
+        # accord de signe → captait de faux trends).
         if (context.regime == "trend" and
-                context.confidence >= 60):
+                context.confidence >= self.TREND_FOLLOW_MIN_CONFIDENCE):
             direction = "long" if context.trend_direction == "bullish" else "short"
 
             combined_score = decision.get("combined_score", 0) or 0
-            # Le score doit confirmer la direction du trend
+            # Le score doit confirmer la direction du trend AVEC une vraie magnitude.
+            if abs(combined_score) < self.TREND_FOLLOW_MIN_SCORE:
+                return StrategySignal(strategy_type=self.name)
             if direction == "long" and combined_score < 0:
                 return StrategySignal(strategy_type=self.name)
             if direction == "short" and combined_score > 0:
@@ -87,10 +98,14 @@ class BreakoutStrategy(BaseStrategy):
         return ExitSignal(should_exit=False, strategy_type=self.name)
 
     def get_params(self, context: MarketContext, direction: str) -> StrategyParams:
-        # SL juste en dessous de la borne cassée, TP large
+        # [v2.1.0] TP = "measured move" (≈ 1× la largeur du range cassé), SL serré juste
+        # derrière la borne. Le TP reste DÉRIVÉ DU RANGE (plancher 0.40% abaissé de
+        # 0.50%) : le gate économique (≥0.62%) rejette donc les cassures de ranges trop
+        # étroits, dont le mouvement mesuré ne couvrirait pas 2× les frais. On ne suit
+        # que les breakouts dont l'amplitude attendue est économiquement réelle.
         if context.range_width_pct > 0:
-            sl_pct = max(0.20, context.range_width_pct * 0.3)
-            tp_pct = max(0.50, context.range_width_pct * 1.0)
+            sl_pct = max(0.25, context.range_width_pct * 0.3)   # 0.20→0.25 (> coût entrée)
+            tp_pct = max(0.40, context.range_width_pct * 1.0)   # plancher 0.50→0.40 (gate filtre)
         else:
             sl_pct = 0.30
             tp_pct = 1.0
@@ -98,11 +113,11 @@ class BreakoutStrategy(BaseStrategy):
         return StrategyParams(
             stop_loss_pct=sl_pct,
             take_profit_pct=tp_pct,
-            position_size_usd=1000.0,       # Réduit 2500→1000 (frais proportionnels)
-            leverage=1.5,                   # Réduit 2.0→1.5
-            trailing_activation_pct=0.40,   # Élargi 0.20→0.40% (laisser le breakout se développer)
+            position_size_usd=1000.0,       # frais RT $4.65 à 1.5x
+            leverage=1.5,
+            trailing_activation_pct=0.40,   # laisser le breakout se développer
             trailing_drop_ratio=0.25,       # Garde 75% du pic
-            micro_sl_pct=0.30,              # Élargi 0.10→0.30% (breakout = volatil)
+            micro_sl_pct=0.0,               # [v2.1.0] DÉSACTIVÉ (cohérence : pas de noise-cut)
             max_hold_seconds=14400,         # 4h max
             min_hold_seconds=120,           # 2min minimum
             stale_negative_seconds=600,     # 10min (breakout prend du temps)

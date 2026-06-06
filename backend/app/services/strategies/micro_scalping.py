@@ -19,7 +19,10 @@ class MicroScalpingStrategy(BaseStrategy):
     description = "Micro-scalping tick-based — momentum ultra-court"
 
     # Seuils spécifiques
-    MIN_MICRO_TREND = 3  # abs(micro_trend) >= 3 pour un signal
+    # [v2.1.0] MIN_MICRO_TREND 3→5 : sur 5m le micro_trend sature à ±10 ; à ≥3 c'est
+    # du bruit brownien (le "random walk" identifié comme destructeur dans l'audit).
+    # ≥5 = micro-mouvement directionnel réel, condition nécessaire pour viser 0.65%.
+    MIN_MICRO_TREND = 5
     MAX_VOLATILITY_FOR_MICRO = "high"  # Pas de micro en haute volatilité
 
     def evaluate_entry(
@@ -61,15 +64,19 @@ class MicroScalpingStrategy(BaseStrategy):
         # [v2.0.30] micro_sl désactivé (0.0) — audit master : micro_sl = destructeur net
         # (184 coupures, -$364 cum sur scalping). Le SL classique à 0.25% reste actif
         # comme filet. Les trades ont besoin de respirer pour atteindre TP 0.50%.
+        # [v2.1.0] TP 0.50→0.65 : avec frais RT 0.31%, un TP 0.50% ne dégage que
+        # 0.19% net (net $0.95 sur $500) — sous le seuil 2× frais du gate éco, donc
+        # systématiquement rejeté. 0.65% (≈ 2.1× frais) franchit le gate et laisse
+        # un net franc (~$1.70). SL 0.30 → R:R 2.2.
         return StrategyParams(
-            stop_loss_pct=0.25,       # Élargi 0.10→0.25%
-            take_profit_pct=0.50,     # Élargi 0.30→0.50%
-            position_size_usd=500.0,  # Réduit 1500→500 (frais $1.55 au lieu de $4.65)
+            stop_loss_pct=0.30,       # 0.25→0.30 (au-dessus du coût d'entrée 0.155%)
+            take_profit_pct=0.65,     # 0.50→0.65 (franchit le gate éco 2× frais)
+            position_size_usd=500.0,  # frais RT $1.55
             leverage=1.0,             # Pas de levier
-            trailing_activation_pct=0.15,   # Élargi 0.05→0.15%
+            trailing_activation_pct=0.30,   # 0.15→0.30 (laisse le micro-move respirer)
             trailing_drop_ratio=0.25,       # 25% de recul = sortie
-            micro_sl_pct=0.0,         # [v2.0.30] DÉSACTIVÉ (était 0.10)
-            max_hold_seconds=600,     # 10 min max (était 5)
-            min_hold_seconds=30,      # 30s min (était 10)
-            stale_negative_seconds=120, # 2min en perte → sortie (était 1min)
+            micro_sl_pct=0.0,         # DÉSACTIVÉ (audit : micro_sl = destructeur net)
+            max_hold_seconds=600,     # 10 min max
+            min_hold_seconds=30,      # 30s min
+            stale_negative_seconds=120, # 2min en perte → sortie
         )

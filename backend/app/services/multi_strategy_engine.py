@@ -118,6 +118,24 @@ class MultiStrategyEngine:
     # Ce paramètre est consommé par le paper_trading_service au moment de la fermeture.
     BREAKEVEN_MIN_PEAK_FEE_MULTIPLE: float = 2.0
 
+    # [v2.1.0] GATE ÉCONOMIQUE PRÉ-TRADE — LA pièce manquante du plan d'audit (§5.2.D).
+    # Aucune position ne s'ouvre si son take-profit (capture attendue) ne couvre pas
+    # AU MOINS MIN_EV_MULTIPLE × les frais round-trip. Avec le preset "realistic"
+    # (frais RT = 0.31%) et MIN_EV_MULTIPLE=2.0 → TP minimum requis = 0.62%.
+    # Rationale (audit 17+23+27/04) : 21 trades brut+ devenus net-, ratio frais/|brut|
+    # de 17×. Tant qu'un trade visait < 2× frais, il était structurellement perdant
+    # même gagné. Ce gate rend mathématiquement impossible un trade fee-négatif.
+    MIN_EV_MULTIPLE: float = 2.0
+
+    # [v2.1.0] Preset de coûts utilisé par le gate (aligné sur _close_position EXP).
+    COST_PRESET: str = "realistic"
+
+    # [v2.1.0] CAP STRATÉGIES ÉLIGIBLES — L'audit du run 13/04 montre 3 stratégies
+    # (aggressive+breakout+scalping) ouvrant en parallèle dans le même trend, ce qui
+    # TRIPLE les frais sur un seul mouvement corrélé. On ne garde que les 2 stratégies
+    # PRIORITAIRES de chaque contexte (diversité réelle, pas redondance corrélée).
+    MAX_ELIGIBLE_STRATEGIES: int = 2
+
     def __init__(self):
         # Instancier toutes les stratégies
         self._strategies: dict[str, BaseStrategy] = {
@@ -244,6 +262,37 @@ class MultiStrategyEngine:
                 params = strategy.get_params(context, signal.direction)
                 result.params_map[signal.strategy_type] = params
 
+        # 7. [v2.1.0] GATE ÉCONOMIQUE PRÉ-TRADE (universel) — refuse tout signal dont
+        # le TP ne couvre pas MIN_EV_MULTIPLE × les frais round-trip. C'est la garantie
+        # structurelle qu'aucun trade fee-négatif ne peut s'ouvrir. Pour les stratégies
+        # à TP dérivé du range (mean_reversion, breakout), ce gate filtre les ranges
+        # trop étroits ; pour les stratégies à TP fixe (scalping, aggressive,
+        # micro_scalping) il agit comme filet de sécurité contre toute régression.
+        if not skip_global_gates:
+            from app.services.trading_cost_service import get_cost_model
+            cost_model = get_cost_model(self.COST_PRESET)
+            econ_approved: list[StrategySignal] = []
+            for signal in approved:
+                params = result.params_map.get(signal.strategy_type)
+                if params is None:
+                    continue
+                viability = cost_model.estimate_economic_viability(
+                    position_size_usd=params.position_size_usd,
+                    leverage=params.leverage,
+                    expected_capture_pct=params.take_profit_pct,
+                    min_ev_multiple=self.MIN_EV_MULTIPLE,
+                )
+                if viability["is_viable"]:
+                    econ_approved.append(signal)
+                else:
+                    result.rejected_reasons.append(
+                        f"[v2.1.0] Gate éco {signal.strategy_type}: "
+                        f"{viability['rejection_reason']}"
+                    )
+                    # Le params_map garde l'entrée pour le debug mais le signal sort.
+            approved = econ_approved
+            result.approved_signals = approved
+
         return result
 
     def evaluate_exits(
@@ -292,11 +341,18 @@ class MultiStrategyEngine:
     # Internal helpers
     # ─────────────────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _get_eligible_strategies(context: MarketContext) -> list[str]:
-        """Retourne les stratégies éligibles pour le contexte donné."""
+    @classmethod
+    def _get_eligible_strategies(cls, context: MarketContext) -> list[str]:
+        """
+        Retourne les stratégies éligibles pour le contexte donné.
+
+        [v2.1.0] Cap à MAX_ELIGIBLE_STRATEGIES (2) : on ne garde que les stratégies
+        PRIORITAIRES du contexte. Ouvrir 3 stratégies corrélées sur le même mouvement
+        triplait les frais pour une seule thèse (audit run 13/04).
+        """
         regime_map = CONTEXT_STRATEGY_MAP.get(context.regime, {})
-        return regime_map.get(context.zone, regime_map.get("mid", ["scalping"]))
+        eligible = regime_map.get(context.zone, regime_map.get("mid", ["scalping"]))
+        return eligible[: cls.MAX_ELIGIBLE_STRATEGIES]
 
     @staticmethod
     def _apply_global_filters(
