@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.1] - 2026-06-06
+
+### Fixed
+- **FEED DE DONNÉES (CRITIQUE)** — Toutes les requêtes externes (prix Binance/CoinGecko, bougies OHLCV, news) échouaient en `CERTIFICATE_VERIFY_FAILED` → le robot retombait sur un prix statique et des bougies périmées (feed mort). **Cause racine** : un proxy/antivirus intercepte le TLS et re-signe avec une racine CA présente dans le magasin Windows mais **absente du bundle `certifi`** qu'utilise httpx (et requests/pip) par défaut. **Fix** : nouveau module `app/ssl_trust.py` (importé en tête de `app/main.py`, avant toute requête httpx) qui enveloppe `httpx.Client/AsyncClient.__init__` pour forcer `verify=ssl.create_default_context()` (magasin de certificats de l'OS Windows, qui contient la racine du proxy) quand aucun `verify` explicite n'est fourni. **Sécurisé** (vérification TLS complète, jamais `verify=False`), zéro dépendance, couvre les ~11 points d'appel httpx sans les modifier.
+
+### Technical
+- 2 fichiers : `app/ssl_trust.py` (nouveau), `app/main.py` (1 import en tête).
+- Validé : `BinanceService.get_ohlcv("BTC/USD","30m",days=1)` ramène 48 bougies du jour, BTC ~$60.7k live (vs prix statique $77 961 / bougies du 01/05 auparavant). `import app.main` OK.
+- Aucun changement de schema, aucune migration DB. À appliquer aux serveurs en cours : relancer les backends (`start-all.ps1`).
+
 ## [2.1.0] - 2026-06-06
 
 > **Moteur EXP v2.1.0 — "fee-positive par construction"** — Livre les items F5/F6 reportés du Batch 2 (gate économique) + recalibration complète des 4 stratégies multi-strategy pour rendre **mathématiquement impossible** un trade fee-négatif. Diagnostic (audit 25-27/04, 59 trades) : gross +$2.32, frais $209.87, **net -$207.55** — les frais écrasaient un gross quasi-nul. Cause racine : aucun gate économique pré-trade + des TP planchers (0.50%) sous le seuil de rentabilité (2× frais RT = 0.62%).

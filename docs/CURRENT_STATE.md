@@ -1,7 +1,7 @@
 # 📊 Current State — Bitcoin Trading Assistant
 
 > **Dernire mise  jour :** 23 avril 2026
-> **Version :** v2.1.0
+> **Version :** v2.1.1 (fix feed httpx/TLS — voir CHANGELOG)
 > **Branche :** `experiment/v2-fees-and-1m`
 > **Dernier commit :** feat(multi-strategy): gate economique pre-trade + trailing fee-aware + recalibration 4 strategies v2.1.0
 
