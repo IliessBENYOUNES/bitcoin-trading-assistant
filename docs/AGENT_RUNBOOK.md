@@ -69,11 +69,15 @@ Préfixe API = **`/paper`** (pas `/paper-trading`). PostgreSQL tourne en service
    - Les bonnes bases existent déjà (mêmes identifiants) : `bitcoin_assistant` (MAIN), `bitcoin_experiment` (EXP).
    - Contournement **sans éditer `.env`** : les lanceurs (§4 + Annexe) surchargent `DATABASE_URL` au runtime
      (remplacent le nom de base + retirent le suffixe Prisma `?schema=...` que psycopg2 refuse ; `database.py` = `create_engine` synchrone).
-   - **À corriger proprement** quand possible : dans chaque `backend/.env`, mettre la bonne base et retirer `?schema=public`.
-2. **Feed de données externe HS.** Le fetch de bougies échoue (`CoinGecko: aucune donnée OHLC reçue`
-   et `Binance klines: aucune donnée`). Conséquence : bougies figées au **2026-05-01**, prix « live » statique
-   ($77 961 = dernière bougie). Le moteur tourne et **gate** correctement, mais **ne produit pas de trades live
-   exploitables** tant que le feed n'est pas rétabli. Vérifier : `curl -s -X POST http://127.0.0.1:8001/scheduler/trigger/4h` puis `GET /scheduler/status` (champ `last_result`).
+   - **Correctif `.env` non appliqué** (la modification de `.env` a été **bloquée par le garde-fou de sécurité** — normal pour un fichier de credentials). Les lanceurs routent autour, donc ce n'est **pas bloquant**. Pour le corriger toi-même : dans chaque `backend/.env`, remplacer `…/societe_saas?schema=public` par `…/bitcoin_assistant` (MAIN) / `…/bitcoin_experiment` (EXP), sans `?schema=`. (Backup conseillé : `Copy-Item .env .env.bak` d'abord.)
+2. **Feed de données — à vérifier au début.** Depuis l'environnement d'exécution de **l'agent** (sandbox CLI),
+   AUCUN accès externe (Binance, CoinGecko, et même github/google → HTTP 000) : le prix « live » retombe en
+   fallback sur la dernière bougie (statique, ~$77 961 au 2026-05-01). **Ta machine en propre a probablement le réseau**
+   (les données d'avril existent) → lance les serveurs dans **TON** PowerShell via `start-all.ps1`.
+   **Self-test réseau (dans ton terminal)** : `curl "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT"`
+   — si ça renvoie un prix, le feed marche ; sinon c'est ta connexion (VPN/proxy/géo-blocage Binance) à régler.
+   Côté app : `POST /scheduler/trigger/4h` puis `GET /scheduler/status` (champ `last_result`) ; ou
+   `GET /market/price` 2× pour voir si le prix bouge. **Sans feed frais, le pipeline ne capture rien d'exploitable.**
 3. **Gate horaire** : le moteur bloque toute entrée entre **13h et 16h UTC** (`BLOCKED_HOURS_UTC`, audit 17/04).
    En journée UTC 13-16h, `action=hold` avec raison « Blocked hour » est **normal**.
 4. **Tests** : lancer pytest avec `DATABASE_URL="sqlite:///./_tmp.db"` sinon erreur DSN Postgres (voir §6).
@@ -82,8 +86,17 @@ Préfixe API = **`/paper`** (pas `/paper-trading`). PostgreSQL tourne en service
 
 ## 4. Relancer TOUT (après reboot / fermeture du terminal)
 
-> Les lanceurs Python (`C:\Users\ilies\AppData\Local\Temp\btc_launch_{exp,main}.py`) gèrent le routage DB.
-> **Si `%TEMP%` a été nettoyé au reboot, recréer ces fichiers depuis l'Annexe ci-dessous.**
+> **✅ MÉTHODE RECOMMANDÉE — une seule commande, à lancer dans TON PowerShell (pas via l'agent, pour avoir le réseau réel / feed live) :**
+> ```powershell
+> C:\Users\ilies\git\bitcoin-trading-assistant\scripts\start-all.ps1
+> ```
+> Elle : (1) lance les **4 serveurs** dans des fenêtres **persistantes** (survivent à la fermeture de la console → runs multi-jours) ;
+> (2) **active les moteurs** (EXP = multi-stratégie, MAIN = scalping) ; (3) démarre le **journal exporter** en continu
+> (capture horaire dans `docs/journaux/`). Le routage DB (`bitcoin_experiment`/`bitcoin_assistant`) est géré par
+> `scripts/launch_backend.py` — **pas besoin de toucher `.env`**.
+> Options : `-TickSeconds 60 -ExportIntervalSeconds 1800 -NoKill -NoExporter`.
+
+> Détail manuel ci-dessous (fallback). Les lanceurs `scripts/launch_backend.py --engine {exp,main}` (repo MAIN) routent la DB sans modifier `.env`.
 
 ### 4a. Backends (PowerShell — fenêtres séparées, logs persistants)
 ```powershell
@@ -133,6 +146,29 @@ tables utiles : `paper_trade`, `paper_account`, `tick_activity_log`, `learning_s
 Pour comprendre POURQUOI un tick n'a pas tradé : lire le champ `detail`/`rejected_reasons` de `POST /paper/tick`
 (ex. « Gate éco scalping … », « Blocked hour », « Range compressé »).
 
+### Capture continue automatique (journal exporter)
+
+`start-all.ps1` démarre `scripts/continuous_journal_exporter.py` (repo MAIN) qui **capture les 2 moteurs toutes les heures**
+dans `bitcoin-trading-assistant/docs/journaux/` :
+- `live-snapshots/…-MAIN-…` et `…-EXPERIMENTAL-…` : snapshots JSON horodatés + taggés branche/commit.
+- `live-streams/*.jsonl` : flux append-only par moteur+signature de code (évolution heure par heure).
+- `live-export-manifest.json` : dernier snapshot par moteur + résumé (trades, net, frais).
+- `live-errors/` : trace quand un moteur était injoignable.
+
+Lancer un export immédiat à la main : `bitcoin-trading-assistant\scripts\start-journal-exporter.ps1 -Once`.
+
+### 🎯 Procédure « analyse les chiffres » (quand l'utilisateur le demande)
+
+1. **Lire le manifeste** : `docs/journaux/live-export-manifest.json` → dernier snapshot de chaque moteur (trades, net, frais, commit).
+2. **Charger les snapshots récents** des 2 moteurs ; comparer MAIN (scalping) vs EXP (multi-stratégie) : net, win-rate **net**, frais cumulés, ratio frais/|brut|, durée moyenne, % sorties « stale ».
+3. **Vérifier l'efficacité du gate v2.1.0** : aucun trade ne doit s'ouvrir avec TP < 0.62 % ; aucun trailing-out net-négatif depuis un gagnant. Lister les `rejected_reasons` les plus fréquents.
+4. **Suivre l'évolution** via les `.jsonl` (le net se dégrade-t-il ? quelle stratégie/quel contexte saigne ?).
+5. **Croiser avec le code** : le commit dans `_snapshot_meta.git` dit quelle version a produit le run.
+6. **Proposer des optimisations chiffrées** (cf. §7) : ajuster seuils/TP/SL d'une stratégie, gate, cap, gates globaux — puis re-tester (`test_multi_strategy.py`) et documenter.
+
+> ⚠️ Pré-requis : pour que ces chiffres soient exploitables, les moteurs doivent avoir tradé sur des **données fraîches**
+> (feed live OK — voir §3.2). Si le prix est resté statique, le pipeline n'aura capturé que des trades non significatifs.
+
 ---
 
 ## 6. Valider / tester (avant tout commit)
@@ -178,6 +214,7 @@ Pour une preuve de rentabilité chiffrée : backtest comparatif (`tests/test_bac
 
 ## 9. Journal de session (le plus récent en haut)
 
+- **2026-06-06 (suite) — pipeline de capture** : créé `scripts/start-all.ps1` (lance 4 serveurs + active les moteurs + démarre le journal exporter en continu, en 1 commande) et `scripts/launch_backend.py` (routage DB sans toucher `.env`) dans le repo MAIN. Journal exporter testé (`--once` OK : MAIN trades=0, EXP trades=97). Confirmé : **aucune connectivité externe depuis l'environnement de l'agent** → lancer via `start-all.ps1` dans le terminal de l'utilisateur pour le feed live. Correctif `.env` **bloqué par le garde-fou** (contourné par les lanceurs). **Prochaine action** : l'utilisateur lance `start-all.ps1`, laisse tourner quelques jours (feed live requis), puis « analyse les chiffres » (procédure §5).
 - **2026-06-06 — v2.1.0** : gate économique pré-trade + trailing fee-aware + cap 2 stratégies + recalibration des 4 stratégies.
   Commit `716ee44` poussé. 4 serveurs lancés, MAIN=scalping / EXP=multi-stratégie. Découvert : `.env` → societe_saas
   (contourné), feed de données externe HS (bougies au 01/05). **Prochaine action** : rétablir le feed de données
