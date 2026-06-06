@@ -15,6 +15,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# [feed-fix 06/2026] DOIT être importé avant toute requête httpx : configure httpx
+# pour vérifier le TLS via le magasin de certificats de l'OS (Windows) au lieu de
+# certifi, sinon le proxy/AV qui intercepte le TLS casse tous les fetchs externes
+# (prix/bougies) → feed mort. Voir app/ssl_trust.py et docs/AGENT_RUNBOOK.md §3.
+from app import ssl_trust  # noqa: F401
+
 from app.config import get_settings
 from app.database import engine, Base
 from app.api.routes import health_router, market_router, alerts_router, news_router, decision_router, backtest_router, verification_router, sentiment_router, risk_router, paper_router, audit_router, learning_router
