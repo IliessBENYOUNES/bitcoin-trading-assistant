@@ -19,7 +19,11 @@ param(
     [int]$TickSeconds = 60,
     [int]$ExportIntervalSeconds = 3600,
     [switch]$NoKill,
-    [switch]$NoExporter
+    [switch]$NoExporter,
+    [switch]$NoMonitor,
+    [ValidateSet("low", "medium", "high", "xhigh", "max")]
+    [string]$MonitorEffort = "max",
+    [string]$MonitorInterval = "5m"
 )
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -65,10 +69,16 @@ if (-not $NoExporter) {
     & "$ScriptDir\start-journal-exporter.ps1" -IntervalSeconds $ExportIntervalSeconds -Detached
 }
 
+if (-not $NoMonitor) {
+    Write-Host "[start-all] Superviseur Claude temps reel (effort=$MonitorEffort, intervalle=$MonitorInterval)..."
+    & "$ScriptDir\start-monitor.ps1" -Effort $MonitorEffort -Interval $MonitorInterval
+}
+
 Write-Host ""
 Write-Host "[start-all] TERMINE."
 Write-Host "  EXP  (multi-strategie) : http://localhost:5174  (backend 8001)"
 Write-Host "  MAIN (scalping)        : http://localhost:5173  (backend 8000)"
 Write-Host "  Journaux captures      : $MainRepo\docs\journaux\"
+Write-Host "  Analyse Claude live    : $MainRepo\docs\journaux\live-analysis-claude.md (superviseur)"
 Write-Host "  Verifier le feed live  : Invoke-RestMethod 'http://127.0.0.1:8001/market/price?symbol=BTC/USD'"
 Write-Host "  Stopper un moteur      : Invoke-RestMethod -Method Post 'http://127.0.0.1:8001/paper/autonomous/stop'"
