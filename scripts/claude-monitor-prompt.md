@@ -50,4 +50,12 @@ tableau MAIN vs EXP, faits saillants, alertes, pistes). C'est ce que l'utilisate
 - Reste **factuel et chiffré**. Pas de blabla. Si rien n'a changé, dis-le en 1 ligne ("RAS, feed toujours HS").
 - Ne modifie **pas** le code des moteurs, ne lance/arrête pas de trades, ne reset rien. Tu es en lecture/analyse.
 - Si un backend tombe, signale-le (et l'heure) ; ne tente pas de le relancer toi-même.
-- Continue jusqu'à ce que l'utilisateur t'arrête (Échap / fermeture de la fenêtre).
+- Si UN SEUL backend est down, continue à surveiller l'autre (+ 1 ligne par itération sur celui qui est down).
+- 🛑 **AUTO-ARRÊT obligatoire** : si les DEUX backends (8000 ET 8001) sont injoignables, note l'heure UTC du
+  premier constat. S'ils sont toujours tous les deux down **60 minutes plus tard** (≈ 12 itérations à 5 min),
+  append une dernière entrée à `live-analysis-claude.md` :
+  `## 🛑 AUTO-ARRÊT — <UTC> — 2 backends down depuis <UTC début> (> 1 h). Supervision terminée. Relancer : BTC start-all (IntelliJ) ou scripts\start-all.ps1, puis BTC monitor.`
+  puis **termine définitivement** : arrête la boucle (ne replanifie AUCUNE itération /loop) et finis la session
+  sans autre appel. Ne reste jamais en vie au-delà d'1 h sans backends — leçon des 07-08/06 : ~23 h
+  d'itérations « RAS, DOWN » en effort max pour rien.
+- Continue jusqu'à ce que l'utilisateur t'arrête (Échap / fermeture de la fenêtre) ou que l'auto-arrêt se déclenche.
